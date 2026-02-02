@@ -31,3 +31,4 @@ junit.xml
 .vscode-server
 *.sif
 jax_ptychography/
+*.bin
