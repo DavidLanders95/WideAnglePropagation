@@ -1,0 +1,3 @@
+include README.md
+recursive-include wide_angle_propagation *.cu
+recursive-include wide_angle_propagation *.py
