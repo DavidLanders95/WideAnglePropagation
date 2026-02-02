@@ -29,7 +29,7 @@ def calculate_physics_params(wavelength_angstrom):
     return E_total, p_inf, E_sim
 
 class RelativisticSolver:
-    def __init__(self, source_file="fdtd_open_boundaries.cu", binary_file="fdtd_open_boundaries"):
+    def __init__(self, source_file="fdtd.cu", binary_file="fdtd"):
         self.source_file = os.path.abspath(source_file)
         self.binary_file = os.path.abspath(binary_file)
         
