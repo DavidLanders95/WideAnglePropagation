@@ -21,13 +21,13 @@
 /* General geometrical parameters */
 #define WINWIDTH   720
 #define WINHEIGHT  1280
-#define NX 360
-#define NY 640
+#define NX 1024
+#define NY 1398
 
 #define XMIN -1.0000f
 #define XMAX  1.0000f
-#define YMIN -2.0000f
-#define YMAX  2.0000f
+#define YMIN -2.0500f
+#define YMAX  2.0468f
 
 /* Color parameters */
 #define COLOR_SCHEME 3
@@ -50,14 +50,14 @@
 #define E_SIM (0.5f * MOMENTUM_X * MOMENTUM_X)
 
 /* Source Injection Parameters */
-#define J_SOURCE 120
+#define J_SOURCE 156
 #define SRC_BAND 3
 #define SRC_ALPHA 0.05f      /* Coupling strength 0..1 */
 #define PI_F 3.14159265f
 
 /* ----------------------------- PML PARAMETERS ------------------------------ */
 /* PML thickness (in coordinate units, same unit as X/Y). */
-#define PML_THICK   0.5000f
+#define PML_THICK   0.4000f
 /* Complex stretching angle theta. pi/4 is common. */
 #define PML_THETA   0.7850f
 /* Strength scale of sigma profile (tune). Paper example ~80. */
