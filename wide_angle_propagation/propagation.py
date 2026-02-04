@@ -145,11 +145,14 @@ def fresnel_propagation_kernel(n: int, m: int, ps: float, z: float, energy: floa
     return H
 
 
-def angular_spectrum_propagation_kernel(n: int, m: int, ps: float, z: float, energy: float):
+def angular_spectrum_propagation_kernel(
+    n: int, m: int, ps: float, z: float, energy: float
+):
     wavelength = energy2wavelength(energy)
     Fx, Fy = get_frequencies(n, m, ps)
-    H = jnp.exp(1j * 2 * jnp.pi * z * jnp.sqrt(
-        (1 / wavelength)**2 - Fx**2 - Fy**2))
+    # Ensure complex type to handle evanescent waves (negative values inside sqrt)
+    kz = jnp.sqrt(jnp.array((1 / wavelength)**2 - Fx**2 - Fy**2, dtype=jnp.complex128))
+    H = jnp.exp(1j * 2 * jnp.pi * z * kz)
     return H
 
 
@@ -172,7 +175,6 @@ wpm_propagation_kernel_vmap = jax.vmap(wpm_propagation_kernel, in_axes=(None, 0,
 # 4. Propagation Logic (Steppers)
 # =============================================================================
 
-@jax.jit
 def Propagator(u, H):
     """Simple Fourier space multiplication."""
     ufft = jnp.fft.fft2(u)
