@@ -440,6 +440,169 @@ def downsample_to_max_angle(pattern, sampling, wavelength, max_angle_mrad, parit
 
 
 # =============================================================================
+# 6b. Lippmann-Schwinger 2D Solver (Integral equation approach)
+# =============================================================================
+
+def _greens_2d_hankel(k0, r):
+    """2D Hankel Green's function (isotropic in space)."""
+    from scipy.special import hankel1
+    return 0.25j * hankel1(0, k0 * r)
+
+
+def _self_weight_cell_average(k0, hx, hy, oversamp=32):
+    """Self-weight for grid point accounting for anisotropic spacing."""
+    xs = (np.arange(oversamp) + 0.5) / oversamp * hx - 0.5 * hx
+    ys = (np.arange(oversamp) + 0.5) / oversamp * hy - 0.5 * hy
+    X, Y = np.meshgrid(xs, ys, indexing="ij")
+    R = np.sqrt(X**2 + Y**2)
+    G = _greens_2d_hankel(k0, R)
+    return G.mean() * (hx * hy)
+
+
+def build_lippmann_schwinger_kernel_2d(k0, hx, hy, Nx, Ny, pad_to_double=True, oversamp_self=32):
+    """
+    Build 2D Lippmann-Schwinger kernel with ANISOTROPIC spacing (hx != hy allowed).
+    
+    Args:
+        k0: wave number
+        hx: grid spacing in x-direction (Angstroms)
+        hy: grid spacing in y-direction (Angstroms)
+        Nx, Ny: number of grid points
+        pad_to_double: if True, pad to 2x size for circular convolution
+        oversamp_self: oversampling for self-weight calculation
+    
+    Returns:
+        Khat: FFT of kernel (complex128 JAX array)
+        embed_shape: (Ex, Ey) padded shape
+    """
+    Ex, Ey = (2*Nx, 2*Ny) if pad_to_double else (Nx, Ny)
+
+    # Construct coordinates with anisotropic spacing
+    x = (np.arange(Nx) - Nx//2) * hx
+    y = (np.arange(Ny) - Ny//2) * hy
+    X, Y = np.meshgrid(x, y, indexing="ij")
+    R = np.sqrt(X**2 + Y**2)
+
+    # Green's function kernel (isotropic in space, but anisotropic in sampling)
+    K = (hx * hy) * _greens_2d_hankel(k0, R)
+    K[Nx//2, Ny//2] = _self_weight_cell_average(k0, hx, hy, oversamp=oversamp_self)
+
+    # Embed into padded domain
+    Kemb = np.zeros((Ex, Ey), dtype=np.complex128)
+    sx, sy = (Ex-Nx)//2, (Ey-Ny)//2
+    Kemb[sx:sx+Nx, sy:sy+Ny] = K
+
+    Kemb = np.fft.ifftshift(Kemb)
+    Khat = np.fft.fftn(Kemb)
+
+    return jnp.asarray(Khat), (Ex, Ey)
+
+
+def apply_convolution(source, Khat, embed_shape, roi_shape):
+    """Apply FFT-based convolution with Green's function."""
+    Ex, Ey = embed_shape
+    Nx, Ny = roi_shape
+    sx, sy = (Ex-Nx)//2, (Ey-Ny)//2
+
+    src = jnp.zeros((Ex, Ey), dtype=jnp.complex128)
+    src = src.at[sx:sx+Nx, sy:sy+Ny].set(source)
+
+    conv = jnp.fft.ifftn(Khat * jnp.fft.fftn(src))
+    return conv[sx:sx+Nx, sy:sy+Ny]
+
+
+def solve_scattering_2d_lippmann_schwinger(potential_grid, energy_ev, pixel_size_A, 
+                                           pad_factor=2, absorb_frac=0.15, absorb_strength=4.0,
+                                           gmres_tol=1e-4, gmres_restart=70):
+    """
+    Solves 2D scalar Helmholtz for a pixelized potential using the Lippmann-Schwinger 
+    integral equation with JAX/FFT and GMRES.
+    
+    Args:
+        potential_grid: 2D numpy array of the electrostatic potential (in Volts), shape (Nx, Ny)
+        energy_ev: Energy of incident electron/particle in eV
+        pixel_size_A: Size of one pixel in Angstroms
+        pad_factor: How much to pad the grid to avoid periodic artifacts (2 = double size)
+        absorb_frac: Fraction of grid on each side used for absorbing boundary
+        absorb_strength: Strength of absorbing taper (larger = stronger damping)
+        gmres_tol: GMRES convergence tolerance
+        gmres_restart: GMRES restart parameter
+    
+    Returns:
+        wave_final: 2D array of the total wave function (complex)
+    """
+    from ase import units
+    
+    # --- 1. Physics Constants & Setup ---
+    m0 = 510998.95000  # Rest mass energy in eV
+    hc = 12398.4193    # eV * Angstrom
+
+    hbar = units._hplanck / (2*np.pi)
+    m_ec2_ev = (units._me * units._c**2) / units._e
+
+    gamma = 1.0 + energy_ev / m_ec2_ev
+    m_eff = gamma * units._me
+
+    # Converts V [V] into the Helmholtz source term (in 1/Å^2)
+    V_scale = -(2.0 * m_eff * units._e / (hbar**2)) * 1e-20
+
+    E = energy_ev
+    wavelength = hc / jnp.sqrt(E * (E + 2 * m0))
+    k0 = 2 * jnp.pi / wavelength
+    
+    # --- 2. Padding ---
+    orig_shape = potential_grid.shape
+    padded_shape = [s * pad_factor for s in orig_shape]
+    pad_width = [( (p-o)//2, (p-o)-(p-o)//2 ) for p, o in zip(padded_shape, orig_shape)]
+    V_padded = jnp.pad(jnp.array(potential_grid), pad_width, mode='constant')
+    
+    # --- 3. Build anisotropic Green's function kernel ---
+    Khat, embed_shape = build_lippmann_schwinger_kernel_2d(
+        k0=float(k0),
+        hx=float(pixel_size_A),
+        hy=float(pixel_size_A),
+        Nx=padded_shape[0],
+        Ny=padded_shape[1],
+        pad_to_double=True,
+        oversamp_self=32
+    )
+
+    # --- 4. matvec with convolution ---
+    @jax.jit
+    def matvec(psi_flat):
+        psi = psi_flat.reshape(padded_shape)
+        source = V_scale * V_padded * psi
+        scattered = apply_convolution(source, Khat, embed_shape, padded_shape)
+        return (psi - scattered).ravel()
+
+    # --- 5. Incident Wave (plane wave) ---
+    y_coords = jnp.arange(padded_shape[1]) * pixel_size_A
+    y_coords -= y_coords.mean()
+    psi_inc_line = jnp.exp(1j * k0 * y_coords)
+    psi_inc = jnp.broadcast_to(psi_inc_line, padded_shape)
+
+    # --- 6. Solve with GMRES ---
+    from jax.scipy.sparse.linalg import gmres
+    
+    psi_solution_flat, info = gmres(
+        matvec,
+        psi_inc.ravel(),
+        tol=gmres_tol,
+        restart=gmres_restart
+    )
+    if info != 0:
+        print(f"  Warning: GMRES did not converge (info={info})")
+    psi_solution = psi_solution_flat.reshape(padded_shape)
+
+    # --- 7. Unpad ---
+    starts = [p[0] for p in pad_width]
+    ends = [s + o for s, o in zip(starts, orig_shape)]
+    psi_final = psi_solution[starts[0]:ends[0], starts[1]:ends[1]]
+    
+    return psi_final
+
+
+# =============================================================================
 # 7. 1D Helpers for Notebook / Line-Propagation
 # =============================================================================
 
