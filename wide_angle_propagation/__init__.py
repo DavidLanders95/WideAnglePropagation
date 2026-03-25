@@ -10,8 +10,6 @@ from .propagation import *
 from .fdtd_solver import *
 from .bloch import (
     solve_bloch_wave_gpu,
-    _structure_factor,
-    _lobato_scattering_factor,
     wavelength_to_energy_eV,
     HAS_CUPY,
 )

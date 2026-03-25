@@ -101,8 +101,8 @@ def _run_multislice_bootstrap(pot_array, probe_array, propagator,
     for _ in range(n_bootstrap):
         ms_00, ms_028 = [], []
         current_wave = probe_array.copy()
-        for i in N_CELLS:
-            if i == 0:
+        for n_cell in N_CELLS:
+            if n_cell == 0:
                 w = current_wave
             else:
                 w, _, _ = simulate_fresnel_as(
@@ -140,8 +140,8 @@ def _run_wpm(pot_array, probe_array, slice_thickness, energy, sampling,
 
     wpm_00, wpm_028 = [], []
     current_wave = probe_array.copy()
-    for i in N_CELLS:
-        if i == 0:
+    for n_cell in N_CELLS:
+        if n_cell == 0:
             w = current_wave
         else:
             w, _, _ = simulate_wpm(
