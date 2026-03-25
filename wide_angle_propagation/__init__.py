@@ -8,6 +8,13 @@ and Wave Propagation Method (WPM) approaches.
 
 from .propagation import *
 from .fdtd_solver import *
+from .bloch import (
+    solve_bloch_wave_gpu,
+    _structure_factor,
+    _lobato_scattering_factor,
+    wavelength_to_energy_eV,
+    HAS_CUPY,
+)
 
 __version__ = "0.1.0"
 __author__ = "Your Name"
