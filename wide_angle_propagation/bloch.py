@@ -22,11 +22,12 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Physical constants (SI)
 # ---------------------------------------------------------------------------
-_M0   = 9.1093837015e-31    # kg, electron rest mass
-_E    = 1.602176634e-19     # C, elementary charge
-_H    = 6.62607015e-34      # J·s, Planck constant
-_C    = 2.99792458e8        # m/s, speed of light
-_EPS0 = 8.8541878128e-12    # F/m, vacuum permittivity
+_M0     = 9.1093837015e-31    # kg, electron rest mass
+_E      = 1.602176634e-19     # C, elementary charge
+_H      = 6.62607015e-34      # J·s, Planck constant
+_C      = 2.99792458e8        # m/s, speed of light
+_EPS0   = 8.8541878128e-12    # F/m, vacuum permittivity
+_A_BOHR = 0.529177210903e-10  # m, Bohr radius
 
 # ---------------------------------------------------------------------------
 # Hardcoded Lobato scattering-factor parameters for Au (Z=79)
@@ -59,8 +60,13 @@ def _energy2sigma(energy_eV: float) -> float:
 
 
 def _kappa() -> float:
-    """κ = 4πε₀/e  [1/(V·Å)]."""
-    return 4.0 * np.pi * _EPS0 / _E * 1e-10
+    """κ = 4πε₀/(2π a₀ e) = 2ε₀/(a₀ e)  [1/(V·Å²)], matching abTEM's kappa constant.
+
+    This converts electron scattering factors (Å) divided by cell volume (Å³)
+    into matrix elements with units [Å⁻¹], consistent with the excitation-error
+    diagonal terms 2 s_g / λ  [Å⁻¹].
+    """
+    return 2.0 * _EPS0 / (_A_BOHR * _E) * 1e-20   # [1/(V·m²)] → [1/(V·Å²)]
 
 
 def wavelength_to_energy_eV(wavelength_ang: float) -> float:

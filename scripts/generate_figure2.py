@@ -159,11 +159,20 @@ def _run_wpm(pot_array, probe_array, slice_thickness, energy, sampling,
 
 def _run_bloch(atoms, wavelength, n_cells=N_CELLS):
     """Return (amp_00, amp_028) from the Bloch wave solver."""
+    # Use reduced parameters on CPU to keep runtime manageable.
+    # g_max_zolz must be at least 6.87 Å⁻¹ to include the [0,28] beam
+    # (|g|_028 = 28/a_Au ≈ 6.86 Å⁻¹).  HOLZ beams are skipped (l_max=0)
+    # to limit the matrix size to ~2600 beams; eigh is then ~10 s on CPU.
+    if HAS_CUPY:
+        g_max_zolz, g_max_holz, l_max, n_beams_max = 15, 25, 10, 12000
+    else:
+        g_max_zolz, g_max_holz, l_max, n_beams_max = 7.5, 0.0, 0, 2600
+        print("  (CPU fallback: ZOLZ-only beams up to g=7.5 Å⁻¹)")
     result = solve_bloch_wave_gpu(
-        g_max_zolz=15,
-        g_max_holz=25,
-        l_max=10,
-        n_beams_max=12000,
+        g_max_zolz=g_max_zolz,
+        g_max_holz=g_max_holz,
+        l_max=l_max,
+        n_beams_max=n_beams_max,
         atoms=atoms,
         wavelength=wavelength,
         x=list(n_cells),
@@ -213,8 +222,8 @@ def main():
 
     transmit = get_abtem_transmit(potential, energy)
 
-    probe = abtem.PlaneWave(energy=energy)
-    probe = probe.build(gpts=gpts, extent=(A_AU, A_AU))
+    probe = abtem.PlaneWave(energy=energy, gpts=gpts, extent=(A_AU, A_AU))
+    probe = probe.build()
     probe_array = np.array(probe.array)
 
     sampling = probe.grid.sampling
