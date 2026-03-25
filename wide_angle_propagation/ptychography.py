@@ -7,9 +7,9 @@ Implements gradient-based multislice ptychography using three propagation method
   - Wave Propagation Method (WPM, wide-angle)
 
 The forward model propagates a focused probe through a stack of object slices
-and computes the far-field diffraction intensity.  Reconstruction minimises the
+and computes the far-field diffraction intensity.  Reconstruction minimizes the
 amplitude-based loss between measured and predicted diffraction patterns using
-JAX automatic differentiation and the Adam optimiser.
+JAX automatic differentiation and the Adam optimizer.
 """
 
 import jax
@@ -358,8 +358,9 @@ def reconstruct(
     # Initial guess: small random potential to break symmetry.
     # This is important for WPM where uniform potential gives degenerate
     # refractive-index bins and zero gradients.
+    init_scale = 0.01
     key = jax.random.PRNGKey(0)
-    object_slices = 0.01 * jax.random.normal(key, (n_slices, ny, nx), dtype=jnp.float64)
+    object_slices = init_scale * jax.random.normal(key, (n_slices, ny, nx), dtype=jnp.float64)
 
     # Probe (fixed during reconstruction for simplicity)
     probe = make_probe(gpts, sampling, energy, semi_angle_mrad)
@@ -367,7 +368,7 @@ def reconstruct(
     # Convert positions to jax array
     positions_jnp = jnp.array(positions)
 
-    # ---- Adam optimiser state ----
+    # ---- Adam optimizer state ----
     m = jnp.zeros_like(object_slices)
     v = jnp.zeros_like(object_slices)
     b1, b2, eps = 0.9, 0.999, 1e-8

@@ -329,7 +329,7 @@ def main():
 
     # Optionally save JSON
     if args.json:
-        # Convert keys to strings for JSON serialisation
+        # Convert keys to strings for JSON serialization
         json_results = {}
         for m in results:
             json_results[m] = {
