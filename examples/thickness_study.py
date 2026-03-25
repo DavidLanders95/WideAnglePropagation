@@ -290,7 +290,8 @@ def main():
     )
     parser.add_argument(
         "--gpts", type=int, default=64,
-        help="Grid size (NxN pixels, default: 64). Use 32 for a faster run.",
+        help="Grid size (NxN pixels, default: 64). Smaller values run faster "
+             "but reduce spatial resolution (e.g. 32 is ~4× faster than 64).",
     )
     parser.add_argument(
         "--slice-dz", type=float, default=DEFAULT_SLICE_DZ,
@@ -314,6 +315,7 @@ def main():
 
     thicknesses = FULL_THICKNESSES if args.full else QUICK_THICKNESSES
 
+    # Convert the scalar --gpts argument into the (ny, nx) tuple expected by the study.
     gpts = (args.gpts, args.gpts)
 
     results = run_thickness_study(
