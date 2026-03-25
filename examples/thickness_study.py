@@ -289,8 +289,22 @@ def main():
         help="Number of probe scan positions (default: 9).",
     )
     parser.add_argument(
+        "--gpts", type=int, default=64,
+        help="Grid size (NxN pixels, default: 64). Use 32 for a faster run.",
+    )
+    parser.add_argument(
+        "--slice-dz", type=float, default=DEFAULT_SLICE_DZ,
+        help=f"Slice thickness in Å (default: {DEFAULT_SLICE_DZ}). "
+             "Larger values mean fewer slices and faster WPM runs.",
+    )
+    parser.add_argument(
+        "--nbins", type=int, default=64,
+        help="Number of refractive-index bins for WPM (default: 64). "
+             "Fewer bins are faster.",
+    )
+    parser.add_argument(
         "--output", type=str, default="thickness_study_results.png",
-        help="Path for output figure.",
+        help="Path for output figure (PNG or PDF based on extension).",
     )
     parser.add_argument(
         "--json", type=str, default=None,
@@ -300,11 +314,16 @@ def main():
 
     thicknesses = FULL_THICKNESSES if args.full else QUICK_THICKNESSES
 
+    gpts = (args.gpts, args.gpts)
+
     results = run_thickness_study(
         thicknesses_nm=thicknesses,
+        gpts=gpts,
+        slice_dz=args.slice_dz,
         n_iterations=args.iters,
         learning_rate=args.lr,
         n_positions=args.positions,
+        n_bins=args.nbins,
     )
 
     # Print summary table
