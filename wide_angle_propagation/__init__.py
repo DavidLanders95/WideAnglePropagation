@@ -8,6 +8,7 @@ and Wave Propagation Method (WPM) approaches.
 
 from .propagation import *
 from .fdtd_solver import *
+from . import ptychography
 
 __version__ = "0.1.0"
 __author__ = "Your Name"
