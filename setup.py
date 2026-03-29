@@ -35,6 +35,7 @@ setup(
         "matplotlib",
         "tqdm",
         "scipy",
+        "optax",
     ],
     extras_require={
         "dev": [
