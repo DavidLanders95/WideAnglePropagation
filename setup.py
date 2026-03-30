@@ -36,6 +36,7 @@ setup(
         "tqdm",
         "scipy",
         "optax",
+        "diffrax",
     ],
     extras_require={
         "dev": [
