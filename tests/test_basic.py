@@ -16,12 +16,11 @@ from wide_angle_propagation.wpm import (
     energy2wavelength,
     simulate_fresnel_as,
     simulate_wpm,
-    simulate_kg_matexp,
-    simulate_kg_fwd,
     simulate_parabolic_ode,
     fresnel_propagation_kernel,
     angular_spectrum_propagation_kernel,
 )
+from wide_angle_propagation.klein_gordon import beam_amplitudes_fwd_direct_allbeams
 from tests.conftest import beam_amplitude_normalized
 
 
@@ -49,16 +48,21 @@ def _make_plane_wave():
     return jnp.ones(GPTS, dtype=jnp.complex128)
 
 
-def _kg_beam_amplitude(exit_beams, beam_indices, h, k, gpts):
-    """Extract |C_{h,k}| from the beam-basis KG output."""
-    ny, nx = gpts
-    # Convert (h,k) to FFT indices
-    iy = k % ny
-    ix = h % nx
-    for b, (by, bx) in enumerate(beam_indices):
-        if by == iy and bx == ix:
-            return float(jnp.abs(exit_beams[b]))
-    return 0.0  # beam not in reduced set
+def _kg_lanczos_beam_amplitude(potential, h=0, k=0, n_cells=1, lanczos_m=50):
+    """Extract |C_{h,k}| from the all-beams Lanczos solver."""
+    amplitudes, _, _ = beam_amplitudes_fwd_direct_allbeams(
+        potential,
+        DZ,
+        ENERGY,
+        SAMPLING,
+        np.array([n_cells]),
+        GPTS,
+        lanczos_m=lanczos_m,
+    )
+    values = amplitudes.get((h, k))
+    if values is None:
+        return 0.0
+    return float(np.asarray(values)[0])
 
 
 # ---------------------------------------------------------------------------
@@ -91,23 +95,10 @@ class TestVacuumPropagation:
         amp = beam_amplitude_normalized(np.asarray(exit_wave), 0, 0)
         assert abs(amp - 1.0) < 1e-6, f"WPM vacuum [0,0] amplitude = {amp}"
 
-    def test_kg_matexp_vacuum(self):
+    def test_kg_lanczos_vacuum(self):
         pot = _make_vacuum_potential()
-        pw = _make_plane_wave()
-        exit_beams, beam_idx, _ = simulate_kg_matexp(
-            pot, pw, DZ, ENERGY, SAMPLING, max_beams=100
-        )
-        amp = _kg_beam_amplitude(exit_beams, beam_idx, 0, 0, GPTS)
-        assert abs(amp - 1.0) < 1e-6, f"KG matexp vacuum [0,0] amplitude = {amp}"
-
-    def test_kg_fwd_vacuum(self):
-        pot = _make_vacuum_potential()
-        pw = _make_plane_wave()
-        exit_beams, beam_idx, _ = simulate_kg_fwd(
-            pot, pw, DZ, ENERGY, SAMPLING, max_beams=100
-        )
-        amp = _kg_beam_amplitude(exit_beams, beam_idx, 0, 0, GPTS)
-        assert abs(amp - 1.0) < 1e-6, f"KG FWD vacuum [0,0] amplitude = {amp}"
+        amp = _kg_lanczos_beam_amplitude(pot)
+        assert abs(amp - 1.0) < 1e-6, f"KG Lanczos vacuum [0,0] amplitude = {amp}"
 
     def test_parabolic_ode_vacuum(self):
         pot = _make_vacuum_potential()
@@ -141,23 +132,10 @@ class TestConstantPotential:
         amp = beam_amplitude_normalized(np.asarray(exit_wave), 0, 0)
         assert abs(amp - 1.0) < 1e-4, f"Fresnel const-V [0,0] amplitude = {amp}"
 
-    def test_kg_matexp_constant_v(self):
+    def test_kg_lanczos_constant_v(self):
         pot = _make_constant_potential(self.V_CONST)
-        pw = _make_plane_wave()
-        exit_beams, beam_idx, _ = simulate_kg_matexp(
-            pot, pw, DZ, ENERGY, SAMPLING, max_beams=100
-        )
-        amp = _kg_beam_amplitude(exit_beams, beam_idx, 0, 0, GPTS)
-        assert abs(amp - 1.0) < 1e-4, f"KG matexp const-V [0,0] amplitude = {amp}"
-
-    def test_kg_fwd_constant_v(self):
-        pot = _make_constant_potential(self.V_CONST)
-        pw = _make_plane_wave()
-        exit_beams, beam_idx, _ = simulate_kg_fwd(
-            pot, pw, DZ, ENERGY, SAMPLING, max_beams=100
-        )
-        amp = _kg_beam_amplitude(exit_beams, beam_idx, 0, 0, GPTS)
-        assert abs(amp - 1.0) < 1e-4, f"KG FWD const-V [0,0] amplitude = {amp}"
+        amp = _kg_lanczos_beam_amplitude(pot)
+        assert abs(amp - 1.0) < 1e-4, f"KG Lanczos const-V [0,0] amplitude = {amp}"
 
     def test_methods_agree_constant_v(self):
         """All methods should give similar exit waves for constant potential."""
@@ -169,9 +147,7 @@ class TestConstantPotential:
         w_fr, _, _ = simulate_fresnel_as(pot, pw, fk, DZ, ENERGY)
         w_as, _, _ = simulate_fresnel_as(pot, pw, ak, DZ, ENERGY)
         w_wpm, _, _ = simulate_wpm(pot, pw, DZ, ENERGY, SAMPLING)
-        exit_beams, beam_idx, _ = simulate_kg_matexp(
-            pot, pw, DZ, ENERGY, SAMPLING, max_beams=100
-        )
+        amp_kg = _kg_lanczos_beam_amplitude(pot)
         w_par, _, _ = simulate_parabolic_ode(pot, pw, DZ, ENERGY, SAMPLING)
 
         # All should produce ~same beam amplitudes for [0,0]
@@ -179,7 +155,7 @@ class TestConstantPotential:
             "fresnel": beam_amplitude_normalized(np.asarray(w_fr), 0, 0),
             "as": beam_amplitude_normalized(np.asarray(w_as), 0, 0),
             "wpm": beam_amplitude_normalized(np.asarray(w_wpm), 0, 0),
-            "kg_matexp": _kg_beam_amplitude(exit_beams, beam_idx, 0, 0, GPTS),
+            "kg_lanczos": amp_kg,
             "parabolic": beam_amplitude_normalized(np.asarray(w_par), 0, 0),
         }
         for name, amp in amps.items():
@@ -211,18 +187,14 @@ class TestThinSpecimenAgreement:
         w_fr, _, _ = simulate_fresnel_as(pot, pw, fk, DZ, ENERGY)
         w_as, _, _ = simulate_fresnel_as(pot, pw, ak, DZ, ENERGY)
         w_wpm, _, _ = simulate_wpm(pot, pw, DZ, ENERGY, SAMPLING)
-        exit_beams, beam_idx, _ = simulate_kg_matexp(
-            pot, pw, DZ, ENERGY, SAMPLING, max_beams=200
-        )
-
         amp_fr = beam_amplitude_normalized(np.asarray(w_fr), 0, 0)
         amp_as = beam_amplitude_normalized(np.asarray(w_as), 0, 0)
         amp_wpm = beam_amplitude_normalized(np.asarray(w_wpm), 0, 0)
-        amp_kg = _kg_beam_amplitude(exit_beams, beam_idx, 0, 0, GPTS)
+        amp_kg = _kg_lanczos_beam_amplitude(pot)
 
         # All should agree within 1% for thin specimen
         ref = amp_fr
-        for name, amp in [("AS", amp_as), ("WPM", amp_wpm), ("KG matexp", amp_kg)]:
+        for name, amp in [("AS", amp_as), ("WPM", amp_wpm), ("KG Lanczos", amp_kg)]:
             rel_err = abs(amp - ref) / max(abs(ref), 1e-12)
             assert rel_err < 0.01, (
                 f"{name} vs Fresnel: {amp:.6f} vs {ref:.6f} (rel err {rel_err:.4f})"
