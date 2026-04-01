@@ -731,311 +731,6 @@ def _build_ms_slice_transfer(n_slice, k0, dz, beam_indices, sampling, gpts,
 
 
 # =============================================================================
-# 8. Klein-Gordon Solver: Beam-Basis Matrix Exponential
-# =============================================================================
-
-def _build_structure_matrix(n_sq_slice, k0, beam_indices, sampling, gpts):
-    """Build the KG structure matrix in the beam (Fourier) basis.
-
-    For the 2nd-order Klein-Gordon equation in Fourier space:
-        c_g'' + sum_{g'} M_{g,g'} c_{g'} = 0
-
-    where M_{g,g'} = (k0^2 * U_{g-g'}) - |g_perp|^2 * delta_{g,g'}
-
-    and U_g are the Fourier coefficients of n^2(x,y).
-
-    Parameters
-    ----------
-    n_sq_slice : array, shape (ny, nx)
-        n^2(x,y) for one slice.
-    k0 : float
-        Vacuum wavenumber.
-    beam_indices : array of shape (N_beams, 2)
-        (iy, ix) indices into the FFT grid.
-    sampling : tuple of float
-        (dy, dx) pixel sizes in Angstroms.
-    gpts : tuple of int
-        (ny, nx) grid size.
-
-    Returns
-    -------
-    M : array, shape (N_beams, N_beams), complex128
-        Structure matrix.
-    """
-    ny, nx = gpts
-    dy, dx = sampling
-    N_beams = len(beam_indices)
-
-    # Fourier coefficients of n^2(x,y)
-    U_full = jnp.fft.fft2(n_sq_slice) / (ny * nx)
-
-    # Transverse k_perp^2 for each beam
-    fy = jnp.fft.fftfreq(ny, d=dy)
-    fx = jnp.fft.fftfreq(nx, d=dx)
-
-    # Vectorized construction of M_{g,g'} = k0^2 * U_{g-g'} - |g_perp|^2 * delta_{g,g'}
-    beam_indices = np.asarray(beam_indices)
-    iy = beam_indices[:, 0]
-    ix = beam_indices[:, 1]
-
-    # Index differences with periodic wrapping, shape (N_beams, N_beams)
-    diy = (iy[:, None] - iy[None, :]) % ny
-    dix = (ix[:, None] - ix[None, :]) % nx
-
-    # Look up all Fourier coefficients at once
-    M = k0**2 * U_full[diy, dix]
-
-    # Compute k_perp^2 for each beam and subtract from diagonal
-    k_perp_sq = (2 * jnp.pi * fy[iy])**2 + (2 * jnp.pi * fx[ix])**2
-    M = M - jnp.diag(k_perp_sq)
-
-    return M
-
-
-def _build_transfer_matrix_slice(M, dz, N_beams):
-    """Build the transfer matrix for one slice via matrix exponential.
-
-    The 2nd-order system  c'' + M c = 0  becomes first-order:
-        d/dz [c, d]^T = A [c, d]^T
-
-    where A = [[0, I], [-M, 0]] and d = c'.
-
-    The exact solution is [c(dz), d(dz)]^T = expm(dz * A) [c(0), d(0)]^T.
-    """
-    from jax.scipy.linalg import expm
-
-    A = jnp.zeros((2 * N_beams, 2 * N_beams), dtype=jnp.complex128)
-    I_block = jnp.eye(N_beams, dtype=jnp.complex128)
-
-    # A = [[0, I], [-M, 0]]
-    A = A.at[:N_beams, N_beams:].set(I_block)
-    A = A.at[N_beams:, :N_beams].set(-M)
-
-    return expm(dz * A)
-
-
-def simulate_kg_matexp(potential, probe, slice_thickness, energy, sampling,
-                       beam_indices=None, max_beams=None):
-    """Exact solution of the Klein-Gordon equation via matrix exponential.
-
-    For each slice with piecewise-constant n^2(x,y), the 2nd-order KG
-    equation in the beam (Fourier) basis is a linear system with constant
-    coefficients, solved exactly via matrix exponential.
-
-    This captures both forward and backward scattering within each slice,
-    and is limited only by the beam set size and the piecewise-constant
-    approximation of the potential along z.
-
-    Parameters
-    ----------
-    potential : array, shape (N_slices, ny, nx)
-        Potential in Volts (average over each slice).
-    probe : array, shape (ny, nx)
-        Initial wavefront (complex).
-    slice_thickness : float
-        Thickness of each slice in Angstroms.
-    energy : float
-        Beam energy in eV.
-    sampling : tuple of float
-        Pixel sizes (dy, dx) in Angstroms.
-    beam_indices : array of shape (N_beams, 2), optional
-        (iy, ix) indices selecting which beams to include.
-        If None, uses all beams (only practical for small grids).
-    max_beams : int, optional
-        If beam_indices is None and the full grid exceeds this count,
-        select beams by lowest |k_perp| (closest to optical axis).
-
-    Returns
-    -------
-    exit_wave_beams : array, shape (N_beams,), complex
-        Fourier coefficients of exit wave for each beam.
-    beam_indices : array of shape (N_beams, 2)
-        The beam indices used.
-    wavefront_beams : array, shape (N_slices, N_beams), complex
-        Beam coefficients after each slice.
-    """
-    from wide_angle_propagation.bloch import select_beams
-
-    wavelength = energy2wavelength(energy)
-    k0 = 2 * jnp.pi / wavelength
-    ny, nx = probe.shape
-    gpts = (ny, nx)
-
-    # Select beams
-    if beam_indices is None:
-        total_beams = ny * nx
-        if max_beams is not None and total_beams > max_beams:
-            beam_indices, _ = select_beams(
-                gpts, sampling, max_beams=max_beams, energy=energy
-            )
-        else:
-            # Use all beams
-            iy_all, ix_all = np.mgrid[:ny, :nx]
-            beam_indices = np.stack([iy_all.ravel(), ix_all.ravel()], axis=1)
-
-    beam_indices = np.asarray(beam_indices)
-    N_beams = len(beam_indices)
-
-    # Initial conditions in beam space
-    # probe in Fourier: C_g = FFT(probe)[g] / (ny*nx)
-    probe_k = jnp.fft.fft2(jnp.asarray(probe, dtype=jnp.complex128)) / (ny * nx)
-
-    c = jnp.array([probe_k[iy, ix] for iy, ix in beam_indices])
-    # phi = dpsi/dz = i*k0*psi for forward-propagating plane wave
-    d = 1j * k0 * c
-
-    state = jnp.concatenate([c, d])
-
-    N_slices = potential.shape[0]
-    wavefront_beams = []
-
-    for i in range(N_slices):
-        n_sq = electron_refractive_index(potential[i], energy) ** 2
-        M = _build_structure_matrix(n_sq, k0, beam_indices, sampling, gpts)
-        T = _build_transfer_matrix_slice(M, slice_thickness, N_beams)
-
-        state = T @ state
-        wavefront_beams.append(state[:N_beams])
-
-    exit_beams = state[:N_beams]
-    return exit_beams, beam_indices, jnp.stack(wavefront_beams)
-
-
-# For backward compatibility, alias simulate_kg_ode to simulate_kg_matexp
-simulate_kg_ode = simulate_kg_matexp
-
-
-# =============================================================================
-# 8b. Forward-Only Klein-Gordon Solver (Paper's "KG FWD" method)
-# =============================================================================
-
-def _build_fwd_propagator_slice(M, dz):
-    """Build the forward-only KG propagator for one slice.
-
-    Factors the 2nd-order KG equation c'' + M c = 0 into forward/backward:
-        (d/dz - i*sqrt(M))(d/dz + i*sqrt(M)) c = 0
-
-    The forward-only solution is:
-        c(dz) = exp(i * dz * sqrt(M)) * c(0)
-
-    Computed via Hermitian eigendecomposition of M (M is Hermitian since
-    n²(x,y) is real):
-        M = V diag(lambda) V^H
-        exp(i * dz * sqrt(M)) = V diag(exp(i * dz * sqrt(lambda))) V^H
-
-    Using eigh instead of eig guarantees:
-      - Real eigenvalues
-      - Orthonormal eigenvectors (V is unitary)
-      - P is exactly unitary for propagating modes
-
-    Parameters
-    ----------
-    M : array, shape (N, N), complex
-        Structure matrix (Hermitian).
-    dz : float
-        Slice thickness.
-
-    Returns
-    -------
-    P : array, shape (N, N), complex
-        Forward propagator matrix (unitary).
-    """
-    # Force exact Hermiticity (remove floating-point asymmetry)
-    M_herm = (M + M.conj().T) / 2
-
-    eigenvalues, V = jnp.linalg.eigh(M_herm)
-
-    # eigenvalues are real (guaranteed by eigh).
-    # For propagating modes (eigenvalue > 0): sqrt is real, exp(i*dz*sqrt) is on unit circle.
-    # For evanescent modes (eigenvalue < 0): sqrt is purely imaginary, exp decays.
-    sqrt_lam = jnp.sqrt(jnp.array(eigenvalues, dtype=jnp.complex128))
-    sqrt_lam = jnp.where(jnp.imag(sqrt_lam) < 0, -sqrt_lam, sqrt_lam)
-
-    # Diagonal propagator
-    D = jnp.exp(1j * dz * sqrt_lam)
-
-    # P = V @ diag(D) @ V^H  (V is unitary from eigh)
-    P = V @ jnp.diag(D) @ V.conj().T
-    return P
-
-
-def simulate_kg_fwd(potential, probe, slice_thickness, energy, sampling,
-                    beam_indices=None, max_beams=None):
-    """Forward-only Klein-Gordon solver (paper's "KG FWD" method).
-
-    Solves the first-order forward wave equation:
-        dc/dz = i * sqrt(M) * c
-
-    where M is the structure matrix in the beam (Fourier) basis. This is
-    the exact wide-angle forward propagator — no paraxial approximation,
-    but no backscattering.
-
-    This corresponds to the "KG FWD" curve in Rother & Scheerschmidt 2009.
-
-    Parameters
-    ----------
-    potential : array, shape (N_slices, ny, nx)
-        Potential in Volts (average over each slice).
-    probe : array, shape (ny, nx)
-        Initial wavefront (complex).
-    slice_thickness : float
-        Thickness of each slice in Angstroms.
-    energy : float
-        Beam energy in eV.
-    sampling : tuple of float
-        Pixel sizes (dy, dx) in Angstroms.
-    beam_indices : array of shape (N_beams, 2), optional
-        (iy, ix) indices selecting which beams to include.
-    max_beams : int, optional
-        Select beams by lowest |k_perp| if grid too large.
-
-    Returns
-    -------
-    exit_wave_beams : array, shape (N_beams,), complex
-        Fourier coefficients of exit wave for each beam.
-    beam_indices : array of shape (N_beams, 2)
-        The beam indices used.
-    wavefront_beams : array, shape (N_slices, N_beams), complex
-        Beam coefficients after each slice.
-    """
-    from wide_angle_propagation.bloch import select_beams
-
-    wavelength = energy2wavelength(energy)
-    k0 = 2 * jnp.pi / wavelength
-    ny, nx = probe.shape
-    gpts = (ny, nx)
-
-    if beam_indices is None:
-        total_beams = ny * nx
-        if max_beams is not None and total_beams > max_beams:
-            beam_indices, _ = select_beams(
-                gpts, sampling, max_beams=max_beams, energy=energy
-            )
-        else:
-            iy_all, ix_all = np.mgrid[:ny, :nx]
-            beam_indices = np.stack([iy_all.ravel(), ix_all.ravel()], axis=1)
-
-    beam_indices = np.asarray(beam_indices)
-    N_beams = len(beam_indices)
-
-    # Initial conditions: beam coefficients from probe FFT
-    probe_k = jnp.fft.fft2(jnp.asarray(probe, dtype=jnp.complex128)) / (ny * nx)
-    c = jnp.array([probe_k[iy, ix] for iy, ix in beam_indices])
-
-    N_slices = potential.shape[0]
-    wavefront_beams = []
-
-    for i in range(N_slices):
-        n_sq = electron_refractive_index(potential[i], energy) ** 2
-        M = _build_structure_matrix(n_sq, k0, beam_indices, sampling, gpts)
-        P = _build_fwd_propagator_slice(M, slice_thickness)
-        c = P @ c
-        wavefront_beams.append(c)
-
-    return c, beam_indices, jnp.stack(wavefront_beams)
-
-
-# =============================================================================
 # 9. Parabolic (paraxial) Forward ODE Solver (diffrax)
 # =============================================================================
 
@@ -1121,29 +816,142 @@ def simulate_parabolic_ode(potential, probe, slice_thickness, energy, sampling,
 
 
 # =============================================================================
-# 10. Full Non-Parabolic KG ODE Solver (diffrax, 2nd order)
+# 10. KG ODE Solvers (diffrax)
 # =============================================================================
 
-def _kg_full_ode_rhs(t, y, args):
-    """RHS of the full 2nd-order KG equation with z-dependent potential.
+def _kg_forward_envelope_ode_rhs(t, y, args):
+    """RHS of the forward-only KG envelope equation.
 
-    The potential is piecewise constant over slices.  The current slice
-    index is computed from *t* so that a single ``diffeqsolve`` call spans
-    the whole unit cell and the adaptive solver chooses its own step sizes.
+    Starting from ψ = u·exp(i·k₀·z), the exact envelope equation is:
 
-    State y has shape (4, ny, nx): [Re(ψ), Im(ψ), Re(φ), Im(φ)]
-    where φ = dψ/dz.
+        u″ + 2i·k₀·u′ + ∇²⊥·u + k₀²(n² − 1)·u = 0
 
-    d²ψ/dz² + (∇²⊥ + k₀²n²)ψ = 0
+    Dropping u″ gives the slowly-varying-envelope approximation (SVEA):
 
-    Written as:
-        dψ/dz = φ
-        dφ/dz = -(∇²⊥ + k₀²n²)ψ = IFFT2(k_perp² · FFT2(ψ)) - k₀²n²·ψ
+        u′ = i/(2k₀) · [∇²⊥·u + k₀²(n² − 1)·u]
+
+    This is retained as a separate public solver because it is cheaper than
+    the full second-order KG system, but it is not the same physics as the
+    full non-paraxial ODE solver below.
     """
-    all_k0_sq_n_sq, k_perp_sq, slice_thickness, n_slices = args
+    all_k0_sq_delta, k_perp_sq, half_inv_k0, slice_thickness = args
 
-    slice_idx = jnp.floor(t / slice_thickness).astype(jnp.int32)
-    slice_idx = jnp.clip(slice_idx, 0, n_slices - 1)
+    slice_idx = jnp.clip(
+        jnp.floor(t / slice_thickness).astype(jnp.int32),
+        0, all_k0_sq_delta.shape[0] - 1,
+    )
+    k0_sq_delta = all_k0_sq_delta[slice_idx]
+
+    u = y[0] + 1j * y[1]
+    u_k = jnp.fft.fft2(u)
+    rhs = -jnp.fft.ifft2(k_perp_sq * u_k) + k0_sq_delta * u
+    du = 1j * half_inv_k0 * rhs
+
+    return jnp.stack([du.real, du.imag])
+
+
+def simulate_kg_ode_svea(potential, probe, slice_thickness, energy,
+                         sampling, initial_phi=None, rtol=1e-8,
+                         atol=1e-10):
+    """Solve the forward-envelope KG equation after dropping u″.
+
+    This keeps the full transverse Laplacian but removes the second
+    derivative in z, so it excludes backscattering.  It is useful as a fast
+    forward-only approximation, but it is not the full KG ODE.
+    """
+    import diffrax
+
+    wavelength = energy2wavelength(energy)
+    k0 = 2 * jnp.pi / wavelength
+    half_inv_k0 = 1.0 / (2.0 * k0)
+    ny, nx = probe.shape
+
+    dy, dx = sampling
+    ky = 2 * jnp.pi * jnp.fft.fftfreq(ny, d=dy)
+    kx = 2 * jnp.pi * jnp.fft.fftfreq(nx, d=dx)
+    Kx, Ky = jnp.meshgrid(kx, ky)
+    k_perp_sq = Kx**2 + Ky**2
+
+    N_slices = potential.shape[0]
+    total_thickness = N_slices * slice_thickness
+
+    all_k0_sq_delta = jnp.stack([
+        k0**2 * (electron_refractive_index(potential[i], energy) ** 2 - 1.0)
+        for i in range(N_slices)
+    ])
+
+    u0 = jnp.asarray(probe, dtype=jnp.complex128)
+    y0 = jnp.stack([u0.real, u0.imag])
+
+    k_perp_sq_max = jnp.max(k_perp_sq)
+    omega_kin = k_perp_sq_max * half_inv_k0
+    omega_pot = jnp.max(jnp.abs(all_k0_sq_delta)) * half_inv_k0
+    omega_max = omega_kin + omega_pot
+    dtmax = jnp.where(omega_max > 0.0, 3.5 / omega_max, jnp.inf)
+
+    solver = diffrax.Dopri8()
+    stepsize_controller = diffrax.PIDController(
+        rtol=rtol, atol=atol, dtmax=dtmax,
+    )
+    term = diffrax.ODETerm(_kg_forward_envelope_ode_rhs)
+
+    save_ts = jnp.arange(1, N_slices + 1) * slice_thickness
+    jump_ts = save_ts[:-1]
+    if jump_ts.size == 0:
+        jump_ts = None
+
+    stepsize_controller = diffrax.ClipStepSizeController(
+        stepsize_controller,
+        jump_ts=jump_ts,
+    )
+
+    sol = diffrax.diffeqsolve(
+        term,
+        solver,
+        t0=0.0,
+        t1=total_thickness,
+        dt0=jnp.minimum(slice_thickness / 2.0, dtmax),
+        y0=y0,
+        args=(all_k0_sq_delta, k_perp_sq, half_inv_k0, slice_thickness),
+        stepsize_controller=stepsize_controller,
+        max_steps=N_slices * 200,
+        saveat=diffrax.SaveAt(ts=save_ts),
+    )
+
+    envelope_wf = sol.ys[:, 0, :, :] + 1j * sol.ys[:, 1, :, :]
+    carrier_phases = jnp.exp(1j * k0 * save_ts)[:, None, None]
+    wavefronts = envelope_wf * carrier_phases
+
+    y_final = sol.ys[-1]
+    u_exit = y_final[0] + 1j * y_final[1]
+    carrier_exit = jnp.exp(1j * k0 * total_thickness)
+    exit_wave = u_exit * carrier_exit
+
+    last_slice_idx = N_slices - 1
+    k0_sq_delta_exit = all_k0_sq_delta[last_slice_idx]
+    u_exit_k = jnp.fft.fft2(u_exit)
+    du_exit = 1j * half_inv_k0 * (
+        -jnp.fft.ifft2(k_perp_sq * u_exit_k) + k0_sq_delta_exit * u_exit
+    )
+    exit_phi = (du_exit + 1j * k0 * u_exit) * carrier_exit
+
+    detector_wavefront = jnp.fft.fftshift(jnp.fft.fft2(exit_wave))
+    diffraction_pattern = (
+        jnp.square(detector_wavefront.real)
+        + jnp.square(detector_wavefront.imag)
+    )
+
+    return exit_wave, exit_phi, diffraction_pattern, wavefronts
+
+
+def _kg_full_ode_rhs(t, y, args):
+    """RHS of the full second-order KG system with slice-wise potential."""
+    all_k0_sq_n_sq, k_perp_sq, slice_thickness = args
+
+    slice_idx = jnp.clip(
+        jnp.floor(t / slice_thickness).astype(jnp.int32),
+        0, all_k0_sq_n_sq.shape[0] - 1,
+    )
     k0_sq_n_sq = all_k0_sq_n_sq[slice_idx]
 
     psi = y[0] + 1j * y[1]
@@ -1155,20 +963,29 @@ def _kg_full_ode_rhs(t, y, args):
     return jnp.stack([phi.real, phi.imag, dphi.real, dphi.imag])
 
 
+def _kg_forward_vacuum_phi(psi, k0, k_perp_sq):
+    """Return the exact forward vacuum derivative for an arbitrary probe."""
+    psi_k = jnp.fft.fft2(psi)
+    kz = jnp.sqrt(jnp.array(k0**2 - k_perp_sq, dtype=jnp.complex128))
+    kz = jnp.where(jnp.imag(kz) < 0, -kz, kz)
+    return jnp.fft.ifft2(1j * kz * psi_k)
+
+
 def simulate_kg_ode_full(potential, probe, slice_thickness, energy,
                          sampling, initial_phi=None, rtol=1e-8,
                          atol=1e-10):
-    """Solve the full non-parabolic 2nd-order KG equation via ODE integration.
+    """Solve the full non-paraxial second-order KG equation.
 
-    Solves d²ψ/dz² + (∇²⊥ + k₀²n²)ψ = 0 as a first-order system using
-    diffrax.  This includes both forward and backward scattering, unlike the
-    paraxial (parabolic) approximation.  No matrix decomposition — the
-    Laplacian is applied via FFT.
+    This restores the true KG ODE system,
 
-    A **single** ``diffeqsolve`` call covers all *N_slices* slices.  The
-    adaptive step-size controller is free to choose large steps where the
-    solution is smooth and refine near slice boundaries where the potential
-    jumps.
+        d²ψ/dz² + (∇²⊥ + k₀² n²) ψ = 0,
+
+    rather than the slowly-varying-envelope approximation obtained by
+    dropping u″ after ψ = u·exp(i·k₀·z).
+
+    The potential is treated as piecewise constant over each slice, and the
+    adaptive solver is clipped to the slice boundaries so it never steps
+    across a discontinuity in n²(z).
 
     Parameters
     ----------
@@ -1183,7 +1000,8 @@ def simulate_kg_ode_full(potential, probe, slice_thickness, energy,
     sampling : tuple of float
         Pixel sizes (dy, dx) in Angstroms.
     initial_phi : array, shape (ny, nx), optional
-        Initial dψ/dz.  Defaults to i·k₀·ψ (forward plane wave).
+        Initial dψ/dz. If omitted, the exact forward vacuum derivative of the
+        input probe is used.
     rtol, atol : float
         Tolerances for the adaptive ODE solver.
 
@@ -1192,7 +1010,7 @@ def simulate_kg_ode_full(potential, probe, slice_thickness, energy,
     exit_wave : array, shape (ny, nx)
         ψ at the exit plane.
     exit_phi : array, shape (ny, nx)
-        dψ/dz at the exit plane (pass as initial_phi for next cell).
+        dψ/dz at the exit plane.
     diffraction_pattern : array, shape (ny, nx)
         |FFT(exit_wave)|².
     wavefronts : array, shape (N_slices, ny, nx)
@@ -1213,7 +1031,6 @@ def simulate_kg_ode_full(potential, probe, slice_thickness, energy,
     N_slices = potential.shape[0]
     total_thickness = N_slices * slice_thickness
 
-    # Pre-compute k0²n² for every slice
     all_k0_sq_n_sq = jnp.stack([
         k0**2 * electron_refractive_index(potential[i], energy) ** 2
         for i in range(N_slices)
@@ -1221,33 +1038,45 @@ def simulate_kg_ode_full(potential, probe, slice_thickness, energy,
 
     psi0 = jnp.asarray(probe, dtype=jnp.complex128)
     if initial_phi is None:
-        phi0 = 1j * k0 * psi0
+        phi0 = _kg_forward_vacuum_phi(psi0, k0, k_perp_sq)
     else:
         phi0 = jnp.asarray(initial_phi, dtype=jnp.complex128)
 
     y0 = jnp.stack([psi0.real, psi0.imag, phi0.real, phi0.imag])
 
-    solver = diffrax.Tsit5()
-    stepsize_controller = diffrax.PIDController(rtol=rtol, atol=atol)
+    omega_bound_sq = jnp.max(k_perp_sq) + jnp.max(jnp.abs(all_k0_sq_n_sq))
+    omega_max = jnp.sqrt(jnp.maximum(omega_bound_sq, 1e-30))
+    dtmax = 3.5 / omega_max
+
+    solver = diffrax.Dopri8()
+    stepsize_controller = diffrax.PIDController(
+        rtol=rtol, atol=atol, dtmax=dtmax,
+    )
     term = diffrax.ODETerm(_kg_full_ode_rhs)
 
-    # Save at every slice boundary for the wavefronts output
     save_ts = jnp.arange(1, N_slices + 1) * slice_thickness
+    jump_ts = save_ts[:-1]
+    if jump_ts.size == 0:
+        jump_ts = None
+
+    stepsize_controller = diffrax.ClipStepSizeController(
+        stepsize_controller,
+        jump_ts=jump_ts,
+    )
 
     sol = diffrax.diffeqsolve(
         term,
         solver,
         t0=0.0,
         t1=total_thickness,
-        dt0=slice_thickness / 10.0,
+        dt0=jnp.minimum(slice_thickness / 2.0, dtmax),
         y0=y0,
-        args=(all_k0_sq_n_sq, k_perp_sq, slice_thickness, N_slices),
+        args=(all_k0_sq_n_sq, k_perp_sq, slice_thickness),
         stepsize_controller=stepsize_controller,
-        max_steps=N_slices * 4096,
+        max_steps=N_slices * 2000,
         saveat=diffrax.SaveAt(ts=save_ts),
     )
 
-    # sol.ys has shape (N_slices, 4, ny, nx)
     wavefronts = sol.ys[:, 0, :, :] + 1j * sol.ys[:, 1, :, :]
 
     y_final = sol.ys[-1]

@@ -18,16 +18,12 @@ from wide_angle_propagation.wpm import (
     energy2wavelength,
     simulate_fresnel_as,
     simulate_wpm,
-    simulate_kg_fwd,
     simulate_parabolic_ode,
     fresnel_propagation_kernel,
     angular_spectrum_propagation_kernel,
 )
-from wide_angle_propagation.bloch import (
-    build_scattering_matrix,
-    build_scattering_matrix_fwd,
-    beam_amplitudes_vs_thickness,
-    beam_amplitudes_vs_thickness_fwd,
+from wide_angle_propagation.klein_gordon import (
+    beam_amplitudes_fwd_direct_allbeams,
 )
 from tests.conftest import (
     beam_amplitude_normalized,
@@ -237,114 +233,48 @@ class TestCrossMethodConsistency:
 
 
 # ---------------------------------------------------------------------------
-# Tests: Bloch wave (eigendecomposition)
+# Tests: Forward-only KG Lanczos method
 # ---------------------------------------------------------------------------
 
 @pytest.mark.slow
-class TestBlochWave:
-    """Bloch wave scattering matrix eigendecomposition."""
+class TestKGLanczosVsPaperFWD:
+    """Lanczos KG FWD beam [0,28] should match the paper's FWD curve."""
 
-    def test_bloch_beam_00_vs_kg_ode(self, au_potential_lobato, au_sampling):
-        """Bloch wave [0,0] should match KG matexp [0,0] within tolerance."""
-        pot_array, slice_dz = au_potential_lobato
-        n_cells_array = np.arange(0, 11)  # 0 to 10 cells
-        energy = AU_ENERGY
-        gpts = AU_GPTS
-        sampling = au_sampling
+    MEAN_ABS_TOLERANCE = 0.010
+    CORRELATION_TOLERANCE = 0.98
 
-        S, beam_idx = build_scattering_matrix(
-            pot_array, slice_dz, energy, sampling,
-            max_beams=100,
-        )
-
-        amps = beam_amplitudes_vs_thickness(
-            S, beam_idx, n_cells_array, energy, gpts, sampling
-        )
-
-        bloch_00 = amps.get((0, 0), None)
-        assert bloch_00 is not None, "Bloch wave did not produce (0,0) beam"
-
-        # At N=0 the amplitude should be 1.0 (plane wave)
-        assert abs(bloch_00[0] - 1.0) < 1e-6, (
-            f"Bloch [0,0] at 0 cells = {bloch_00[0]:.6f}, expected 1.0"
-        )
-
-        # At N=1 the amplitude should be less than 1.0 (scattering occurred)
-        assert bloch_00[1] < 1.0, (
-            f"Bloch [0,0] at 1 cell = {bloch_00[1]:.6f}, expected < 1.0"
-        )
-
-
-# ---------------------------------------------------------------------------
-# Tests: Forward-only KG (paper's "KG FWD" method)
-# ---------------------------------------------------------------------------
-
-@pytest.mark.slow
-class TestKGFwdVsPaperFWD:
-    """Forward-only KG beam [0,28] should match the paper's FWD curve."""
-
-    TOLERANCE = 0.20  # 20% — eigendecomposition vs digitized data
-
-    def test_kg_fwd_beam_028_wk(self, au_potential_wk, au_sampling,
-                                paper_beam_0_28_kg_fwd):
-        """KG FWD [0,28] vs paper's FWD ODE at selected thicknesses."""
+    def test_kg_lanczos_beam_028_wk(self, au_potential_wk, au_sampling,
+                                    paper_beam_0_28_kg_fwd):
+        """Lanczos KG FWD [0,28] vs paper's FWD ODE at selected thicknesses."""
         pot_array, slice_dz = au_potential_wk
         energy = AU_ENERGY
         gpts = AU_GPTS
+        n_cells_array = np.arange(0, 26)
 
-        S_fwd, beam_idx = build_scattering_matrix_fwd(
-            pot_array, slice_dz, energy, au_sampling,
-            max_beams=500,
-        )
-
-        amps = beam_amplitudes_vs_thickness_fwd(
-            S_fwd, beam_idx, np.arange(0, 26), gpts
+        amps, _, _ = beam_amplitudes_fwd_direct_allbeams(
+            pot_array,
+            slice_dz,
+            energy,
+            au_sampling,
+            n_cells_array,
+            gpts,
+            lanczos_m=100,
         )
 
         computed = amps.get((0, 28), None)
-        assert computed is not None, "KG FWD did not produce (0,28) beam"
+        assert computed is not None, "KG Lanczos did not produce (0,28) beam"
 
         x = np.arange(26, dtype=float)
         reference = paper_beam_0_28_kg_fwd(x)
 
         mask = x >= 5
-        rel_errors = np.abs(computed[mask] - reference[mask]) / np.maximum(
-            reference[mask], 1e-6
+        abs_errors = np.abs(computed[mask] - reference[mask])
+        mean_abs_err = np.mean(abs_errors)
+        corr = np.corrcoef(computed[mask], reference[mask])[0, 1]
+
+        assert mean_abs_err < self.MEAN_ABS_TOLERANCE, (
+            f"KG Lanczos [0,28] WK vs paper FWD: mean abs error = {mean_abs_err:.4f}"
         )
-        mean_err = np.mean(rel_errors)
-        assert mean_err < self.TOLERANCE, (
-            f"KG FWD [0,28] WK vs paper FWD: mean rel error = {mean_err:.3f}"
-        )
-
-
-@pytest.mark.slow
-class TestBlochFwdVsFullBloch:
-    """Forward-only Bloch eigendecomposition should give physical results."""
-
-    def test_bloch_fwd_beam_00_decreases(self, au_potential_lobato, au_sampling):
-        """Bloch FWD [0,0] should start at 1.0 and decrease with thickness."""
-        pot_array, slice_dz = au_potential_lobato
-        energy = AU_ENERGY
-        gpts = AU_GPTS
-
-        S_fwd, beam_idx = build_scattering_matrix_fwd(
-            pot_array, slice_dz, energy, au_sampling,
-            max_beams=100,
-        )
-
-        amps = beam_amplitudes_vs_thickness_fwd(
-            S_fwd, beam_idx, np.arange(0, 11), gpts
-        )
-
-        bloch_fwd_00 = amps.get((0, 0), None)
-        assert bloch_fwd_00 is not None, "Bloch FWD did not produce (0,0) beam"
-
-        # At N=0, amplitude should be 1.0
-        assert abs(bloch_fwd_00[0] - 1.0) < 1e-6, (
-            f"Bloch FWD [0,0] at 0 cells = {bloch_fwd_00[0]:.6f}, expected 1.0"
-        )
-
-        # At N=1, amplitude should decrease (scattering)
-        assert bloch_fwd_00[1] < 1.0, (
-            f"Bloch FWD [0,0] at 1 cell = {bloch_fwd_00[1]:.6f}, expected < 1.0"
+        assert corr > self.CORRELATION_TOLERANCE, (
+            f"KG Lanczos [0,28] WK vs paper FWD: correlation = {corr:.4f}"
         )

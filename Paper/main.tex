@@ -46,13 +46,13 @@ amplitudes at high angles (e.g., 135 mrad) when propagating through thick crysta
 
 Methods to overcome the paraxial approximation in solutions to the wave equation have already been developed in the light optics community
 (where the multislice method is known as the Beam Propagation Method (BPM)) by developing non-paraxial propagation techniques through the use of higher
-order Taylor expansions of the propagation operator of the time-independent Helmholtz wave equation, known as Padé approximants \cite{????}. Padé approximants have been
+order Taylor expansions of the propagation operator of the time-independent Helmholtz wave equation, known as Padé approximants \cite{Hadley1992}. Padé approximants have been
 shown to be accurate to much higher angles than the traditional Fresnel propagator multislice method, but can become computationally prohibitive to compute for higher order
 approximants. In order to overcome the limitations of the paraxial approximation and the computational cost of higher order Padé approximants, the Wave Propagation
-Method (WPM) was developed by \cite{Brenner1994}, which solves the Helmholtz wave equation in the one-way wave approximation using a Fourier integral formulation.
+Method (WPM) was developed by \cite{Brenner1993}, which solves the Helmholtz wave equation in the one-way wave approximation using a Fourier integral formulation.
 
-The WPM has been demonstrated to be accurate up to 85 degrees from the optical axis \cite{????} and can leverage the efficiency of the Fast Fourier Transform (FFT) for computation,
-meaning it can be implemented in a way that is more computationally efficient than higher order Padé approximants \cite{Schmidt}. Given that the WPM was developed
+The WPM has been demonstrated to be accurate up to 85 degrees from the optical axis \cite{Schmidt2016} and can leverage the efficiency of the Fast Fourier Transform (FFT) for computation,
+meaning it can be implemented in a way that is more computationally efficient than higher order Padé approximants \cite{Hadley1992}. Given that the WPM was developed
 as a solution for light optics and the time-independent Helmholtz wave equation, we first establish the connection between the time-independent Dirac equation,
 Klein-Gordon equation, and the approximated Klein-Gordon equation (a.k.a. relativistically corrected Schrodinger equation) in the framework of the Helmholtz wave equation in order to
 justify the application of the WPM to electron microscopy multislice simulations.
@@ -173,8 +173,8 @@ Rel. Schrodinger & $\nabla^2 \psi + k_0^2 n^2 \psi = 0$ & $\sqrt{1 - \sigma V}$ 
 \end{table}
 
 \section{Wave Propagation Method}
-The Wave Propagation Method (WPM) is a numerical method for solving the Helmholtz wave equation in the forward scattering approximation that was introduced by \cite{Brenner1994} and has been demonstrated
-to be accurate up to 85 degrees from the optical axis \cite{????}. A systematic derivation of the WPM from the Helmholtz wave equation is given by \cite{Schmidt}. For conciseness,
+The Wave Propagation Method (WPM) is a numerical method for solving the Helmholtz wave equation in the forward scattering approximation that was introduced by \cite{Brenner1993} and has been demonstrated
+to be accurate up to 85 degrees from the optical axis \cite{Schmidt2016}. A systematic derivation of the WPM from the Helmholtz wave equation is given by \cite{Schmidt2016}. For conciseness,
 we present a summary of the derivation here.
 
 Starting with the scalar Helmholtz equation for the wavefunction $\psi$ in a medium with a z-dependent refractive index $n$:
@@ -266,16 +266,16 @@ Although the WPM is accurate to high angles, its main drawback is that for each 
 the order of computational complexity is $O(N^{2D})$ where $N$ is the number of grid points, and $D$ is the number of transverse dimensions. Such a computational cost is prohibitive, as an
 object slice that is discretized into, for example, $100 \times 100$ pixels and has a unique refractive index value at each pixel would require 10,000 unique Fourier transforms per slice for one propagation step.
 
-\cite{Schmidt} proposed a modification to the WPM that reduces the computational complexity from $O(N^{2D})$ to $O(M N^D \log N)$, where $M$ is the number of "unique" refractive index values in the slice.
+\cite{Schmidt2016} proposed a modification to the WPM that reduces the computational complexity from $O(N^{2D})$ to $O(M N^D \log N)$, where $M$ is the number of "unique" refractive index values in the slice.
 By applying a mask $I_m(x,y)$ that selects pixels with the same refractive index $n_m$, the propagation step can be written as a sum over $M$ unique propagations. However, in the case of electron microscopy multislice
 this algorithm poses two problems: First, applying a mask to the propagator negates the possibility to differentiate through the propagation step, which is a necessary requirement to use the WPM as a forward model
 to solve inverse problems via gradient descent, as is needed to perform ptychography. Second, in the case of electron microscopy, the refractive index is a continuous function of the potential $V(\mathbf{r})$, and thus
-there are usually not very many "unique" refractive index values in a slice. \cite{2025paper which creates a differential WPM} attempted to overcome both of these problems by introducing a
+there are usually not very many "unique" refractive index values in a slice. \cite{DiffWPM2025} attempted to overcome both of these problems by introducing a
 continuous binning step in a binary refractive index medium.
 
 \section{Binning of refractive index values for efficient WPM multislice}
 
-To make the computation of the wave propagation method tractable and limit the need for $O(N^{2D})$ computations, we adapt the WPM algorithm presented in \cite{2025_paper} which
+To make the computation of the wave propagation method tractable and limit the need for $O(N^{2D})$ computations, we adapt the WPM algorithm presented in \cite{DiffWPM2025} which
 uses a refractive index binning strategy to limit the number of unique refractive index values in a slice while maintaining differentiability with respect to the refractive index map $n(x,y)$.
 
 To implement this method, we first discretize the refractive index range $[n_{\mathrm{min}}, n_{\mathrm{max}}]$ of the current slice into $N_{\mathrm{bins}}$ discrete reference values, denoted as
@@ -309,7 +309,7 @@ w_{\mathrm{raw}} = \frac{n(x,y) - n_L}{n_R - n_L}, \quad w_{\mathrm{raw}} \in [0
 \]
 
 To ensure smooth gradients and minimize discretization artifacts, we map this linear weight through a smoothstep activation function $S(w)$,
-akin to the spatial partitioning technique demonstrated by \cite{Barré and Brunel} via a cubic Hermite interpolation function:
+akin to the spatial partitioning technique demonstrated by \cite{BarreBrunel} via a cubic Hermite interpolation function:
 
 \[
 w = S(w_{\mathrm{raw}}) = 3w_{\mathrm{raw}}^2 - 2w_{\mathrm{raw}}^3
@@ -423,4 +423,8 @@ and clarified why swapping in an angular spectrum kernel does not remove the lin
 binning strategy, the method becomes computationally tractable while remaining suitable for gradient-based inverse problems. Benchmarks against high-angle
 reference solutions and thick-sample STEM simulations indicate that WPM provides improved accuracy in regimes where the paraxial approximation fails. Future work
 will focus on systematic comparisons to Padé-based wide-angle multislice schemes and integration with large-scale ptychographic reconstructions.
+
+\bibliographystyle{unsrt}
+\bibliography{sample}
+
 \end{document}

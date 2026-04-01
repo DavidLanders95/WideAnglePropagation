@@ -1,8 +1,15 @@
 # Fdb version 4
-["pdflatex"] 1769963482.95204 "/home/dl277493/Documents/Code/jax-pytchography/jax-ptychography/Paper/main.tex" "main.pdf" "main" 1769963484.36304 0
-  "../wpm/Au_beam_amplitudes.pdf" 1769963175.14279 23347 6caffd6ed19131c4fa8f919bd19a8d8d ""
+["bibtex main"] 0 "main.aux" "main.bbl" "main" 1774891532.70946 -1
+  "./sample.bib" 1774891478.54597 3142 294552900939565a449f0ae58cacaf9d ""
+  "/usr/share/texlive/texmf-dist/bibtex/bst/base/unsrt.bst" 1292289607 18030 1376b4b231b50c66211e47e42eda2875 ""
+  "main.aux" 1774891532.2581 5658 bc7c5b084f9cf536684e52985491f82d "pdflatex"
+  (generated)
+  "main.bbl"
+  "main.blg"
+  (rewritten before read)
+["pdflatex"] 1774891531.01429 "/home/dl277493/Documents/Code/WideAnglePropagation/Paper/main.tex" "main.pdf" "main" 1774891532.71316 2
   "/etc/texmf/web2c/texmf.cnf" 1723130536.00682 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/dl277493/Documents/Code/jax-pytchography/jax-ptychography/Paper/main.tex" 1769963478.24982 29721 18dd1d695fa54446686d1613af9d8d82 ""
+  "/home/dl277493/Documents/Code/WideAnglePropagation/Paper/main.tex" 1774891528.70655 29513 4289039fd4a7e8c5470e291bb92c1709 ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/tcrm1000.tfm" 1136768653 1536 e07581a4bb3136ece9eeb4c3ffab8233 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmbsy5.tfm" 1246382020 1120 1e8878807317373affa7f7bba4cf2f6a ""
@@ -181,9 +188,11 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1723130681.70983 5353513 5ed5862036d4682a97b92bdbb24a70e8 ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1723130750 6837962 1ecb84dd045c7e95dc614e70cd0e5c1e ""
-  "main.aux" 1769963484.16627 5729 70949865237419e3db4a7c48929d1937 "pdflatex"
-  "main.out" 1769963484.17349 2203 75e7a1e4de208ce1497abc9c3c7a3553 "pdflatex"
-  "main.tex" 1769963478.24982 29721 18dd1d695fa54446686d1613af9d8d82 ""
+  "Au_beam_amplitudes" 0 -1 0 ""
+  "main.aux" 1774891532.2581 5658 bc7c5b084f9cf536684e52985491f82d "pdflatex"
+  "main.bbl" 1768986194.5121 0 d41d8cd98f00b204e9800998ecf8427e "bibtex main"
+  "main.out" 1774891532.26522 2203 75e7a1e4de208ce1497abc9c3c7a3553 "pdflatex"
+  "main.tex" 1774891528.70655 29513 4289039fd4a7e8c5470e291bb92c1709 ""
   (generated)
   "main.aux"
   "main.log"
