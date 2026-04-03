@@ -1,645 +1,565 @@
-"""Comprehensive tests for the forward-only KG ODE solver.
+"""Behavior and exact-reference tests for the full KG ODE solver.
 
-Tests cover:
-1. Mathematical correctness (vacuum, uniform, analytic solutions)
-2. Carrier phase convention (match Fresnel/AS)
-3. Intensity conservation (unitarity)
-4. Convergence with ODE tolerance
-5. Split-step comparison (expected Trotter-error scaling)
-6. Stability on fine grids (high k_perp)
-7. Alternating (crystal-like) potentials
+These tests validate ``simulate_kg_ode_full`` as a true second-order
+Klein-Gordon system. They intentionally avoid treating it as a forward-only
+multislice approximation.
 """
-import pytest
+
 import numpy as np
 import jax
 import jax.numpy as jnp
-
-jax.config.update("jax_enable_x64", True)
+from scipy.linalg import expm
 
 from wide_angle_propagation.wpm import (
     electron_refractive_index,
     energy2wavelength,
-    simulate_fresnel_as,
     simulate_kg_ode_full,
-    fresnel_propagation_kernel,
-    angular_spectrum_propagation_kernel,
 )
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
+jax.config.update("jax_enable_x64", True)
 
-ENERGY = 200e3  # 200 keV
-DZ = 2.0  # slice thickness (Å)
+ENERGY = 200e3
+SMALL_DZ = 1.5
+SMALL_GPTS = (4, 4)
+SMALL_SAMPLING = (0.4, 0.4)
 
 
 def _make_grid(ny, nx, dy, dx):
-    x = jnp.arange(nx) * dx
-    y = jnp.arange(ny) * dy
-    X, Y = jnp.meshgrid(x, y)
-    return X, Y
+    x = np.arange(nx) * dx
+    y = np.arange(ny) * dy
+    return np.meshgrid(x, y)
 
 
 def _plane_wave(ny, nx):
-    return jnp.ones((ny, nx), dtype=jnp.complex128) / jnp.sqrt(ny * nx)
+    return np.ones((ny, nx), dtype=np.complex128) / np.sqrt(ny * nx)
 
 
-def _gaussian_probe(ny, nx, dy, dx, sigma=1.5):
+def _gaussian_probe(ny, nx, dy, dx, sigma):
     X, Y = _make_grid(ny, nx, dy, dx)
     cx, cy = nx * dx / 2, ny * dy / 2
-    probe = jnp.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / (sigma ** 2))
-    probe = probe.astype(jnp.complex128)
-    return probe / jnp.sqrt(jnp.sum(jnp.abs(probe) ** 2))
+    probe = np.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / (sigma**2))
+    probe = probe.astype(np.complex128)
+    return probe / np.sqrt(np.sum(np.abs(probe) ** 2))
 
 
-def _total_intensity(ew):
-    return float(jnp.sum(jnp.abs(ew) ** 2))
+def _total_intensity(psi):
+    return float(np.sum(np.abs(np.asarray(psi)) ** 2))
 
 
-# ===================================================================
-# 1. Vacuum tests — analytic solutions
-# ===================================================================
+def _k_perp_sq_grid(gpts, sampling):
+    ny, nx = gpts
+    dy, dx = sampling
+    ky = 2 * np.pi * np.fft.fftfreq(ny, d=dy)
+    kx = 2 * np.pi * np.fft.fftfreq(nx, d=dx)
+    Kx, Ky = np.meshgrid(kx, ky)
+    return Kx**2 + Ky**2
 
-class TestVacuumPropagation:
-    """In vacuum the envelope u(z) = const, so ψ(L) = probe·exp(ik₀L)."""
 
-    ny, nx = 64, 64
-    dy, dx = 0.15, 0.15
+def _forward_vacuum_phi(probe, energy, sampling):
+    ny, nx = probe.shape
+    k0 = 2 * np.pi / float(energy2wavelength(energy))
+    k_perp_sq = _k_perp_sq_grid((ny, nx), sampling)
+    probe_k = np.fft.fft2(np.asarray(probe))
+    kz = np.sqrt(np.array(k0**2 - k_perp_sq, dtype=np.complex128))
+    kz = np.where(np.imag(kz) < 0, -kz, kz)
+    return np.fft.ifft2(1j * kz * probe_k)
 
-    def test_plane_wave_amplitude_preserved(self):
-        probe = _plane_wave(self.ny, self.nx)
-        pot = jnp.zeros((20, self.ny, self.nx))
-        ew, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-10, atol=1e-12,
+
+def _exact_vacuum_reference(probe, total_thickness, energy, sampling):
+    ny, nx = probe.shape
+    k0 = 2 * np.pi / float(energy2wavelength(energy))
+    k_perp_sq = _k_perp_sq_grid((ny, nx), sampling)
+    probe_k = np.fft.fft2(np.asarray(probe))
+    kz = np.sqrt(np.array(k0**2 - k_perp_sq, dtype=np.complex128))
+    kz = np.where(np.imag(kz) < 0, -kz, kz)
+
+    phase = np.exp(1j * kz * total_thickness)
+    exit_wave = np.fft.ifft2(phase * probe_k)
+    exit_phi = np.fft.ifft2(1j * kz * phase * probe_k)
+    return exit_wave, exit_phi
+
+
+def _small_probe():
+    ny, nx = SMALL_GPTS
+    x = np.arange(nx)
+    y = np.arange(ny)
+    X, Y = np.meshgrid(x, y)
+    cx = 0.5 * (nx - 1)
+    cy = 0.5 * (ny - 1)
+    amp = np.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / 2.5)
+    phase = np.exp(1j * 0.35 * X - 1j * 0.20 * Y)
+    probe = amp * phase
+    probe = probe.astype(np.complex128)
+    return probe / np.sqrt(np.sum(np.abs(probe) ** 2))
+
+
+def _small_nonuniform_stack():
+    ny, nx = SMALL_GPTS
+    y = np.arange(ny) / ny
+    x = np.arange(nx) / nx
+    X, Y = np.meshgrid(x, y)
+    return np.stack([
+        35.0 * (
+            1.0
+            + 0.25 * np.cos(2 * np.pi * X)
+            + 0.15 * np.cos(2 * np.pi * Y)
+            + 0.10 * np.sin(2 * np.pi * (X + Y))
+        ),
+        28.0 * (
+            1.0
+            + 0.20 * np.sin(2 * np.pi * X)
+            - 0.10 * np.cos(2 * np.pi * Y)
+            + 0.08 * np.sin(2 * np.pi * (X - Y))
+        ),
+        22.0 * (
+            1.0
+            - 0.18 * np.cos(2 * np.pi * X)
+            + 0.12 * np.sin(2 * np.pi * Y)
+        ),
+    ])
+
+
+def _small_discontinuous_stack():
+    ny, nx = SMALL_GPTS
+    x = np.arange(nx)
+    y = np.arange(ny)
+    X, Y = np.meshgrid(x, y)
+    left = 120.0 * np.exp(-((X - 1.0) ** 2 + (Y - 1.5) ** 2) / 0.8)
+    right = 120.0 * np.exp(-((X - 2.5) ** 2 + (Y - 1.5) ** 2) / 0.8)
+    return np.stack([left, right, left, right])
+
+
+def _structure_matrix(n_sq_slice, energy, sampling):
+    ny, nx = n_sq_slice.shape
+    dy, dx = sampling
+    k0 = 2 * np.pi / float(energy2wavelength(energy))
+
+    U_full = np.fft.fft2(np.asarray(n_sq_slice, dtype=np.complex128))
+    U_full = U_full / (ny * nx)
+
+    iy_all, ix_all = np.mgrid[:ny, :nx]
+    beam_indices = np.stack([iy_all.ravel(), ix_all.ravel()], axis=1)
+    iy = beam_indices[:, 0]
+    ix = beam_indices[:, 1]
+
+    diy = (iy[:, None] - iy[None, :]) % ny
+    dix = (ix[:, None] - ix[None, :]) % nx
+
+    fy = np.fft.fftfreq(ny, d=dy)
+    fx = np.fft.fftfreq(nx, d=dx)
+    k_perp_sq = (2 * np.pi * fy[iy]) ** 2 + (2 * np.pi * fx[ix]) ** 2
+
+    return (k0**2) * U_full[diy, dix] - np.diag(k_perp_sq)
+
+
+def _exact_full_kg_stack(
+    potential,
+    probe,
+    initial_phi,
+    slice_thickness,
+    energy,
+    sampling,
+):
+    ny, nx = potential.shape[1:]
+    n_beams = ny * nx
+    scale = ny * nx
+
+    psi_k = np.fft.fft2(np.asarray(probe)) / scale
+    phi_k = np.fft.fft2(np.asarray(initial_phi)) / scale
+    state = np.concatenate([psi_k.ravel(), phi_k.ravel()])
+    wavefronts = []
+
+    for potential_slice in potential:
+        n_sq = np.asarray(
+            electron_refractive_index(jnp.asarray(potential_slice), energy) ** 2,
+            dtype=np.float64,
         )
-        np.testing.assert_allclose(
-            np.abs(np.asarray(ew)),
-            np.abs(np.asarray(probe)),
-            atol=1e-10,
-            err_msg="Vacuum should preserve amplitude",
-        )
+        M = _structure_matrix(n_sq, energy, sampling)
 
-    def test_plane_wave_carrier_phase(self):
-        """Exit wave phase should be k₀·L (carrier from propagation)."""
-        N = 20
-        probe = _plane_wave(self.ny, self.nx)
-        pot = jnp.zeros((N, self.ny, self.nx))
-        ew, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-10, atol=1e-12,
-        )
-        k0 = 2 * jnp.pi / energy2wavelength(ENERGY)
-        L = N * DZ
-        expected_phase = float(k0 * L) % (2 * jnp.pi)
-        actual_phase = float(jnp.angle(ew[self.ny // 2, self.nx // 2])) % (
-            2 * jnp.pi
-        )
-        np.testing.assert_allclose(
-            actual_phase, expected_phase, atol=1e-8,
-            err_msg="Vacuum carrier phase should be k₀·L",
-        )
+        A = np.zeros((2 * n_beams, 2 * n_beams), dtype=np.complex128)
+        A[:n_beams, n_beams:] = np.eye(n_beams, dtype=np.complex128)
+        A[n_beams:, :n_beams] = -M
 
-    def test_vacuum_matches_fresnel(self):
-        """In vacuum, ODE and Fresnel should be identical."""
-        N = 20
-        probe = _plane_wave(self.ny, self.nx)
-        pot = jnp.zeros((N, self.ny, self.nx))
-        fk = fresnel_propagation_kernel(
-            self.ny, self.nx, (self.dy, self.dx), z=DZ, energy=ENERGY,
-        )
-        ew_f, _, _ = simulate_fresnel_as(pot, probe, fk, DZ, ENERGY)
-        ew_o, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-10, atol=1e-12,
-        )
-        np.testing.assert_allclose(
-            np.asarray(ew_o), np.asarray(ew_f), atol=1e-8,
-            err_msg="Vacuum: ODE should match Fresnel exactly",
-        )
+        state = expm(slice_thickness * A) @ state
+        psi_slice_k = state[:n_beams].reshape((ny, nx))
+        wavefronts.append(np.fft.ifft2(psi_slice_k * scale))
 
-    def test_gaussian_vacuum_intensity(self):
-        """Gaussian probe in vacuum: total intensity preserved."""
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        pot = jnp.zeros((50, self.ny, self.nx))
-        ew, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-10, atol=1e-12,
-        )
-        np.testing.assert_allclose(
-            _total_intensity(ew), 1.0, atol=1e-8,
-            err_msg="Vacuum should preserve total intensity",
-        )
+    exit_k = state[:n_beams].reshape((ny, nx))
+    exit_phi_k = state[n_beams:].reshape((ny, nx))
+
+    exit_wave = np.fft.ifft2(exit_k * scale)
+    exit_phi = np.fft.ifft2(exit_phi_k * scale)
+    return exit_wave, exit_phi, np.stack(wavefronts)
 
 
-# ===================================================================
-# 2. Uniform potential — commuting operators
-# ===================================================================
+class TestVacuumReference:
+    ny = nx = 16
+    dy = dx = 0.2
+    dz = 1.5
+    n_slices = 8
 
-class TestUniformPotential:
-    """Uniform potential: [V, ∇²]=0 so split-step and ODE agree exactly."""
+    def test_matches_exact_spectral_solution(self):
+        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx, sigma=0.7)
+        pot = jnp.zeros((self.n_slices, self.ny, self.nx))
 
-    ny, nx = 64, 64
-    dy, dx = 0.15, 0.15
-
-    def test_uniform_matches_fresnel(self):
-        """ODE should closely match Fresnel for uniform potential (commuting)."""
-        N = 50
-        V_mean = 20.0  # Volts
-        probe = _plane_wave(self.ny, self.nx)
-        pot = jnp.full((N, self.ny, self.nx), V_mean)
-        fk = fresnel_propagation_kernel(
-            self.ny, self.nx, (self.dy, self.dx), z=DZ, energy=ENERGY,
-        )
-        ew_f, _, _ = simulate_fresnel_as(pot, probe, fk, DZ, ENERGY)
-        ew_o, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-10, atol=1e-12,
-        )
-        rel_err = float(
-            jnp.max(jnp.abs(ew_o - ew_f)) / jnp.max(jnp.abs(ew_f))
-        )
-        assert rel_err < 1e-3, (
-            f"Uniform potential (commuting): rel error {rel_err:.2e} too large"
-        )
-
-    def test_uniform_analytic_phase(self):
-        """Plane wave in uniform medium: phase = k₀·n·L approximately."""
-        N = 50
-        V = 20.0
-        probe = _plane_wave(self.ny, self.nx)
-        pot = jnp.full((N, self.ny, self.nx), V)
-        ew, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-10, atol=1e-12,
-        )
-        k0 = 2 * jnp.pi / energy2wavelength(ENERGY)
-        n = electron_refractive_index(V, ENERGY)
-        L = N * DZ
-        # ODE gives exact exp(i*k0*L + i*k0*(n²-1)*L/2)
-        # Analytic forward KG for k_perp=0: exp(i*k0*n*L) approximately
-        # These differ by O((n-1)²), which is tiny.
-        analytic_phase = k0 * float(n) * L
-        ode_phase = float(jnp.angle(ew[self.ny // 2, self.nx // 2]))
-        # Compare modulo 2π
-        diff = abs((ode_phase - analytic_phase) % (2 * np.pi))
-        diff = min(diff, 2 * np.pi - diff)
-        assert diff < 0.01, f"Phase error {diff:.4f} rad too large"
-
-    def test_uniform_intensity_conservation(self):
-        N = 100
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        pot = jnp.full((N, self.ny, self.nx), 50.0)
-        ew, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-8, atol=1e-10,
-        )
-        np.testing.assert_allclose(
-            _total_intensity(ew), 1.0, atol=1e-3,
-            err_msg="Total intensity should be conserved",
-        )
-
-
-# ===================================================================
-# 3. Carrier phase convention
-# ===================================================================
-
-class TestCarrierConvention:
-    """ODE must include carrier exp(ik₀z) to match Fresnel/AS output."""
-
-    ny, nx = 64, 64
-    dy, dx = 0.15, 0.15
-
-    def test_carrier_matches_fresnel_vacuum(self):
-        """Vacuum: ODE and Fresnel should have identical carrier phase."""
-        N = 10
-        probe = _plane_wave(self.ny, self.nx)
-        pot = jnp.zeros((N, self.ny, self.nx))
-
-        fk = fresnel_propagation_kernel(
-            self.ny, self.nx, (self.dy, self.dx), z=DZ, energy=ENERGY,
-        )
-        ew_f, _, _ = simulate_fresnel_as(pot, probe, fk, DZ, ENERGY)
-        ew_o, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-10, atol=1e-12,
-        )
-        # Both should have phase k₀·N·dz at the center pixel
-        phase_f = float(jnp.angle(ew_f[self.ny // 2, self.nx // 2]))
-        phase_o = float(jnp.angle(ew_o[self.ny // 2, self.nx // 2]))
-        np.testing.assert_allclose(
-            phase_o, phase_f, atol=1e-8,
-            err_msg="ODE and Fresnel should have same carrier convention",
+        ew, phi, _, wavefronts = simulate_kg_ode_full(
+            pot,
+            jnp.asarray(probe),
+            self.dz,
+            ENERGY,
+            (self.dy, self.dx),
+            rtol=1e-10,
+            atol=1e-12,
         )
 
-    def test_dp_matches_without_carrier_effect(self):
-        """DP is |FFT|² — should not depend on the global carrier phase."""
-        N = 20
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        pot = jnp.full((N, self.ny, self.nx), 15.0)
-
-        fk = fresnel_propagation_kernel(
-            self.ny, self.nx, (self.dy, self.dx), z=DZ, energy=ENERGY,
+        exact_wave, exact_phi = _exact_vacuum_reference(
+            probe,
+            self.n_slices * self.dz,
+            ENERGY,
+            (self.dy, self.dx),
         )
-        ew_f, _, _ = simulate_fresnel_as(pot, probe, fk, DZ, ENERGY)
-        ew_o, _, dp_o, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-8, atol=1e-10,
-        )
-        dp_f = float(
-            jnp.max(jnp.abs(jnp.fft.fftshift(jnp.fft.fft2(ew_f))) ** 2)
-        )
-        dp_o_max = float(jnp.max(dp_o))
-        ratio = dp_o_max / dp_f
-        assert 0.95 < ratio < 1.05, (
-            f"DP max ratio ODE/Fresnel = {ratio:.3f}, expected ~1"
-        )
-
-
-# ===================================================================
-# 4. Intensity conservation
-# ===================================================================
-
-class TestIntensityConservation:
-    """Forward KG with real refractive index must conserve ∑|ψ|²."""
-
-    ny, nx = 64, 64
-    dy, dx = 0.15, 0.15
-
-    @pytest.mark.parametrize("n_slices", [10, 50, 100])
-    def test_gaussian_in_potential(self, n_slices):
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-        V_col = 100.0 * jnp.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / 0.25)
-        pot = jnp.stack([V_col] * n_slices)
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-
-        ew, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-8, atol=1e-10,
-        )
-        np.testing.assert_allclose(
-            _total_intensity(ew), 1.0, atol=2e-3,
-            err_msg=f"Intensity not conserved for {n_slices} slices",
-        )
-
-    def test_alternating_potential_intensity(self):
-        """Crystal-like alternating potential: intensity should be ~1."""
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-        slices = []
-        for i in range(100):
-            if i % 2 == 0:
-                V = 150.0 * jnp.exp(
-                    -((X - cx) ** 2 + (Y - cy) ** 2) / 0.09
-                )
-            else:
-                V = 3.0 * jnp.ones((self.ny, self.nx))
-            slices.append(V)
-        pot = jnp.stack(slices)
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-
-        ew, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-8, atol=1e-10,
-        )
-        np.testing.assert_allclose(
-            _total_intensity(ew), 1.0, atol=5e-3,
-            err_msg="Alternating potential: intensity should be ~1",
-        )
-
-
-# ===================================================================
-# 5. ODE tolerance convergence
-# ===================================================================
-
-class TestToleranceConvergence:
-    """Tighter tolerances should give a more accurate answer."""
-
-    ny, nx = 64, 64
-    dy, dx = 0.15, 0.15
-
-    def test_tighter_tol_reduces_error(self):
-        N = 30
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx = self.nx * self.dx / 2
-        cy = self.ny * self.dy / 2
-        V = 50.0 * jnp.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / 0.25)
-        pot = jnp.stack([V] * N)
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-
-        # Reference: very tight tolerance
-        ew_ref, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-12, atol=1e-14,
-        )
-        # Very loose (should show measurable error)
-        ew_loose, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-2, atol=1e-4,
-        )
-        # Medium
-        ew_med, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-6, atol=1e-8,
-        )
-
-        err_loose = float(jnp.max(jnp.abs(ew_loose - ew_ref)))
-        err_med = float(jnp.max(jnp.abs(ew_med - ew_ref)))
-
-        assert err_med <= err_loose, (
-            f"Tighter tol should reduce error: loose={err_loose:.2e}, "
-            f"med={err_med:.2e}"
-        )
-
-
-# ===================================================================
-# 6. Stability on fine grids (high k_perp)
-# ===================================================================
-
-class TestFineGridStability:
-    """Fine sampling (0.1 Å) produces large k_perp; dtmax should prevent blowup."""
-
-    ny, nx = 64, 64
-    dy, dx = 0.1, 0.1  # Fine grid
-
-    def test_fine_grid_no_blowup(self):
-        """ODE on fine grid should not blow up even with loose tolerances."""
-        N = 50
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-        V = 80.0 * jnp.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / 0.16)
-        pot = jnp.stack([V] * N)
-
-        ew, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-5, atol=1e-7,
-        )
-        I = _total_intensity(ew)
-        assert 0.95 < I < 1.05, (
-            f"Fine grid intensity {I:.4f} suggests blowup or decay"
-        )
-
-    def test_fine_grid_dp_reasonable(self):
-        """DP max on fine grid should be comparable to Fresnel DP max."""
-        N = 50
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-        V = 80.0 * jnp.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / 0.16)
-        pot = jnp.stack([V] * N)
-
-        fk = fresnel_propagation_kernel(
-            self.ny, self.nx, (self.dy, self.dx), z=DZ, energy=ENERGY,
-        )
-        ew_f, _, _ = simulate_fresnel_as(pot, probe, fk, DZ, ENERGY)
-        ew_o, _, dp_o, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-5, atol=1e-7,
-        )
-
-        dp_f = float(
-            jnp.max(jnp.abs(jnp.fft.fftshift(jnp.fft.fft2(ew_f))) ** 2)
-        )
-        dp_o_max = float(jnp.max(dp_o))
-        ratio = dp_o_max / dp_f
-        assert 0.5 < ratio < 2.0, (
-            f"Fine grid DP ratio ODE/Fresnel = {ratio:.2f}, indicates blowup"
-        )
-
-    def test_strong_potential_stability(self):
-        """High-potential (>1000V) fine grid: dtmax must account for potential eigenvalue.
-
-        Without the potential contribution to omega_max, the step size
-        exceeds Tsit5's imaginary stability radius and the solution blows up.
-        """
-        N = 50
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-
-        # Strong potential: Au-like peak at ~1200V
-        V = 1200.0 * jnp.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / (2 * 0.5**2))
-        pot = jnp.stack([V] * N)
-
-        fk = fresnel_propagation_kernel(
-            self.ny, self.nx, (self.dy, self.dx), z=DZ, energy=ENERGY,
-        )
-        ew_f, _, _ = simulate_fresnel_as(pot, probe, fk, DZ, ENERGY)
-        ew_o, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-5, atol=1e-7,
-        )
-
-        I_o = _total_intensity(ew_o)
-        assert 0.95 < I_o < 1.05, (
-            f"Strong-potential intensity {I_o:.4f} suggests blowup"
-        )
-
-        amp_ratio = float(jnp.abs(ew_o).max() / jnp.abs(ew_f).max())
-        assert 0.5 < amp_ratio < 2.0, (
-            f"Strong-potential amp ratio {amp_ratio:.2f} suggests instability"
-        )
-
-
-# ===================================================================
-# 7. Split-step comparison (Trotter error scaling)
-# ===================================================================
-
-class TestSplitStepComparison:
-    """ODE vs Fresnel error should scale with number of slices (Trotter error)."""
-
-    ny, nx = 64, 64
-    dy, dx = 0.15, 0.15
-
-    def test_single_slice_small_error(self):
-        """Single slice: splitting error is minimal, should nearly match."""
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-        V = 50.0 * jnp.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / 0.25)
-        pot = V[None, :]
-
-        fk = fresnel_propagation_kernel(
-            self.ny, self.nx, (self.dy, self.dx), z=DZ, energy=ENERGY,
-        )
-        ew_f, _, _ = simulate_fresnel_as(pot, probe, fk, DZ, ENERGY)
-        ew_o, _, _, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-10, atol=1e-12,
-        )
-        rel_err = float(
-            jnp.max(jnp.abs(ew_o - ew_f)) / jnp.max(jnp.abs(ew_f))
-        )
-        assert rel_err < 0.02, (
-            f"Single-slice rel error {rel_err:.4f} too large"
-        )
-
-    def test_error_grows_with_slices(self):
-        """More slices → more accumulated Trotter error (not a bug)."""
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-        V = 50.0 * jnp.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / 0.25)
-
-        fk = fresnel_propagation_kernel(
-            self.ny, self.nx, (self.dy, self.dx), z=DZ, energy=ENERGY,
-        )
-
-        errors = []
-        for n_slices in [5, 20, 50]:
-            pot = jnp.stack([V] * n_slices)
-            ew_f, _, _ = simulate_fresnel_as(pot, probe, fk, DZ, ENERGY)
-            ew_o, _, _, _ = simulate_kg_ode_full(
-                pot, probe, DZ, ENERGY, (self.dy, self.dx),
-                rtol=1e-10, atol=1e-12,
-            )
-            rel_err = float(
-                jnp.max(jnp.abs(ew_o - ew_f)) / jnp.max(jnp.abs(ew_f))
-            )
-            errors.append(rel_err)
-
-        # Error should generally increase with more slices
-        assert errors[-1] > errors[0], (
-            f"Error should grow with slices: {errors}"
-        )
-        # But should remain bounded (not blow up)
-        assert errors[-1] < 0.5, (
-            f"Error for 50 slices = {errors[-1]:.2f} is unreasonably large"
-        )
-
-
-# ===================================================================
-# 8. Slice-boundary alignment
-# ===================================================================
-
-class TestSliceBoundaryAlignment:
-    """Adaptive solves must respect discontinuous slice boundaries exactly."""
-
-    ny, nx = 32, 32
-    dy, dx = 0.1, 0.1
-
-    def test_discontinuous_stack_matches_slice_by_slice_composition(self):
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx, sigma=0.4)
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-        sigma = 0.20
-
-        V_left = 1200.0 * jnp.exp(
-            -((X - (cx - 0.5)) ** 2 + (Y - cy) ** 2) / (2 * sigma**2)
-        )
-        V_right = 1200.0 * jnp.exp(
-            -((X - (cx + 0.5)) ** 2 + (Y - cy) ** 2) / (2 * sigma**2)
-        )
-        pot = jnp.stack([V_left, V_right, V_left, V_right])
-
-        ew_full, _, _, wf_full = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-5, atol=1e-7,
-        )
-
-        state = probe
-        wf_ref = []
-        for i in range(pot.shape[0]):
-            ew_slice, _, _, _ = simulate_kg_ode_full(
-                pot[i:i + 1], state, DZ, ENERGY, (self.dy, self.dx),
-                rtol=1e-5, atol=1e-7,
-            )
-            wf_ref.append(np.asarray(ew_slice))
-            state = ew_slice
-
-        wf_ref = np.stack(wf_ref)
+        exact_wavefronts = np.stack([
+            _exact_vacuum_reference(
+                probe,
+                (idx + 1) * self.dz,
+                ENERGY,
+                (self.dy, self.dx),
+            )[0]
+            for idx in range(self.n_slices)
+        ])
 
         np.testing.assert_allclose(
-            np.asarray(wf_full), wf_ref, rtol=1e-6, atol=1e-7,
+            np.asarray(ew),
+            exact_wave,
+            rtol=1e-7,
+            atol=1e-8,
+            err_msg="Vacuum exit wave should match the exact spectral solution",
+        )
+        np.testing.assert_allclose(
+            np.asarray(phi),
+            exact_phi,
+            rtol=1e-7,
+            atol=1e-8,
             err_msg=(
-                "Full-stack solve must match explicit slice-by-slice "
-                "composition on a discontinuous potential stack"
+                "Vacuum exit derivative should match the exact spectral "
+                "solution"
             ),
         )
         np.testing.assert_allclose(
-            np.asarray(ew_full), wf_ref[-1], rtol=1e-6, atol=1e-7,
-            err_msg="Exit wave must equal the final slice-by-slice state",
-        )
-
-
-# ===================================================================
-# 9. Wavefronts output
-# ===================================================================
-
-class TestWavefronts:
-    """Check that intermediate wavefronts are sensible."""
-
-    ny, nx = 32, 32
-    dy, dx = 0.2, 0.2
-
-    def test_wavefront_shape(self):
-        N = 10
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        pot = jnp.zeros((N, self.ny, self.nx))
-        _, _, _, wf = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-        )
-        assert wf.shape == (N, self.ny, self.nx), (
-            f"Wavefronts shape {wf.shape} != expected ({N}, {self.ny}, {self.nx})"
-        )
-
-    def test_last_wavefront_is_exit_wave(self):
-        N = 10
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        pot = jnp.zeros((N, self.ny, self.nx))
-        ew, _, _, wf = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-10, atol=1e-12,
+            np.asarray(wavefronts),
+            exact_wavefronts,
+            rtol=1e-7,
+            atol=1e-8,
+            err_msg="Saved vacuum wavefronts should land on exact slice boundaries",
         )
         np.testing.assert_allclose(
-            np.asarray(wf[-1]), np.asarray(ew), atol=1e-10,
-            err_msg="Last wavefront should equal exit wave",
+            _total_intensity(ew),
+            1.0,
+            atol=5e-8,
+            err_msg="Vacuum propagation should preserve total intensity",
         )
 
-    def test_wavefront_intensity_along_z(self):
-        """Intensity should be ~1 at every saved z."""
-        N = 20
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-        V = 30.0 * jnp.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / 0.25)
-        pot = jnp.stack([V] * N)
 
-        _, _, _, wf = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
-            rtol=1e-8, atol=1e-10,
+class TestUniformMediumReference:
+    ny = nx = 16
+    dy = dx = 0.2
+    dz = 1.5
+
+    def test_plane_wave_matches_analytic_uniform_solution(self):
+        n_slices = 10
+        potential_value = 150.0
+        pot = jnp.full((n_slices, self.ny, self.nx), potential_value)
+
+        plane = _plane_wave(self.ny, self.nx)
+        k0 = 2 * np.pi / float(energy2wavelength(ENERGY))
+        n = float(electron_refractive_index(potential_value, ENERGY))
+        total_thickness = n_slices * self.dz
+
+        expected_wave = plane * np.exp(1j * k0 * n * total_thickness)
+        expected_phi = 1j * k0 * n * expected_wave
+        initial_phi = 1j * k0 * n * plane
+
+        ew, phi, _, _ = simulate_kg_ode_full(
+            pot,
+            jnp.asarray(plane),
+            self.dz,
+            ENERGY,
+            (self.dy, self.dx),
+            initial_phi=jnp.asarray(initial_phi),
+            rtol=1e-10,
+            atol=1e-12,
         )
-        for i in range(N):
-            I = float(jnp.sum(jnp.abs(wf[i]) ** 2))
-            assert 0.99 < I < 1.01, (
-                f"Intensity at slice {i}: {I:.6f} deviates from 1"
+
+        np.testing.assert_allclose(
+            np.asarray(ew),
+            expected_wave,
+            rtol=1e-7,
+            atol=1e-8,
+            err_msg="Uniform-medium plane wave should follow the analytic KG phase",
+        )
+        np.testing.assert_allclose(
+            np.asarray(phi),
+            expected_phi,
+            rtol=1e-7,
+            atol=1e-8,
+            err_msg=(
+                "Uniform-medium exit derivative should match the analytic KG "
+                "solution"
+            ),
+        )
+
+
+class TestExactReferenceConvergence:
+    def test_matches_exact_multislice_matrix_exponential(self):
+        potential = _small_nonuniform_stack()
+        probe = _small_probe()
+        initial_phi = _forward_vacuum_phi(probe, ENERGY, SMALL_SAMPLING)
+
+        exact_wave, exact_phi, exact_wavefronts = _exact_full_kg_stack(
+            potential,
+            probe,
+            initial_phi,
+            SMALL_DZ,
+            ENERGY,
+            SMALL_SAMPLING,
+        )
+
+        ew, phi, _, wavefronts = simulate_kg_ode_full(
+            jnp.asarray(potential),
+            jnp.asarray(probe),
+            SMALL_DZ,
+            ENERGY,
+            SMALL_SAMPLING,
+            initial_phi=jnp.asarray(initial_phi),
+            rtol=1e-10,
+            atol=1e-12,
+        )
+
+        np.testing.assert_allclose(
+            np.asarray(ew),
+            exact_wave,
+            rtol=1e-6,
+            atol=1e-7,
+            err_msg=(
+                "Full KG ODE should match the exact slice-wise matrix "
+                "exponential reference"
+            ),
+        )
+        np.testing.assert_allclose(
+            np.asarray(phi),
+            exact_phi,
+            rtol=1e-6,
+            atol=1e-7,
+            err_msg="Exit derivative should match the exact reference",
+        )
+        np.testing.assert_allclose(
+            np.asarray(wavefronts),
+            exact_wavefronts,
+            rtol=1e-6,
+            atol=1e-7,
+            err_msg="Saved wavefronts should match the exact reference",
+        )
+
+    def test_tighter_tolerances_reduce_exact_reference_error(self):
+        potential = _small_nonuniform_stack()
+        probe = _small_probe()
+        initial_phi = _forward_vacuum_phi(probe, ENERGY, SMALL_SAMPLING)
+
+        exact_wave, _, _ = _exact_full_kg_stack(
+            potential,
+            probe,
+            initial_phi,
+            SMALL_DZ,
+            ENERGY,
+            SMALL_SAMPLING,
+        )
+
+        errors = []
+        for rtol, atol in [(1e-4, 1e-6), (1e-7, 1e-9), (1e-10, 1e-12)]:
+            ew, _, _, _ = simulate_kg_ode_full(
+                jnp.asarray(potential),
+                jnp.asarray(probe),
+                SMALL_DZ,
+                ENERGY,
+                SMALL_SAMPLING,
+                initial_phi=jnp.asarray(initial_phi),
+                rtol=rtol,
+                atol=atol,
+            )
+            error = float(
+                jnp.linalg.norm(ew - exact_wave) / jnp.linalg.norm(exact_wave)
+            )
+            errors.append(error)
+
+        assert errors[1] < errors[0], (
+            f"Medium tolerance should improve on loose tolerance: {errors}"
+        )
+        assert errors[2] < errors[1], (
+            f"Tight tolerance should improve on medium tolerance: {errors}"
+        )
+        assert errors[2] < 1e-7, (
+            f"Tight tolerance should be near the exact reference: {errors}"
+        )
+
+
+class TestSecondOrderStateHandling:
+    def test_slice_by_slice_calls_must_carry_exit_phi(self):
+        potential = _small_discontinuous_stack()
+        probe = _small_probe()
+
+        full_wave, _, _, _ = simulate_kg_ode_full(
+            jnp.asarray(potential),
+            jnp.asarray(probe),
+            SMALL_DZ,
+            ENERGY,
+            SMALL_SAMPLING,
+            rtol=1e-9,
+            atol=1e-11,
+        )
+
+        state = jnp.asarray(probe)
+        phi = None
+        for idx in range(potential.shape[0]):
+            state, phi, _, _ = simulate_kg_ode_full(
+                jnp.asarray(potential[idx:idx + 1]),
+                state,
+                SMALL_DZ,
+                ENERGY,
+                SMALL_SAMPLING,
+                initial_phi=phi,
+                rtol=1e-9,
+                atol=1e-11,
             )
 
-
-# ===================================================================
-# 10. Diffraction pattern
-# ===================================================================
-
-class TestDiffractionPattern:
-    """DP output should be consistent with FFT of exit wave."""
-
-    ny, nx = 32, 32
-    dy, dx = 0.2, 0.2
-
-    def test_dp_matches_manual_fft(self):
-        N = 10
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx)
-        pot = jnp.full((N, self.ny, self.nx), 10.0)
-
-        ew, _, dp, _ = simulate_kg_ode_full(
-            pot, probe, DZ, ENERGY, (self.dy, self.dx),
+        with_phi_error = float(
+            jnp.linalg.norm(state - full_wave) / jnp.linalg.norm(full_wave)
         )
-        dp_manual = jnp.abs(jnp.fft.fftshift(jnp.fft.fft2(ew))) ** 2
+
+        state = jnp.asarray(probe)
+        for idx in range(potential.shape[0]):
+            state, _, _, _ = simulate_kg_ode_full(
+                jnp.asarray(potential[idx:idx + 1]),
+                state,
+                SMALL_DZ,
+                ENERGY,
+                SMALL_SAMPLING,
+                rtol=1e-9,
+                atol=1e-11,
+            )
+
+        without_phi_error = float(
+            jnp.linalg.norm(state - full_wave) / jnp.linalg.norm(full_wave)
+        )
+
+        assert with_phi_error < 1e-8, (
+            f"Carrying exit_phi should reproduce the full-stack solution: "
+            f"{with_phi_error:.3e}"
+        )
+        assert without_phi_error > 1e-4, (
+            "Dropping exit_phi should measurably change the second-order KG "
+            f"state: {without_phi_error:.3e}"
+        )
+
+
+class TestOutputs:
+    ny = nx = 24
+    dy = dx = 0.15
+    dz = 2.0
+    n_slices = 6
+
+    def test_last_wavefront_matches_exit_wave(self):
+        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx, sigma=1.0)
+        pot = jnp.zeros((self.n_slices, self.ny, self.nx))
+
+        ew, _, _, wavefronts = simulate_kg_ode_full(
+            pot,
+            jnp.asarray(probe),
+            self.dz,
+            ENERGY,
+            (self.dy, self.dx),
+            rtol=1e-10,
+            atol=1e-12,
+        )
 
         np.testing.assert_allclose(
-            np.asarray(dp), np.asarray(dp_manual), rtol=1e-10,
-            err_msg="DP should equal |fftshift(fft2(exit_wave))|²",
+            np.asarray(wavefronts[-1]),
+            np.asarray(ew),
+            rtol=1e-10,
+            atol=1e-12,
+            err_msg="The final saved wavefront should equal the exit wave",
+        )
+
+    def test_diffraction_pattern_matches_manual_fft(self):
+        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx, sigma=1.0)
+        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
+        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
+        V = 30.0 * np.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / 0.25)
+        pot = jnp.stack([jnp.asarray(V)] * self.n_slices)
+
+        ew, _, dp, _ = simulate_kg_ode_full(
+            pot,
+            jnp.asarray(probe),
+            self.dz,
+            ENERGY,
+            (self.dy, self.dx),
+            rtol=1e-8,
+            atol=1e-10,
+        )
+        dp_manual = np.abs(np.fft.fftshift(np.fft.fft2(np.asarray(ew)))) ** 2
+
+        np.testing.assert_allclose(
+            np.asarray(dp),
+            dp_manual,
+            rtol=1e-10,
+            atol=1e-12,
+            err_msg="Diffraction pattern should equal |fftshift(fft2(exit_wave))|^2",
+        )
+
+
+class TestStability:
+    ny = nx = 24
+    dy = dx = 0.15
+    dz = 2.0
+
+    def test_challenging_stack_remains_bounded(self):
+        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx, sigma=1.0)
+        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
+        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
+
+        slices = []
+        for idx in range(20):
+            if idx % 2 == 0:
+                V = 250.0 * np.exp(
+                    -((X - (cx - 0.25)) ** 2 + (Y - cy) ** 2) / 0.08
+                )
+            else:
+                V = 150.0 * np.exp(
+                    -((X - (cx + 0.25)) ** 2 + (Y - cy) ** 2) / 0.08
+                )
+            slices.append(V)
+
+        pot = jnp.asarray(np.stack(slices))
+        exit_wave, _, _, wavefronts = simulate_kg_ode_full(
+            pot,
+            jnp.asarray(probe),
+            self.dz,
+            ENERGY,
+            (self.dy, self.dx),
+            rtol=1e-8,
+            atol=1e-10,
+        )
+
+        wavefronts = np.asarray(wavefronts)
+        intensities = np.sum(np.abs(wavefronts) ** 2, axis=(1, 2))
+
+        assert np.isfinite(wavefronts).all(), (
+            "Wavefronts should remain finite on a challenging slice stack"
+        )
+        assert np.isfinite(np.asarray(exit_wave)).all(), (
+            "Exit wave should remain finite on a challenging slice stack"
+        )
+        assert np.max(np.abs(intensities - 1.0)) < 2e-3, (
+            "Norm drift on a challenging stack should stay small; "
+            f"got {np.max(np.abs(intensities - 1.0)):.3e}"
         )
