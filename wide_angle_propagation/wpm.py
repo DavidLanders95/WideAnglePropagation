@@ -987,6 +987,10 @@ def simulate_kg_ode_full(potential, probe, slice_thickness, energy,
     adaptive solver is clipped to the slice boundaries so it never steps
     across a discontinuity in n²(z).
 
+    This is a second-order state-space solve. When chaining multiple calls,
+    the returned ``exit_phi`` must be fed back as ``initial_phi`` for the
+    next call. Re-using only ``exit_wave`` changes the physical state.
+
     Parameters
     ----------
     potential : array, shape (N_slices, ny, nx)
@@ -1001,7 +1005,8 @@ def simulate_kg_ode_full(potential, probe, slice_thickness, energy,
         Pixel sizes (dy, dx) in Angstroms.
     initial_phi : array, shape (ny, nx), optional
         Initial dψ/dz. If omitted, the exact forward vacuum derivative of the
-        input probe is used.
+        input probe is used. When chaining repeated calls, pass the previous
+        ``exit_phi`` here to preserve the full KG state.
     rtol, atol : float
         Tolerances for the adaptive ODE solver.
 
