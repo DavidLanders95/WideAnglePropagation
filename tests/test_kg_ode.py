@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 from scipy.linalg import expm
 
-from wide_angle_propagation.wpm import (
+from wide_angle_propagation.propagation_methods import (
     electron_refractive_index,
     energy2wavelength,
     simulate_kg_ode_full,

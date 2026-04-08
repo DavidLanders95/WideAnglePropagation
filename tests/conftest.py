@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from wide_angle_propagation.wpm import (
+from wide_angle_propagation.propagation_methods import (
     electron_refractive_index,
     energy2wavelength,
     energy2sigma,

@@ -27,11 +27,7 @@ You are a computational electron microscopy simulation specialist. Your job is t
 - **Si [111]**: a=5.444 Å (diamond cubic, Fd-3m), Si.cif file, thermal σ=0.078 Å
 
 ### Probe Construction
-Use `jax_multislice.py` dataclasses:
-```python
-from wide_angle_propagation.jax_multislice import ProbeParamsFixed, ProbeParamsVariable, make_probe_fft
-```
-Or use **abtem** for probe generation (abtem is a dependency).
+For now, use **abtem** for probe generation (abtem is a dependency).
 
 ### GPU Notes
 - Only GPU index 0 is visible on this host. Do NOT set `CUDA_VISIBLE_DEVICES="1"`.
