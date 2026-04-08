@@ -18,7 +18,6 @@ from wide_angle_propagation.wpm import (
     energy2wavelength,
     simulate_fresnel_as,
     simulate_wpm,
-    simulate_parabolic_ode,
     fresnel_propagation_kernel,
     angular_spectrum_propagation_kernel,
 )

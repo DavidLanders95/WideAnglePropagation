@@ -32,3 +32,5 @@ junit.xml
 *.sif
 jax_ptychography/
 *.bin
+*.venv
+venv/
