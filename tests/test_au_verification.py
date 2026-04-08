@@ -13,7 +13,7 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from wide_angle_propagation.wpm import (
+from wide_angle_propagation.propagation_methods import (
     electron_refractive_index,
     energy2wavelength,
     simulate_fresnel_as,
@@ -21,7 +21,7 @@ from wide_angle_propagation.wpm import (
     fresnel_propagation_kernel,
     angular_spectrum_propagation_kernel,
 )
-from wide_angle_propagation.klein_gordon import (
+from wide_angle_propagation.propagation_methods import (
     beam_amplitudes_fwd_direct_allbeams,
 )
 from tests.conftest import (
