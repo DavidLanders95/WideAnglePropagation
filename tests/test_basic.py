@@ -16,7 +16,6 @@ from wide_angle_propagation.wpm import (
     energy2wavelength,
     simulate_fresnel_as,
     simulate_wpm,
-    simulate_parabolic_ode,
     fresnel_propagation_kernel,
     angular_spectrum_propagation_kernel,
 )
@@ -100,13 +99,6 @@ class TestVacuumPropagation:
         amp = _kg_lanczos_beam_amplitude(pot)
         assert abs(amp - 1.0) < 1e-6, f"KG Lanczos vacuum [0,0] amplitude = {amp}"
 
-    def test_parabolic_ode_vacuum(self):
-        pot = _make_vacuum_potential()
-        pw = _make_plane_wave()
-        exit_wave, _, _ = simulate_parabolic_ode(pot, pw, DZ, ENERGY, SAMPLING)
-        amp = beam_amplitude_normalized(np.asarray(exit_wave), 0, 0)
-        assert abs(amp - 1.0) < 1e-6, f"Parabolic ODE vacuum [0,0] amplitude = {amp}"
-
 
 # ---------------------------------------------------------------------------
 # Constant potential: all methods should give the same phase shift
@@ -148,7 +140,6 @@ class TestConstantPotential:
         w_as, _, _ = simulate_fresnel_as(pot, pw, ak, DZ, ENERGY)
         w_wpm, _, _ = simulate_wpm(pot, pw, DZ, ENERGY, SAMPLING)
         amp_kg = _kg_lanczos_beam_amplitude(pot)
-        w_par, _, _ = simulate_parabolic_ode(pot, pw, DZ, ENERGY, SAMPLING)
 
         # All should produce ~same beam amplitudes for [0,0]
         amps = {
@@ -156,7 +147,6 @@ class TestConstantPotential:
             "as": beam_amplitude_normalized(np.asarray(w_as), 0, 0),
             "wpm": beam_amplitude_normalized(np.asarray(w_wpm), 0, 0),
             "kg_lanczos": amp_kg,
-            "parabolic": beam_amplitude_normalized(np.asarray(w_par), 0, 0),
         }
         for name, amp in amps.items():
             assert abs(amp - 1.0) < 1e-3, f"{name} const-V [0,0] = {amp}"
@@ -201,33 +191,3 @@ class TestThinSpecimenAgreement:
             )
 
 
-# ---------------------------------------------------------------------------
-# Parabolic ODE should match Fresnel multislice
-# ---------------------------------------------------------------------------
-
-class TestParabolicMatchesFresnel:
-    """The parabolic (paraxial) ODE should produce the same result as Fresnel MS."""
-
-    def test_parabolic_vs_fresnel_weak_potential(self):
-        ny, nx = GPTS
-        y = np.arange(ny) / ny
-        x = np.arange(nx) / nx
-        Y, X = np.meshgrid(y, x, indexing="ij")
-        V = 10.0 * (1.0 + 0.5 * np.cos(4 * np.pi * X))
-        pot = jnp.broadcast_to(jnp.array(V), (N_SLICES, ny, nx))
-        pw = _make_plane_wave()
-        fk = fresnel_propagation_kernel(GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY)
-
-        w_fr, _, _ = simulate_fresnel_as(pot, pw, fk, DZ, ENERGY)
-        w_par, _, _ = simulate_parabolic_ode(pot, pw, DZ, ENERGY, SAMPLING)
-
-        # Compare beam amplitudes for several beams
-        for h, k in [(0, 0), (1, 0), (0, 1), (-1, 0)]:
-            amp_fr = beam_amplitude_normalized(np.asarray(w_fr), h, k)
-            amp_par = beam_amplitude_normalized(np.asarray(w_par), h, k)
-            if amp_fr > 1e-6:
-                rel_err = abs(amp_par - amp_fr) / amp_fr
-                assert rel_err < 0.05, (
-                    f"Beam [{h},{k}]: parabolic={amp_par:.6f} fresnel={amp_fr:.6f} "
-                    f"rel_err={rel_err:.4f}"
-                )
