@@ -2,6 +2,7 @@ import numpy as np
 import functools
 import jax
 import jax.numpy as jnp
+import jax_dataclasses as jdc
 from abtem.multislice import _generate_potential_configurations
 from abtem.antialias import AntialiasAperture
 from ase import units
@@ -871,3 +872,72 @@ def beam_amplitudes_fwd_direct_allbeams(
         beam_indices,
         gpts,
     ), beam_indices, exit_state
+
+
+def propagation_kernel(n: int, m: int, ps: float, z: float, energy: float):
+    """Backward-compatible alias for Fresnel propagation kernel."""
+    return fresnel_propagation_kernel(n, m, ps, z, energy)
+
+
+@jax.jit
+def FresnelPropagator(u, H):
+    """Backward-compatible alias for Fourier-space propagation."""
+    return Propagator(u, H)
+
+
+@jdc.pytree_dataclass
+class ProbeParamsFixed:
+    wavelength: jdc.Static[float]
+    alpha: jnp.array
+    phi: jnp.array
+    aperture: jnp.array
+
+
+@jdc.pytree_dataclass
+class ProbeParamsVariable:
+    defocus: float = 0.
+    astigmatism: float = 0.
+    astigmatism_angle: float = 0.
+    Cs: float = 0.
+    coma: float = 0.
+    coma_angle: float = 0.
+    trefoil: float = 0.
+    trefoil_angle: float = 0.
+
+
+@jax.jit
+def make_probe_fft(pp: ProbeParamsVariable, fpp: ProbeParamsFixed):
+    """Build probe in reciprocal space from aberration parameters."""
+    alpha = fpp.alpha
+    phi = fpp.phi
+    aperture = fpp.aperture
+
+    aberrations = jnp.zeros(alpha.shape, dtype=jnp.float32)
+    aberrations += ((1 / 2) * alpha**2 * pp.defocus)
+    aberrations += (
+        (1 / 2)
+        * alpha**2
+        * pp.astigmatism
+        * jnp.cos(2 * (phi - pp.astigmatism_angle))
+    )
+    aberrations += (
+        (1 / 3)
+        * alpha**3
+        * pp.coma
+        * jnp.cos(phi - pp.coma_angle)
+    )
+    aberrations += (
+        (1 / 3)
+        * alpha**3
+        * pp.trefoil
+        * jnp.cos(3 * (phi - pp.trefoil_angle))
+    )
+    aberrations += ((1 / 4) * alpha**4 * pp.Cs)
+    aberrations *= (2 * jnp.pi / fpp.wavelength)
+    aberrations = jnp.cos(-aberrations) + 1.0j * jnp.sin(-aberrations)
+
+    probe_fft = jnp.ones(alpha.shape, dtype=jnp.complex64)
+    probe_fft *= aperture
+    probe_fft *= aberrations
+    probe_fft /= jnp.linalg.norm(probe_fft)
+    return probe_fft
