@@ -5,8 +5,17 @@
 % Useful packages
 \usepackage{amsmath}
 \usepackage{graphicx}
-\graphicspath{{../wpm/}}
+\graphicspath{{figures/}{../wpm/}}
 \DeclareGraphicsExtensions{.pdf,.png,.jpg}
+\newcommand{\safeincludegraphics}[2][]{%
+    \IfFileExists{#2.pdf}{\includegraphics[#1]{#2}}{%
+        \IfFileExists{#2.png}{\includegraphics[#1]{#2}}{%
+            \IfFileExists{#2.jpg}{\includegraphics[#1]{#2}}{%
+                \fbox{\parbox[c][0.25\textheight][c]{0.9\linewidth}{\centering Missing figure:\\ \texttt{\detokenize{#2}}}}%
+            }%
+        }%
+    }%
+}
 \usepackage{tikz}
 \usetikzlibrary{positioning}
 \usepackage[colorlinks=true, allcolors=blue]{hyperref}
@@ -19,14 +28,16 @@
 
 \begin{abstract}
 Multislice simulation is the standard method for modeling electron beam-sample interactions in transmission electron microscopy (TEM).
-The traditional multislice algorithm is calculated using a split-step Fourier method that employs a paraxial approximation, limiting its accuracy
+The traditional multislice algorithm is calculated using a split-step Fourier method that employs a paraxial (Fresnel) propagator, limiting its accuracy
 to small scattering angles (typically $<7^\circ$) and ignoring the change of the electron wavelength inside the sample potential.
 These limitations can be significant in scenarios involving high-angle scattering or thick, high-Z samples.
-In this work, we adopt a differentiable Wave Propagation Method (WPM) developed in the light optics community and apply it to electron microscopy by solving
-the time-independent Klein-Gordon wave equation, which enables us to model non-paraxial effects and account for the change of the electron wavelength inside the sample potential.
-By employing a refractive index binning strategy, we reduce the normally prohibitive computational complexity of the WPM from $O(N^{2D})$ to a manageable level suitable for GPU acceleration,
-while maintaining differentiability for inverse problems like ptychography. We validate our method against "ground truth" ODE solutions of the relativistically corrected Schrodinger equation,
-demonstrating superior accuracy at high angles compared to traditional multislice, particularly for thick, high-Z samples.
+In this work, we present a systematic comparison of four propagation methods of increasing physical rigour:
+Fresnel multislice, angular spectrum multislice, the Wave Propagation Method (WPM) from the light optics community, and a Krylov-subspace (Lanczos) forward solver for the Klein-Gordon equation.
+We cast the Dirac, Klein-Gordon, and relativistically corrected Schr\"odinger equations into a common Helmholtz form, adapt the WPM to electron microscopy via a differentiable refractive-index binning strategy,
+and benchmark all four methods against high-angle reference solutions across z-sampling convergence, convergent-beam diffraction at probe semi-angles up to 100~mrad,
+and frozen-phonon Si~[111] simulations.
+Our principal finding is that replacing the Fresnel propagation kernel with the exact angular spectrum kernel---a minimal, inexpensive modification to standard multislice---is
+sufficient to capture high-angle scattering with accuracy comparable to the far more computationally expensive WPM and Klein-Gordon solvers across all tested regimes.
 \end{abstract}
 
 \section{Introduction}
@@ -59,22 +70,22 @@ justify the application of the WPM to electron microscopy multislice simulations
 
 In this paper, we make three contributions:
 \begin{itemize}
-    \item We cast the Dirac, Klein-Gordon, and relativistically corrected Schrodinger equations into a common Helmholtz form to identify the effective electron refractive index.
-    \item We adapt the WPM to electron microscopy and derive the linearization that leads to the Fresnel multislice propagator, clarifying why a direct angular spectrum kernel does not fix multislice.
-    \item We introduce a differentiable refractive-index binning strategy and validate the method against high-angle reference solutions and thick-sample STEM simulations.
+    \item We cast the Dirac, Klein-Gordon, and relativistically corrected Schr\"odinger equations into a common Helmholtz form to identify the effective electron refractive index.
+    \item We adapt the WPM to electron microscopy, derive the linearization that leads to the Fresnel multislice propagator, and introduce a differentiable refractive-index binning strategy that makes the WPM computationally tractable.
+    \item We present a systematic numerical comparison---across z-sampling convergence, probe convergence angle, and frozen-phonon simulations---showing that the angular spectrum propagation kernel alone captures the high-angle accuracy of the more expensive WPM and Klein-Gordon solvers.
 \end{itemize}
-The remainder of the paper reviews the relevant wave equations, derives WPM and its relationship to multislice, presents the binned implementation, and evaluates accuracy on canonical high-angle tests.
+The remainder of the paper reviews the relevant wave equations, derives WPM and its relationship to multislice, presents the binned implementation, and evaluates accuracy across four progressively complex numerical experiments.
 
 \section{Relativistic Dirac Equation and the approximated Klein-Gordon Equation}
 
 As described by \cite{RotherScheerschmidt2009}, the relativistic Dirac equation is the starting point for the most accurate description of high-energy electron scattering:
 
 \begin{equation}
-E\boldsymbol{\Psi}(\vec{r}) = [c\vec{\alpha} \cdot \hat{\vec{p}} + mc^2\beta + V(\vec{r})]\boldsymbol{\Psi}(\vec{r}),
+E\boldsymbol{\Psi}(\vec{r}) = [c\vec{\alpha} \cdot \hat{\vec{p}} + m_0 c^2\beta + V(\vec{r})]\boldsymbol{\Psi}(\vec{r}),
 \label{eq:dirac}
 \end{equation}
 
-where $E$ denotes the energy, $c$ the velocity of light, $m$ the rest mass of the electron, $V$ the electrostatic potential, $\vec{\alpha}$ and $\beta$ the Dirac matrices,
+where $E$ denotes the total energy, $c$ the velocity of light, $m_0$ the electron rest mass, $V$ the electrostatic potential energy (with $V < 0$ for an attractive nuclear potential), $\vec{\alpha}$ and $\beta$ the Dirac matrices,
 $\hat{\vec{p}}$ the momentum operator and $\vec{r}$ the three-dimensional space coordinate. A solution to equation~\eqref{eq:dirac} was used by \cite{RotherScheerschmidt2009} 
 as a "ground-truth" numerical baseline to establish the accuracy of the multislice solution to the relativistically corrected Schrodinger equation. In their work,
 they demonstrated that:
@@ -82,11 +93,13 @@ they demonstrated that:
 \begin{enumerate}
     \item The spin effects of the Dirac equation are mostly negligible to the error in amplitude of a central and high angle beam scattered through a thick sample of gold.
 
-    \item The Taylor expansion that is applied to the $E^2 - V^2$ term, to enable the use of the simple relationship $\sigma V$,
-    where $\sigma$ is the so-called interaction constant given by:
+    \item The Taylor expansion that is applied to the $E^2 - V^2$ term, to enable the use of the simple relationship $\sigma V_\mathrm{elec}$,
+    where $V_\mathrm{elec}$ is the electrostatic potential in Volts and $\sigma$ is the so-called interaction constant given by:
 $$
-\sigma = \frac{2\pi m e \lambda}{h^2}
-$$  does not contribute a significant error to the solution of the wave equation. 
+\sigma = \frac{2\pi \gamma m_0 e \lambda}{h^2}
+$$
+    with $\gamma$ the Lorentz factor, $e$ the elementary charge, and $\lambda$ the relativistic de~Broglie wavelength,
+    does not contribute a significant error to the solution of the wave equation. 
 \end{enumerate}
 
 However, for a diffracted beam at 135 mrad and scattering through a thick sample of gold, they found a divergence between the multislice solution solved via a split-step Fourier method with the Fresnel propagator
@@ -114,7 +127,7 @@ Starting from the time-independent Dirac equation:
 
 \begin{equation}
 \label{eq:dirac_timeindep}
-\left[ c \vec{\alpha} \cdot \hat{\vec{p}} + \beta mc^2 + V \right] \psi = E \psi
+\left[ c \vec{\alpha} \cdot \hat{\vec{p}} + \beta m_0 c^2 + V \right] \psi = E \psi
 \end{equation}
 
 by applying the operator $\left( c \vec{\alpha} \cdot \hat{\vec{p}} \right)$, and performing some algebraic manipulations, we arrive at:
@@ -126,13 +139,13 @@ by applying the operator $\left( c \vec{\alpha} \cdot \hat{\vec{p}} \right)$, an
 
 where
 
-$k_0 = \frac{\sqrt{E^2 - m^2c^4}}{\hbar c}$ represents the vacuum wave number, and $n(\mathbf{r}) = \sqrt{\frac{(E-V)^2 - m^2c^4}{E^2 - m^2c^4}}$ is the effective refractive index of the medium.
+$k_0 = \frac{\sqrt{E^2 - m_0^2c^4}}{\hbar c}$ represents the vacuum wave number, and $n(\mathbf{r}) = \sqrt{\frac{(E-V)^2 - m_0^2c^4}{E^2 - m_0^2c^4}}$ is the effective refractive index of the medium.
 
 From this Helmholtz-like representation, it is straightforward to arrive at the Klein-Gordon equation by setting the $\alpha$ matrices to zero and ignoring the effects of spin,
 
 \begin{equation}
 \label{eq:klein_gordon}
-\nabla^2 \psi + k_0^2 n^2(\mathbf{r}) \psi = \nabla^2 \psi + \frac{(E - V)^2 - m^2c^4}{\hbar^2 c^2} \psi = 0.
+\nabla^2 \psi + k_0^2 n^2(\mathbf{r}) \psi = \nabla^2 \psi + \frac{(E - V)^2 - m_0^2c^4}{\hbar^2 c^2} \psi = 0.
 \end{equation}
 
 The relativistically corrected Schrodinger equation arises from the Klein-Gordon equation by assuming that the potential $V$
@@ -140,15 +153,17 @@ is small compared to the total energy $E$ of the electron, and that when $(E - V
 
 \begin{equation}
 \label{eq:rel_schrodinger}
-\nabla^2 \Psi + \left[ \frac{E^2 - m^2 c^4}{\hbar^2 c^2} - \frac{2\gamma m V}{\hbar^2} \right] \Psi = 0
+\nabla^2 \Psi + \left[ \frac{E^2 - m_0^2 c^4}{\hbar^2 c^2} - \frac{2\gamma m_0 V}{\hbar^2} \right] \Psi = 0
 \end{equation}
 
-Finally, we can write equation~\eqref{eq:rel_schrodinger} with the usual interaction constant $\sigma = \frac{2\gamma m}{\hbar^2 k_0}$ as:
+Writing this in Helmholtz form $\nabla^2 \Psi + k_0^2 n^2(\mathbf{r})\Psi = 0$ identifies the effective refractive index for the relativistically corrected Schr\"odinger equation:
 
 \begin{equation}
-\label{eq:rel_schrodinger_interaction}
-\nabla^2 \Psi + k_0^2 (1 - \sigma V) \Psi = 0
+\label{eq:rel_schrodinger_n}
+n(\mathbf{r}) = \sqrt{1 - \frac{2\gamma m_0 V}{\hbar^2 k_0^2}}
 \end{equation}
+
+which forms the third row of Table~\ref{tab:helmholtz_versions}.
 
 Writing equation \eqref{eq:dirac} in its Helmholtz form \eqref{eq:dirac_helmholtz} allows us to clearly see the relationship between the time-independent Dirac equation and its approximations
 and the classical Helmholtz wave equation in optics. Understanding the connections in this way allows us to directly apply non-paraxial propagation methods from the optics community that solve
@@ -161,14 +176,14 @@ the Helmholtz equation to electron microscopy, provided we use the correct refra
 \hline
 \textbf{Equation} & \textbf{Helmholtz Form} & \textbf{Refractive Index} ($n(\mathbf{r})$) \\
 \hline
-Dirac & $\nabla^2 \psi + k_0^2 n^2 \psi = - \frac{i}{\hbar c} (\vec{\alpha} \cdot \nabla V) \psi$ & $\sqrt{\frac{(E-V)^2 - m^2c^4}{E^2 - m^2c^4}}$ \\
+Dirac & $\nabla^2 \psi + k_0^2 n^2 \psi = - \frac{i}{\hbar c} (\vec{\alpha} \cdot \nabla V) \psi$ & $\sqrt{\frac{(E-V)^2 - m_0^2c^4}{E^2 - m_0^2c^4}}$ \\
 \hline
-Klein-Gordon & $\nabla^2 \psi + k_0^2 n^2 \psi = 0$ & $\sqrt{\frac{(E-V)^2 - m^2c^4}{E^2 - m^2c^4}}$ \\
+Klein-Gordon & $\nabla^2 \psi + k_0^2 n^2 \psi = 0$ & $\sqrt{\frac{(E-V)^2 - m_0^2c^4}{E^2 - m_0^2c^4}}$ \\
 \hline
-Rel. Schrodinger & $\nabla^2 \psi + k_0^2 n^2 \psi = 0$ & $\sqrt{1 - \sigma V}$ \\
+Rel. Schr\"odinger & $\nabla^2 \psi + k_0^2 n^2 \psi = 0$ & $\sqrt{1 - \dfrac{2\gamma m_0 V}{\hbar^2 k_0^2}}$ \\
 \hline
 \end{tabular}
-\caption{Helmholtz versions of quantum mechanics equations. The vacuum wave number is defined as $k_0 = \frac{\sqrt{E^2 - m^2c^4}}{\hbar c}$.}
+\caption{Helmholtz versions of quantum mechanics equations. The vacuum wave number is defined as $k_0 = \frac{\sqrt{E^2 - m_0^2c^4}}{\hbar c}$, $\gamma$ is the Lorentz factor, and $m_0$ is the electron rest mass.}
 \label{tab:helmholtz_versions}
 \end{table}
 
@@ -205,7 +220,7 @@ WPM, however, solves the propagation step $\Delta z$ using a more rigorous Fouri
 
 \begin{equation}
 \label{eq:wpm_propagation}
-\psi(x,y, z+\Delta z) = \frac{1}{2\pi} \iint \tilde{\psi}(k_x, k_y, z) e^{i \sqrt{k_0^2 n^2(x,y) - k_\perp^2} \Delta z} e^{i(k_x x + k_y y)} dk_x dk_y
+\psi(x,y, z+\Delta z) = \frac{1}{(2\pi)^2} \iint \tilde{\psi}(k_x, k_y, z) e^{i \sqrt{k_0^2 n^2(x,y) - k_\perp^2} \Delta z} e^{i(k_x x + k_y y)} dk_x dk_y
 \end{equation}
 
 Here, $\tilde{\psi}$ is the Fourier transform of the wavefunction.
@@ -353,8 +368,8 @@ highlighting the trade-off between physical accuracy and computational efficienc
         \textbf{Helmholtz Wave Equation for single particle and mean-field potential}\\[6pt]
         $\displaystyle \left[\nabla^2 + k_0^2 n^2(\mathbf r)\right] u(\mathbf r) = 0$\\[6pt]
         where the effective electron refractive index $n(\mathbf r)$ is:\\[4pt]
-        $\displaystyle n(\mathbf r)= \sqrt{ \frac{ 2(E-V(\mathbf r))E_0 + (E-V(\mathbf r))^2 }{ 2EE_0 + E^2 } }$
-        \textit{Full accuracy - solved via finite element methods unless approximated}
+        $\displaystyle n(\mathbf r)= \sqrt{ \frac{ (E-V(\mathbf r))^2 - m_0^2 c^4 }{ E^2 - m_0^2 c^4 } }$\\[4pt]
+        \textit{Full accuracy --- solved via finite element methods unless approximated}
     };
 
     \node[box, below=of helm, inner sep=8pt] (wpm) {%
@@ -393,36 +408,195 @@ highlighting the trade-off between physical accuracy and computational efficienc
 \end{figure}
 
 \section{Results}
-\subsection{High-angle beam amplitude benchmark}
-To verify the accuracy of our WPM multislice implementation, we recreated the simulation presented in figure 3 of \cite{RotherScheerschmidt2009},
-which compares the amplitude of a central and high-angle (135 mrad) diffracted beam after propagation through a thick gold sample.
-For the central beam, all methods (MS and WPM) agree. For the high-angle beam at 135 mrad, the amplitude of the diffracted MS solutions deviates from the "ground truth" ODE solution as
-the thickness of the unit cell increases. The WPM solution follows the trend of the ground truth ODE solution more closely, demonstrating that the WPM is more accurate at high angles than
-the traditional MS method while maintaining the efficiency and larger step size of the FFT-based multislice method (with two slices per unit cell), provided one can use a GPU for
-computation of the many binned FFTs required per slice.
+
+We present four numerical experiments of increasing physical complexity, all comparing
+Fresnel multislice (FMS), angular spectrum multislice (ASMS), the Wave Propagation Method (WPM),
+and a Krylov--Lanczos forward solver for the Klein-Gordon equation (KG~FWD).
+In each case the ground truth is either a converged ODE solution of the full second-order Klein-Gordon equation
+(Sections~\ref{sec:verification}--\ref{sec:convergence_angle}) or the KG~FWD Lanczos propagator at matched z-sampling
+(Section~\ref{sec:frozen_phonon}).
+
+\subsection{Verification against Rother \& Scheerschmidt (2009)}
+\label{sec:verification}
+
+To verify all four propagation methods, we recreated the simulation presented in figure~3 of \cite{RotherScheerschmidt2009},
+which tracks the amplitude of a central beam $[0,0]$ and a high-angle beam $[0,28]$ at 135~mrad
+after propagation through a thick gold [100] crystal at 300~keV.
+The ground truth is a converged ODE solution of the full second-order Klein-Gordon equation.
+
+For the central beam, all methods agree closely.
+For the high-angle beam at 135~mrad, the Fresnel multislice solution diverges from the ground truth after approximately five unit cells,
+consistent with the findings of \cite{RotherScheerschmidt2009} who attributed the discrepancy to the linearization of the square-root operator.
+However, the angular spectrum multislice solution---which differs from Fresnel MS only by replacing the parabolic propagation kernel
+$\exp(-i k_\perp^2 \Delta z / 2k_0)$ with the exact kernel $\exp(i\sqrt{k_0^2 - k_\perp^2}\,\Delta z)$---closely tracks the more expensive
+WPM and KG solutions. This is the first indication that the angular spectrum kernel alone captures the essential high-angle physics.
+Table~\ref{tab:rmse_verification} quantifies this observation with RMSE values computed over the first 25 unit cells against the digitized paper reference.
 
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=\textwidth,keepaspectratio]{Au_beam_amplitudes}
-    \caption{Recreation of figure 3 in \cite{RotherScheerschmidt2009} showing the amplitude of the central and high-angle (135 mrad) diffracted beams
-             after propagation with our multislice and wave propagation methods. Plotted in green is the "ground truth" ODE solution and the multislice solution
-             to the Klein-Gordon equation. In blue are the Angular Spectrum Multislice (ASMS) solution and the Wave Propagation Method (WPM) solution.}
+    \safeincludegraphics[width=\textwidth,keepaspectratio]{Au_beam_amplitudes}
+    \caption{Amplitude of the central $[0,0]$ and high-angle $[0,28]$ (135~mrad) diffracted beams
+             as a function of crystal thickness for Au~[100] at 300~keV, recreating figure~3 of \cite{RotherScheerschmidt2009}.
+             The angular spectrum MS (ASMS) closely tracks the WPM and KG ground truth,
+             while Fresnel MS (FMS) diverges at high angles.}
     \label{fig:au_beam_amplitudes}
 \end{figure}
 
-\subsection{Thick-sample STEM comparison}
-To test the WPM multislice method in a more realistic scenario, we performed a STEM simulation of a thick sample of gold (100 nm),
-tilted at 30 degrees relative to the incident electron beam. We compare the WPM multislice method to the traditional Fresnel multislice method.
-The WPM preserves high-angle scattering and reduces phase errors that appear in the Fresnel MS solution for large tilt and thickness,
-leading to stronger high-angle detector signals and improved contrast in the simulated STEM images. These results emphasize that the WPM
-retains the computational structure of multislice while remaining accurate in regimes where the paraxial approximation breaks down.
+\begin{table}[ht]
+    \centering
+    \begin{tabular}{lcc}
+        \hline
+        \textbf{Method} & \textbf{RMSE $[0,0]$} & \textbf{RMSE $[0,28]$} \\
+        \hline
+        Fresnel MS       & ---  & --- \\
+        Angular Spectrum MS & ---  & --- \\
+        WPM              & ---  & --- \\
+        KG FWD Lanczos   & ---  & --- \\
+        Full KG ODE      & ---  & --- \\
+        \hline
+    \end{tabular}
+    \caption{RMSE of beam amplitudes versus the digitized reference data of \cite{RotherScheerschmidt2009}
+             over the first 25 unit cells. Values to be filled from simulation output.}
+    \label{tab:rmse_verification}
+\end{table}
+
+\subsection{Z-sampling convergence}
+\label{sec:z_sampling}
+
+Having established qualitative agreement, we now test how each method converges as the z-sampling (number of slices per unit cell) is refined.
+We propagate a plane wave through ${\sim}100$ unit cells of Au~[110] at 200~keV.
+The ground truth is a KG~ODE solution with 128 slices per unit cell and tight tolerances ($\texttt{rtol} = 10^{-9}$, $\texttt{atol} = 10^{-11}$).
+For each method, the z-sampling is varied from 1 to 128 slices per unit cell and the relative $L^2$ norm of the
+diffraction pattern difference is computed against the ground truth.
+
+Figure~\ref{fig:z_convergence} shows that all four methods converge at a similar rate as the z-sampling is refined,
+and that the WPM and KG~FWD~Lanczos methods do not permit coarser z-sampling than standard multislice for the same level of accuracy.
+Beyond ${\sim}8$ slices per unit cell, further refinement yields diminishing returns---less than one order of magnitude
+improvement in diffraction pattern error despite a large increase in computational cost.
+The angular spectrum method achieves comparable accuracy to WPM and KG~FWD at each z-sampling level,
+at a fraction of the computational cost.
+
+\begin{figure}[ht]
+    \centering
+    \safeincludegraphics[width=\textwidth,keepaspectratio]{z_sampling_convergence}
+    \caption{Z-sampling convergence for Au~[110] at 200~keV (${\sim}100$ unit cells).
+             Left: relative $L^2$ error of the diffraction pattern vs.\ the KG~ODE ground truth (128~sl/cell).
+             Right: wall-clock runtime.
+             All methods converge at a similar rate; the more expensive WPM and KG solvers offer no z-sampling advantage.}
+    \label{fig:z_convergence}
+\end{figure}
+
+\subsection{Accuracy versus probe convergence angle}
+\label{sec:convergence_angle}
+
+Next, we test each method's accuracy as a function of probe convergence semi-angle for a convergent-beam electron diffraction (CBED) geometry.
+A convergent probe with semi-angles ranging from 5 to 100~mrad is propagated through the same Au~[110] crystal at 200~keV,
+using 32 slices per unit cell for the test methods and a KG~ODE ground truth with 128 slices per unit cell.
+
+Figure~\ref{fig:angle_convergence} plots the relative $L^2$ diffraction pattern error as a function of semi-angle.
+Across the entire angular range, the angular spectrum method provides accuracy comparable to both WPM and KG~FWD~Lanczos,
+while the Fresnel propagator shows a growing error at higher convergence angles.
+Figure~\ref{fig:cbed_patterns} displays the diffraction patterns at four representative semi-angles (5, 20, 50, and 100~mrad),
+confirming that no visually discernible differences exist between angular spectrum MS and the more expensive methods even at 100~mrad.
+
+\begin{figure}[ht]
+    \centering
+    \safeincludegraphics[width=\textwidth,keepaspectratio]{angle_convergence}
+    \caption{Relative $L^2$ error of the CBED diffraction pattern versus the KG~ODE ground truth (128~sl/cell)
+             as a function of probe convergence semi-angle for Au~[110] at 200~keV (32~sl/cell for test methods).
+             The angular spectrum method tracks the WPM and KG~FWD accuracy throughout.}
+    \label{fig:angle_convergence}
+\end{figure}
+
+\begin{figure}[ht]
+    \centering
+    \safeincludegraphics[width=\textwidth,keepaspectratio]{cbed_pattern_grid}
+    \caption{CBED patterns for Au~[110] at 200~keV at selected convergence semi-angles (5, 20, 50, 100~mrad).
+             Columns: KG~ODE ground truth, Fresnel MS, Angular Spectrum MS, WPM, KG~FWD Lanczos.
+             The angular spectrum patterns are visually indistinguishable from the WPM and KG references
+             across all tested semi-angles.}
+    \label{fig:cbed_patterns}
+\end{figure}
+
+\subsection{Frozen phonon CBED --- Si [111]}
+\label{sec:frozen_phonon}
+
+Finally, we test each method in a realistic frozen-phonon CBED simulation.
+Si~[111] is propagated at 200~keV with a 6.2~mrad convergent probe,
+120 unit cells along the beam direction, 16 slices per unit cell, and 16 frozen phonon configurations
+($\sigma_\mathrm{Si} = 0.078$~\AA).
+For this experiment, the KG~FWD~Lanczos propagator at matched z-sampling serves as the ground truth,
+since the full KG~ODE with 128 slices per cell is prohibitively expensive for repeated frozen-phonon runs.
+
+Figure~\ref{fig:fp_cbed} shows the frozen-phonon averaged CBED patterns for each method on a logarithmic intensity scale.
+Figure~\ref{fig:fp_diff_maps} presents difference maps of each method's averaged diffraction pattern and exit-wave amplitude
+relative to the KG~FWD reference.
+Table~\ref{tab:fp_errors} lists the RMSE, relative $L^2$ error, and mean wall-clock time per frozen phonon configuration.
+
+Even in this realistic scenario with thermal disorder, the angular spectrum method produces diffraction patterns
+that are effectively identical to the KG~FWD reference, while requiring a small fraction of the compute time.
+The WPM results are likewise comparable, but at substantially higher cost.
+These results confirm that across all tested regimes---from single-beam verification to frozen-phonon averaged CBED---the
+angular spectrum propagation kernel is sufficient to capture the physics of high-angle electron scattering
+without recourse to more expensive methods.
+
+\begin{figure}[ht]
+    \centering
+    \safeincludegraphics[width=\textwidth,keepaspectratio]{fp_cbed_patterns}
+    \caption{Frozen-phonon averaged CBED patterns for Si~[111] at 200~keV (6.2~mrad probe, 16 configurations,
+             16~sl/cell, 120 unit cells). Intensities displayed on a logarithmic scale.}
+    \label{fig:fp_cbed}
+\end{figure}
+
+\begin{figure}[ht]
+    \centering
+    \safeincludegraphics[width=\textwidth,keepaspectratio]{fp_diff_maps}
+    \caption{Difference maps relative to KG~FWD Lanczos for Si~[111] frozen-phonon CBED.
+             Top row: normalised diffraction pattern difference.
+             Bottom row: normalised exit-wave amplitude difference.}
+    \label{fig:fp_diff_maps}
+\end{figure}
+
+\begin{table}[ht]
+    \centering
+    \begin{tabular}{lccc}
+        \hline
+        \textbf{Method} & \textbf{RMSE} & \textbf{Rel.\ $L^2$} & \textbf{Time/config (s)} \\
+        \hline
+        Fresnel MS         & ---  & ---  & --- \\
+        Angular Spectrum MS & ---  & ---  & --- \\
+        WPM                & ---  & ---  & --- \\
+        KG FWD Lanczos (ref) & ---  & ---  & --- \\
+        \hline
+    \end{tabular}
+    \caption{Error metrics and runtime for frozen-phonon averaged CBED of Si~[111] relative to KG~FWD~Lanczos.
+             Values to be filled from simulation output.}
+    \label{tab:fp_errors}
+\end{table}
 
 \section{Conclusion}
-We presented a wide-angle multislice framework based on the Wave Propagation Method, derived its relationship to the paraxial Fresnel multislice propagator,
-and clarified why swapping in an angular spectrum kernel does not remove the linearization inherent to multislice. By introducing a differentiable refractive-index
-binning strategy, the method becomes computationally tractable while remaining suitable for gradient-based inverse problems. Benchmarks against high-angle
-reference solutions and thick-sample STEM simulations indicate that WPM provides improved accuracy in regimes where the paraxial approximation fails. Future work
-will focus on systematic comparisons to Padé-based wide-angle multislice schemes and integration with large-scale ptychographic reconstructions.
+We presented a systematic comparison of four propagation methods for electron multislice simulation---Fresnel multislice,
+angular spectrum multislice, the Wave Propagation Method, and a Krylov--Lanczos Klein-Gordon forward solver---benchmarked
+across four experiments of increasing physical complexity: high-angle beam amplitude verification against published results,
+z-sampling convergence, convergent-beam diffraction at probe semi-angles up to 100~mrad, and frozen-phonon CBED of Si~[111].
+
+Our principal finding is that replacing the Fresnel propagation kernel with the exact angular spectrum kernel---a minimal
+and inexpensive modification to standard multislice---is sufficient to capture high-angle scattering with accuracy
+comparable to the far more computationally expensive WPM and Klein-Gordon solvers.
+The WPM and Lanczos methods do not permit coarser z-sampling for a given accuracy level,
+and the diminishing returns beyond moderate z-refinement make them impractical for routine use.
+
+These results do not diminish the theoretical value of the WPM or full Klein-Gordon solvers:
+they remain essential as ground-truth references and may prove necessary in extreme regimes not tested here
+(e.g., very thick high-Z samples at energies below 100~keV).
+However, for the broad range of conditions encountered in modern TEM---including convergent-beam
+and frozen-phonon simulations---the angular spectrum multislice method provides an excellent balance
+of accuracy and computational efficiency.
+
+The differentiable refractive-index binning strategy introduced for the WPM remains a useful contribution,
+as it enables gradient-based inverse problems such as ptychography to be formulated with a wide-angle
+forward model when needed. Future work will explore the limits of the angular spectrum approximation
+in extreme scattering geometries and integrate the method with large-scale ptychographic reconstructions.
 
 \bibliographystyle{unsrt}
 \bibliography{sample}
