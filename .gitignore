@@ -34,3 +34,18 @@ jax_ptychography/
 *.bin
 *.venv
 venv/
+
+# Generated paper artifacts (LaTeX build outputs and PDFs)
+Paper/*.aux
+Paper/*.bbl
+Paper/*.blg
+Paper/*.fdb_latexmk
+Paper/*.fls
+Paper/*.log
+Paper/*.pdf
+Paper/*.synctex.gz
+Paper/figures/*.pdf
+
+# Executed notebook artifacts and temporary notebook files
+notebooks/**/*_executed.ipynb
+notebooks/**/*.ipynb.tmp
