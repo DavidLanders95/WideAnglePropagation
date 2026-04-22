@@ -8,9 +8,9 @@
 \graphicspath{{figures/}{../wpm/}}
 \DeclareGraphicsExtensions{.pdf,.png,.jpg}
 \newcommand{\safeincludegraphics}[2][]{%
-    \IfFileExists{#2.pdf}{\includegraphics[#1]{#2}}{%
-        \IfFileExists{#2.png}{\includegraphics[#1]{#2}}{%
-            \IfFileExists{#2.jpg}{\includegraphics[#1]{#2}}{%
+    \IfFileExists{figures/#2.pdf}{\includegraphics[#1]{figures/#2}}{%
+        \IfFileExists{figures/#2.png}{\includegraphics[#1]{figures/#2}}{%
+            \IfFileExists{figures/#2.jpg}{\includegraphics[#1]{figures/#2}}{%
                 \fbox{\parbox[c][0.25\textheight][c]{0.9\linewidth}{\centering Missing figure:\\ \texttt{\detokenize{#2}}}}%
             }%
         }%
@@ -353,6 +353,7 @@ highlighting the trade-off between physical accuracy and computational efficienc
 
 \begin{figure}[ht]
     \centering
+        \resizebox{\textwidth}{!}{%
     \begin{tikzpicture}[
       node distance=1.2cm,
       box/.style={
@@ -403,7 +404,8 @@ highlighting the trade-off between physical accuracy and computational efficienc
     \draw[->, very thick, >=stealth]
         ([xshift=5cm]helm.north) -- ([xshift=5cm]msft.south) node[midway, right]{\Large Less Accurate};
     \end{tikzpicture}
-    \caption{Schematic comparison of the exact Helmholtz formulation, WPM, and Fresnel multislice, illustrating the trade-off between accuracy and computational cost.}
+    }
+    \caption{Trade-off between exact Helmholtz, WPM, and Fresnel multislice in accuracy and computational cost.}
     \label{fig:method_summary}
 \end{figure}
 
@@ -448,15 +450,15 @@ Table~\ref{tab:rmse_verification} quantifies this observation with RMSE values c
         \hline
         \textbf{Method} & \textbf{RMSE $[0,0]$} & \textbf{RMSE $[0,28]$} \\
         \hline
-        Fresnel MS       & ---  & --- \\
-        Angular Spectrum MS & ---  & --- \\
-        WPM              & ---  & --- \\
-        KG FWD Lanczos   & ---  & --- \\
-        Full KG ODE      & ---  & --- \\
+        Fresnel MS       & $8.17\times10^{-3}$  & $5.02\times10^{-3}$ \\
+        Angular Spectrum MS & $8.58\times10^{-3}$  & $8.15\times10^{-4}$ \\
+        WPM              & $8.40\times10^{-3}$  & $8.65\times10^{-4}$ \\
+        KG FWD Lanczos   & $8.50\times10^{-3}$  & $8.60\times10^{-4}$ \\
+        Full KG ODE      & $8.45\times10^{-3}$  & $7.77\times10^{-4}$ \\
         \hline
     \end{tabular}
     \caption{RMSE of beam amplitudes versus the digitized reference data of \cite{RotherScheerschmidt2009}
-             over the first 25 unit cells. Values to be filled from simulation output.}
+             over the first 25 unit cells.}
     \label{tab:rmse_verification}
 \end{table}
 
@@ -496,7 +498,7 @@ using 32 slices per unit cell for the test methods and a KG~ODE ground truth wit
 Figure~\ref{fig:angle_convergence} plots the relative $L^2$ diffraction pattern error as a function of semi-angle.
 Across the entire angular range, the angular spectrum method provides accuracy comparable to both WPM and KG~FWD~Lanczos,
 while the Fresnel propagator shows a growing error at higher convergence angles.
-Figure~\ref{fig:cbed_patterns} displays the diffraction patterns at four representative semi-angles (5, 20, 50, and 100~mrad),
+Figure~\ref{fig:cbed_patterns} displays the diffraction patterns at four representative semi-angles (5, 30, 50, and 100~mrad),
 confirming that no visually discernible differences exist between angular spectrum MS and the more expensive methods even at 100~mrad.
 
 \begin{figure}[ht]
@@ -511,7 +513,7 @@ confirming that no visually discernible differences exist between angular spectr
 \begin{figure}[ht]
     \centering
     \safeincludegraphics[width=\textwidth,keepaspectratio]{cbed_pattern_grid}
-    \caption{CBED patterns for Au~[110] at 200~keV at selected convergence semi-angles (5, 20, 50, 100~mrad).
+    \caption{CBED patterns for Au~[110] at 200~keV at selected convergence semi-angles (5, 30, 50, 100~mrad).
              Columns: KG~ODE ground truth, Fresnel MS, Angular Spectrum MS, WPM, KG~FWD Lanczos.
              The angular spectrum patterns are visually indistinguishable from the WPM and KG references
              across all tested semi-angles.}
@@ -535,7 +537,6 @@ Table~\ref{tab:fp_errors} lists the RMSE, relative $L^2$ error, and mean wall-cl
 
 Even in this realistic scenario with thermal disorder, the angular spectrum method produces diffraction patterns
 that are effectively identical to the KG~FWD reference, while requiring a small fraction of the compute time.
-The WPM results are likewise comparable, but at substantially higher cost.
 These results confirm that across all tested regimes---from single-beam verification to frozen-phonon averaged CBED---the
 angular spectrum propagation kernel is sufficient to capture the physics of high-angle electron scattering
 without recourse to more expensive methods.
@@ -563,14 +564,12 @@ without recourse to more expensive methods.
         \hline
         \textbf{Method} & \textbf{RMSE} & \textbf{Rel.\ $L^2$} & \textbf{Time/config (s)} \\
         \hline
-        Fresnel MS         & ---  & ---  & --- \\
-        Angular Spectrum MS & ---  & ---  & --- \\
-        WPM                & ---  & ---  & --- \\
-        KG FWD Lanczos (ref) & ---  & ---  & --- \\
+        Fresnel MS              & $8.26\times10^{-5}$ & $2.39\times10^{-3}$ & 0.82 \\
+        Angular Spectrum MS     & $8.31\times10^{-5}$ & $2.40\times10^{-3}$ & 0.44 \\
+        KG FWD Lanczos (ref)    & ---                 & ---                 & 36.36 \\
         \hline
     \end{tabular}
-    \caption{Error metrics and runtime for frozen-phonon averaged CBED of Si~[111] relative to KG~FWD~Lanczos.
-             Values to be filled from simulation output.}
+    \caption{Error metrics and runtime for frozen-phonon averaged CBED of Si~[111] relative to KG~FWD~Lanczos.}
     \label{tab:fp_errors}
 \end{table}
 
