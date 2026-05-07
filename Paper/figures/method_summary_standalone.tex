@@ -12,11 +12,17 @@
         rectangle,
         draw,
         rounded corners,
-        align=center,% Changed from left to center for better balance
-        text width=5.5cm,% Increased width to reduce underfull warnings
-        minimum height=3.8cm,% Increased height for uniformity
-        inner sep=7pt,
+        align=center,
+        text width=4.4cm,
+        minimum height=4.0cm,
+        inner sep=6pt,
         anchor=center
+    },
+    deriv/.style={
+        align=center,
+        font=\footnotesize,
+        text width=3.3cm,
+        inner sep=2pt
     },
     >=Stealth
 ]
@@ -25,32 +31,62 @@
     \node[box] (helm) {%
         \boxtitle{Helmholtz Wave Equation}\\[6pt]
         \eq{\bigl[\nabla^2 + k_0^2\,n^2(\mathbf{r})\bigr]\;u(\mathbf{r})=0}\\[12pt]
-        \note{Full wave equation solver}
+        \note{Reference full-wave formulation}
     };
 
-    % --- 2) WPM (index-dependent spectral step) ---
-    \node[box, right=0.5cm of helm] (wpm) {%
+    % --- 2) Full KG ODE ---
+    \node[box, right=0.35cm of helm] (ode) {%
+        \boxtitle{Full KG ODE}\\[6pt]
+        \eq{\partial_z^2\psi+\bigl(\nabla_\perp^2+k_0^2 n^2(\mathbf{r})\bigr)\psi=0}\\[12pt]
+        \note{Adaptive second-order non-paraxial solve}
+    };
+
+    % --- 3) Lanczos / Krylov KG forward propagator ---
+    \node[box, right=0.35cm of ode] (lanczos) {%
+        \boxtitle{KG FWD Lanczos}\\[6pt]
+        \eq{\psi(z\!+\!\Delta z)\approx \exp\!\bigl(i\Delta z\sqrt{M}\bigr)\,\psi(z)}\\[12pt]
+        \note{Forward-wave square-root KG propagator via Krylov/Lanczos}
+    };
+
+    % --- 4) WPM (index-dependent spectral step) ---
+    \node[box, right=0.35cm of lanczos] (wpm) {%
         \boxtitle{WPM (Wide-angle, local $n$)}\\[6pt]
         \eq{u(z\!+\!\Delta z)=\mathcal F^{-1}\!\left[ e^{\,i k_z^{(m)}\Delta z}\mathcal F\{u(z)\} \right]}\\[4pt]
         \eq{k_z^{(m)}=\sqrt{(k_0 n_m)^2-k_x^2-k_y^2}}\\[6pt]
-        \note{Wide-angle propagator in potential\\(refractive index) between slices}
+        \note{Wide-angle split-step with local refractive index}
     };
 
-    % --- 3) Angular Spectrum (single homogeneous propagator) ---
-    \node[box, right=0.5cm of wpm] (as) {%
+    % --- 5) Angular Spectrum (single homogeneous propagator) ---
+    \node[box, right=0.35cm of wpm] (as) {%
         \boxtitle{Angular Spectrum (Non-Paraxial)}\\[6pt]
         \eq{u(z\!+\!\Delta z)=\mathcal F^{-1}\!\left[ e^{\,i k_z\Delta z}\mathcal F\{u(z)\} \right]}\\[4pt]
         \eq{k_z=\sqrt{k^2-k_x^2-k_y^2}}\\[6pt]
-        \note{Wide-angle propagator in free space between slices}
+        \note{Wide-angle split-step in free space}
     };
 
-    % --- 4) Fresnel (paraxial) ---
-    \node[box, right=0.5cm of as] (fres) {%
+    % --- 6) Fresnel (paraxial) ---
+    \node[box, right=0.35cm of as] (fres) {%
         \boxtitle{Fresnel (Paraxial)}\\[6pt]
         \eq{u(z\!+\!\Delta z)=\mathcal F^{-1}\!\left[ e^{-i\pi\lambda\Delta z k_\perp^2}\mathcal F\{u(z)\} \right]}\\[4pt]
         \eq{k_\perp^2=k_x^2+k_y^2}\\[6pt]
-        \note{Small-angle propagator in free space between slices}
+        \note{Paraxial split-step in free space}
     };
+
+    % --- Local derivation annotations between methods ---
+    \draw[semithick, ->] ($(helm.south east)+(0,-0.45cm)$) -- ($(ode.south west)+(0,-0.45cm)$)
+        node[midway, below=2pt, deriv]{split into longitudinal and transverse parts\\second-order evolution in $z$};
+
+    \draw[semithick, ->] ($(ode.south east)+(0,-0.45cm)$) -- ($(lanczos.south west)+(0,-0.45cm)$)
+        node[midway, below=2pt, deriv]{keep only the forward branch\\$\partial_z\psi=i\sqrt{M}\,\psi$};
+
+    \draw[semithick, <->, dashed] ($(lanczos.south east)+(0,-0.45cm)$) -- ($(wpm.south west)+(0,-0.45cm)$)
+        node[midway, below=2pt, deriv]{same forward square-root operator\\different numerical realization};
+
+    \draw[semithick, ->] ($(wpm.south east)+(0,-0.45cm)$) -- ($(as.south west)+(0,-0.45cm)$)
+        node[midway, below=2pt, deriv]{homogeneous slice limit\\$n(x,y)=\mathrm{const.}$};
+
+    \draw[semithick, ->] ($(as.south east)+(0,-0.45cm)$) -- ($(fres.south west)+(0,-0.45cm)$)
+        node[midway, below=2pt, deriv]{paraxial Taylor expansion\\$k_z\approx k_0-k_\perp^2/(2k_0)$};
 
     % --- Tradeoff arrows (top: faster, bottom: more accurate) ---
     % Calculate exact start and end x-coordinates based on bounding boxes
@@ -62,7 +98,7 @@
     \draw[very thick, ->] ($(start_top)+(0,0.5cm)$) -- ($(end_top)+(0,0.5cm)$) 
         node[midway, above]{\Large Faster / simpler $\rightarrow$};
     
-    \draw[very thick, <-] ($(start_bot)-(0,0.5cm)$) -- ($(end_bot)-(0,0.5cm)$) 
+    \draw[very thick, <-] ($(start_bot)-(0,1.55cm)$) -- ($(end_bot)-(0,1.55cm)$) 
         node[midway, below]{\Large $\leftarrow$ More accurate / more general};
 
 \end{tikzpicture}
