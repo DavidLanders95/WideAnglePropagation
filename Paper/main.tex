@@ -40,24 +40,59 @@ Our principal finding is that replacing the Fresnel propagation kernel with the 
 sufficient to capture high-angle scattering with accuracy comparable to the far more computationally expensive WPM and Klein-Gordon solvers across all tested regimes.
 \end{abstract}
 
-\section{Introduction}
+\section{Introduction - Wave Equation}
 
-The traditional multislice propagation method is the standard computational tool \cite{cowley1957scattering, kirkland2010advanced} to solve the time-independent relativistically corrected Schrodinger wave equation.
-By assuming a mean-field independent-atom potential and splitting the three-dimensional object into thin slices while alternating between transmission and propagation steps, the multislice method allows
-for efficient inclusion of dynamical scattering effects essential for interpreting modern electron microscopy data. However, the standard implementation of
-the multislice algorithm relies on the Fresnel propagator whose formulation inherently assumes the paraxial approximation, where scattering angles are small (typically $<7^\circ$).
+Transmission electron microscopy has become one of the most powerful tools in condensed-matter physics, materials science, and structural biology, providing direct access to the atomic-scale structure and composition of matter. Modern aberration-corrected instruments routinely achieve sub-angstrom spatial resolution, enabling the imaging of individual atomic columns, the mapping of local chemical environments, and the characterisation of lattice defects and interfaces with an atomic precision that is unavailable to any other technique. Interpreting these data quantitatively is not straightforward, however: extracting atomic positions, strain fields, or chemical composition requires matching experimental images and diffraction patterns against simulated counterparts, and the fidelity of that comparison is bounded by the accuracy of the forward simulation model.
 
-While this approximation holds for many conventional imaging conditions, it becomes increasingly inaccurate in regimes that contain high-angle scattering effects.
-Specifically, discrepancies arise in scenarios involving transmission through thick, high-atomic-number (high-Z) samples,
-where the cumulative scattering angles exceed the limits of the paraxial assumption. Previous work by Rother and Scheerschmidt \cite{RotherScheerschmidt2009} have demonstrated
-in the case of a periodic thick gold sample that spin effects included in the Dirac wave equation and the complete relativistic factor of the Klein-Gordon equation are mostly negligible when
-comparing the amplitude of high-angle beams in a thick gold sample. However, the paraxial nature of multislice begins to show deviations from a complete solution to the wave equation after five unit cells
-of thickness. Their conclusion was that the linearization of the wave equation (the paraxial approximation) leads to significant divergence in diffraction
-amplitudes at high angles (e.g., 135 mrad) when propagating through thick crystals.
 
-Methods to overcome the paraxial approximation in solutions to the wave equation have already been developed in the light optics community
-(where the multislice method is known as the Beam Propagation Method (BPM)) by developing non-paraxial propagation techniques through the use of higher
-order Taylor expansions of the propagation operator of the time-independent Helmholtz wave equation, known as Padé approximants \cite{Hadley1992}. Padé approximants have been
+The time-independent wave equation for a relativistic electron traversing an electrostatic potential $V(\mathbf{r})$, neglecting spin, is the Klein-Gordon equation. Written in Helmholtz form, it reads
+
+\begin{equation}
+\label{eq:kg_helmholtz_intro}
+\nabla^2 \psi + k_0^2\, n^2(\mathbf{r})\, \psi = 0,
+\end{equation}
+
+where $k_0 = \sqrt{E^2 - m_0^2 c^4}\,/\,\hbar c$ is the vacuum wavenumber and
+
+\begin{equation}
+\label{eq:n_intro}
+n(\mathbf{r}) = \sqrt{\frac{\bigl(E - V(\mathbf{r})\bigr)^2 - m_0^2 c^4}{E^2 - m_0^2 c^4}}
+\end{equation}
+
+is an effective electron refractive index set by the local electrostatic potential. This expression equals unity in vacuum and departs from it only where the potential is nonzero, encoding the full relativistic energy-momentum relation of the electron in the presence of the specimen.%
+\footnote{The relativistically corrected Schr\"{o}dinger equation follows by expanding $(E-V)^2 \approx E^2 - 2EV$ and dropping the $V^2$ term, which is valid when $|V| \ll E$. Substituting into $k_0^2 n^2(\mathbf{r})$ gives $k_0^2 n^2 \approx k_0^2 - 2\gamma m_0 V/\hbar^2$, and the wave equation reduces to $\nabla^2\psi + [k_0^2 - 2\gamma m_0 V/\hbar^2]\,\psi = 0$, the familiar form of the relativistically corrected Schr\"{o}dinger equation.}
+
+The standard numerical framework for solving this equation in TEM is the multislice method, introduced by Cowley and Moodie \cite{cowley1957scattering} and refined into a widely deployed computational tool over the following decades. Its central idea is to divide the specimen into a series of thin slices perpendicular to the beam and propagate the electron wave through them by alternating between a transmission step---in which the wave accumulates a phase shift proportional to the projected electrostatic potential---and a free-space propagation step. This split-step structure arises naturally from the Helmholtz equation~\eqref{eq:kg_helmholtz_intro}. Separating the Laplacian into transverse and longitudinal parts, $\nabla^2 = \partial_z^2 + \nabla_\perp^2$, and rearranging gives
+\[
+\partial_z^2\psi = -\bigl(k_0^2 n^2(\mathbf{r}) + \nabla_\perp^2\bigr)\psi.
+\]
+This second-order equation in $z$ factors into forward- and backward-propagating operators; neglecting back-scattering and retaining only the forward factor yields the one-way wave equation
+\begin{equation}
+\label{eq:one_way_intro}
+\partial_z \psi = i\sqrt{k_0^2 n^2(\mathbf{r}) + \nabla_\perp^2}\;\psi,
+\end{equation}
+whose formal solution over a slice of thickness $\Delta z$ is $\psi(z+\Delta z) = \exp(i\sqrt{k_0^2 n^2 + \nabla_\perp^2}\,\Delta z)\,\psi(z)$. The split-step approximation factors this propagator into a potential term and a free-space diffraction term,
+\[
+\exp\!\bigl(i\sqrt{k_0^2 n^2(\mathbf{r}) + \nabla_\perp^2}\,\Delta z\bigr) \approx e^{ik_0(n(\mathbf{r})-1)\Delta z} \cdot e^{i\sqrt{k_0^2+\nabla_\perp^2}\,\Delta z},
+\]
+which is valid when the potential varies slowly over $\Delta z$. Linearising equation~\eqref{eq:n_intro} for $|V|\ll E$ gives $k_0(n-1) \approx \sigma V$, where $\sigma = 2\pi\gamma m_0 e\lambda/h^2$ is the relativistic interaction constant; integrating through the slice then replaces the 3D potential with its column projection $V_\mathrm{proj}(x,y) = \int V\,\mathrm{d}z$. Replacing the free-space factor by the paraxial Fresnel kernel $e^{-ik_\perp^2\Delta z/(2k_0)}$ in Fourier space gives
+\begin{equation}
+\label{eq:ms_intro}
+\psi(x,y,z+\Delta z) \approx e^{i\sigma V_\mathrm{proj}(x,y)}\,
+\mathcal{F}^{-1}\!\left[e^{-i\frac{k_\perp^2}{2k_0}\Delta z}\,\mathcal{F}\{\psi\}\right],
+\end{equation}
+where $V_\mathrm{proj}$ is the projected potential of the slice and $k_\perp^2 = k_x^2 + k_y^2$. Equation~\eqref{eq:ms_intro} is the standard multislice propagator---the workhorse of quantitative TEM simulation. This split-operator structure is computationally efficient, exploits the Fast Fourier Transform (FFT) for both steps, scales favourably with modern GPU hardware, and correctly reproduces the dynamical (multiple) scattering essential for quantitative TEM simulation. The propagation step is in practice implemented using the Fresnel (paraxial) propagator, which is the leading-order approximation to free-space diffraction valid only when all relevant scattering angles are small. In this limit the exact dispersion relation is linearised and the electron wavelength is held constant even inside regions of nonzero potential, where the full equation~\eqref{eq:n_intro} requires it to change. For most conventional conditions---thin specimens, small convergence angles, low-to-moderate atomic numbers---these errors are negligible. For thick, high-Z specimens or large probe convergence angles, however, cumulative high-angle scattering drives the beam into the regime where the linearisation breaks down, and diffracted intensities beyond roughly $7^\circ$ are increasingly misdescribed.
+
+The optics community has developed a family of non-paraxial propagation methods that solve the Helmholtz equation well beyond the Fresnel limit while remaining computationally tractable: the angular spectrum method retains the exact free-space dispersion relation; Pad\'e approximant schemes extend accuracy to successively higher angles through rational approximations to the square-root operator; and the Wave Propagation Method (WPM) \cite{Brenner1993} solves the forward-scattering Helmholtz equation through a Fourier-domain integral that keeps the square-root operator fully intact. Transferring any of these to electron microscopy requires only substituting the electron refractive index of equation~\eqref{eq:n_intro} for its optical counterpart. The present work pursues that programme systematically: we implement and benchmark four propagation methods of increasing physical rigour---standard Fresnel multislice; the angular spectrum method, which replaces only the Fresnel kernel with the exact free-space dispersion relation; the WPM, a high-angle split-step scheme that additionally accounts for the spatially varying electron wavelength inside the potential; and a ground-truth forward solver for the Klein-Gordon equation---and compare their accuracy and computational cost across a range of typical scattering problems in electron microscopy. 
+
+
+\section{Introduction - Multislice}
+
+The traditional multislice propagation method is the standard computational tool \cite{cowley1957scattering, kirkland2010advanced} to solve the time-independent relativistically corrected Schrodinger wave equation. By assuming an independent-atom potential and splitting the three-dimensional object into thin slices while alternating between transmission and propagation steps, the multislice method enables efficient inclusion of multiple (dynamical) scattering effects essential. However, the standard implementation of the multislice algorithm relies on the Fresnel propagator whose formulation inherently assumes the paraxial approximation, where scattering angles are small (typically $<7^\circ$).
+
+While this approximation holds for many conventional imaging conditions, its accuracy in thick, high-atomic-number (high-Z) samples is diminished, since cumulative scattering angles can approach or exceed the range in which the paraxial assumption is expected to hold. Previous work by Rother and Scheerschmidt \cite{RotherScheerschmidt2009} found that conventional paraxial multislice begins to deviate from more complete wave-equation solutions after approximately five unit cells of thickness in a sample of gold, with significant differences appearing in high-angle diffraction amplitudes such as the 135 mrad beam. Their study used a forward scattering ODE solution of the approximated Klein-Gordon equation as a "ground truth" reference to establish the accuracy of the multislice solution, and attributed the discrepancy to the linearization of the second-order term in the wave equation, which is a consequence of the paraxial approximation. They noted that although the ODE solution to the Klein Gordon wave equation is more accurate than the multislice solution, it is not a practical alternative to multislice for general simulations of electron scattering due to its computational cost and requirement for a periodic potential. They note that frozen phonon effects in particular are prohibitive to include in an ODE solution, as it requires repeated simulations over many frozen phonon configurations to include thermal vibrations, which has become a standard requirement to include thermal diffuse scattering in TEM simulations. As a result, as electron microscopy attempts to push the limits of resolution and sensitivity, there is a need for a more accurate propagation method that can capture high-angle scattering effects while still being computationally efficient enough to be used in repeated simulations over many frozen phonon configurations.
+
+Although multislice was originally developed in electron microscopy, the light-optics community has developed more advanced wave-propagation methods that remain computationally efficient while extending accuracy beyond the paraxial approximation, which include the angular spectrum propagation method, Padé approximants, and the Wave Propagation Method (WPM). The angular spectrum method (ASM) is a non-paraxial propagation method that can be implemented in a slice-by-slice manner akin to multislice, and is the most straightforward extension of the Fresnel propagator multislice method, it's only drawback being that it assumes a constant refractive index inbetween atomic slices, which is not true as the potential is a continuous function of space. Pade approximants are a family of higher-order approximations to the square-root operator in the one-way wave equation that can be implemented in a slice-by-slice manner akin to multislice. With extra terms included Padé approximants have been
 shown to be accurate to much higher angles than the traditional Fresnel propagator multislice method, but can become computationally prohibitive to compute for higher order
 approximants. In order to overcome the limitations of the paraxial approximation and the computational cost of higher order Padé approximants, the Wave Propagation
 Method (WPM) was developed by \cite{Brenner1993}, which solves the Helmholtz wave equation in the one-way wave approximation using a Fourier integral formulation.
@@ -67,6 +102,8 @@ meaning it can be implemented in a way that is more computationally efficient th
 as a solution for light optics and the time-independent Helmholtz wave equation, we first establish the connection between the time-independent Dirac equation,
 Klein-Gordon equation, and the approximated Klein-Gordon equation (a.k.a. relativistically corrected Schrodinger equation) in the framework of the Helmholtz wave equation in order to
 justify the application of the WPM to electron microscopy multislice simulations.
+
+
 
 In this paper, we make three contributions:
 \begin{itemize}
@@ -188,6 +225,7 @@ Rel. Schr\"odinger & $\nabla^2 \psi + k_0^2 n^2 \psi = 0$ & $\sqrt{1 - \dfrac{2\
 \end{table}
 
 \section{Wave Propagation Method}
+\label{sec:wpm}
 The Wave Propagation Method (WPM) is a numerical method for solving the Helmholtz wave equation in the forward scattering approximation that was introduced by \cite{Brenner1993} and has been demonstrated
 to be accurate up to 85 degrees from the optical axis \cite{Schmidt2016}. A systematic derivation of the WPM from the Helmholtz wave equation is given by \cite{Schmidt2016}. For conciseness,
 we present a summary of the derivation here.
