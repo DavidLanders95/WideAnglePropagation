@@ -138,7 +138,7 @@ def shift_kernel(x0, y0, Fx, Fy):
     return jnp.exp(-1j * 2 * jnp.pi * (Fx * x0 + Fy * y0))
 
 
-def fresnel_propagation_kernel(n: int, m: int, ps: float, z: float, energy: float):
+def fresnel_propagation_kernel(n: int, m: int, ps: tuple[float, float], z: float, energy: float):
     wavelength = energy2wavelength(energy)
     Fx, Fy = get_frequencies(n, m, ps)
 
@@ -148,7 +148,7 @@ def fresnel_propagation_kernel(n: int, m: int, ps: float, z: float, energy: floa
 
 
 def angular_spectrum_propagation_kernel(
-    n: int, m: int, ps: float, z: float, energy: float
+    n: int, m: int, ps: tuple[float, float], z: float, energy: float
 ):
     wavelength = energy2wavelength(energy)
     Fx, Fy = get_frequencies(n, m, ps)
@@ -874,7 +874,7 @@ def beam_amplitudes_fwd_direct_allbeams(
     ), beam_indices, exit_state
 
 
-def propagation_kernel(n: int, m: int, ps: float, z: float, energy: float):
+def propagation_kernel(n: int, m: int, ps: tuple[float, float], z: float, energy: float):
     """Backward-compatible alias for Fresnel propagation kernel."""
     return fresnel_propagation_kernel(n, m, ps, z, energy)
 
