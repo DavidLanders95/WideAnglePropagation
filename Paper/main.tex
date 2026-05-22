@@ -326,65 +326,6 @@ to solve inverse problems via gradient descent, as is needed to perform ptychogr
 there are usually not very many "unique" refractive index values in a slice. \cite{DiffWPM2025} attempted to overcome both of these problems by introducing a
 continuous binning step in a binary refractive index medium.
 
-\section{Binning of refractive index values for efficient WPM multislice}
-
-To make the computation of the wave propagation method tractable and limit the need for $O(N^{2D})$ computations, we adapt the WPM algorithm presented in \cite{DiffWPM2025} which
-uses a refractive index binning strategy to limit the number of unique refractive index values in a slice while maintaining differentiability with respect to the refractive index map $n(x,y)$.
-
-To implement this method, we first discretize the refractive index range $[n_{\mathrm{min}}, n_{\mathrm{max}}]$ of the current slice into $N_{\mathrm{bins}}$ discrete reference values, denoted as
-$\{n_{\mathrm{ref}}^{(k)}\}_{k=1}^{N_{\mathrm{bins}}}$.
-
-In a typical multislice potential, many of the refractive index values will be very close to $1$ (vacuum region), while the refractive index values of an atom
-will concentrate in a narrow range slightly above $1$. Since there are likely to be many more refractive index values near the vacuum region,
-we employ a quadratic distribution for the reference indices rather than using linearly spaced bins in order to allocate more bins near $n=1$.
-The reference indices are distributed according to a quadratic function determined by the parameter $\gamma$, with $\gamma=2.0$ for quadratic spacing:
-
-\[
-n_{\mathrm{ref}}^{(k)} = n_{\mathrm{min}} + (n_{\mathrm{max}} - n_{\mathrm{min}}) \left( \frac{k}{N_{\mathrm{bins}}-1} \right)^\gamma
-\]
-
-which allows for denser binning near the vacuum refractive index when $\gamma > 1$.
-
-Next, for a propagation step $\Delta z$, we compute a bank of propagated fields $u_k(x,y)$. Each field $u_k$ corresponds to the
-diffraction of the input field $u_{\mathrm{in}}(x,y)$ assuming a homogeneous medium with refractive index $n_{\mathrm{ref}}^{(k)}$.
-This is performed efficiently via batch FFT operations using the angular spectrum kernel:
-
-\[
-u_k(x,y) = \mathcal{F}^{-1} \left( \mathcal{F}(u_{\mathrm{in}}) e^{i \Delta z \sqrt{(k_0 n_{\mathrm{ref}}^{(k)})^2 - k_x^2 - k_y^2}} \right)
-\]
-
-To evaluate the field at a specific spatial coordinate $(x,y)$ where the local refractive index is $n(x,y)$,
-we identify the two bounding reference bins such that $n_L \le n(x,y) < n_R$, where $n_L, n_R \in \{n_{\mathrm{ref}}^{(k)}\}$.
-We adopt a differentiable interpolation scheme by defining a local interpolation weight
-
-\[
-w_{\mathrm{raw}} = \frac{n(x,y) - n_L}{n_R - n_L}, \quad w_{\mathrm{raw}} \in [0, 1]
-\]
-
-To ensure smooth gradients and minimize discretization artifacts, we map this linear weight through a smoothstep activation function $S(w)$,
-akin to the spatial partitioning technique demonstrated by \cite{BarreBrunel} via a cubic Hermite interpolation function:
-
-\[
-w = S(w_{\mathrm{raw}}) = 3w_{\mathrm{raw}}^2 - 2w_{\mathrm{raw}}^3
-\]
-While linear interpolation would satisfy the requirement for differentiability, it could result in discontinuities in the gradient at the bin boundaries in a gradient-based optimization scheme.
-
-The final field at the next step $u(x,y, z+\Delta z)$ is computed as the weighted superposition of the fields
-propagated at the bounding indices:
-
-\[
-u(x,y) = (1 - w) \cdot u_L(x,y) + w \cdot u_R(x,y)
-\]
-
-This formulation ensures that the propagation model is fully differentiable with respect to the refractive index map $n(x,y)$, enabling inverse reconstruction of potentials via automatic differentiation,
-and that only a limited number of FFTs (equal to $N_{\mathrm{bins}}$) are required per propagation step, significantly reducing the computational cost compared to a naive WPM implementation.
-The accuracy of this binned WPM multislice method depends on the number of bins $N_{\mathrm{bins}}$ chosen and will change on a case-by-case basis depending on the refractive index distribution of the sample.
-One can mitigate this potential source of error by performing a test simulation and doubling the number of bins until no difference is observed in the output wavefunction.
-
-In general, the WPM will need a GPU for efficient computation, and we have found that $N_{\mathrm{bins}}$ between 64 and 512 are sufficient for the simulations presented in this work.
-This is a marked improvement over the naive case, as it enables the WPM to simulate many slices with larger grid sizes ($512 \times 512$ or $1024 \times 1024$ pixels)
-in a reasonable time frame (seconds to minutes), provided the refractive index binning strategy is capable of correctly capturing the refractive index distribution of the sample.
-
 \section{Method Summary and Comparison}
 Figure~\ref{fig:method_summary} summarizes the relationship between the exact Helmholtz formulation, the WPM, and Fresnel multislice,
 highlighting the trade-off between physical accuracy and computational efficiency.
@@ -637,5 +578,67 @@ in extreme scattering geometries and integrate the method with large-scale ptych
 
 \bibliographystyle{unsrt}
 \bibliography{sample}
+
+\appendix
+
+\section{Differentiable refractive-index binning for WPM multislice}
+\label{sec:binning}
+
+To make the computation of the wave propagation method tractable and limit the need for $O(N^{2D})$ computations, we adapt the WPM algorithm presented in \cite{DiffWPM2025} which
+uses a refractive index binning strategy to limit the number of unique refractive index values in a slice while maintaining differentiability with respect to the refractive index map $n(x,y)$.
+
+To implement this method, we first discretize the refractive index range $[n_{\mathrm{min}}, n_{\mathrm{max}}]$ of the current slice into $N_{\mathrm{bins}}$ discrete reference values, denoted as
+$\{n_{\mathrm{ref}}^{(k)}\}_{k=1}^{N_{\mathrm{bins}}}$.
+
+In a typical multislice potential, many of the refractive index values will be very close to $1$ (vacuum region), while the refractive index values of an atom
+will concentrate in a narrow range slightly above $1$. Since there are likely to be many more refractive index values near the vacuum region,
+we employ a quadratic distribution for the reference indices rather than using linearly spaced bins in order to allocate more bins near $n=1$.
+The reference indices are distributed according to a quadratic function determined by the parameter $\gamma$, with $\gamma=2.0$ for quadratic spacing:
+
+\[
+n_{\mathrm{ref}}^{(k)} = n_{\mathrm{min}} + (n_{\mathrm{max}} - n_{\mathrm{min}}) \left( \frac{k}{N_{\mathrm{bins}}-1} \right)^\gamma
+\]
+
+which allows for denser binning near the vacuum refractive index when $\gamma > 1$.
+
+Next, for a propagation step $\Delta z$, we compute a bank of propagated fields $u_k(x,y)$. Each field $u_k$ corresponds to the
+diffraction of the input field $u_{\mathrm{in}}(x,y)$ assuming a homogeneous medium with refractive index $n_{\mathrm{ref}}^{(k)}$.
+This is performed efficiently via batch FFT operations using the angular spectrum kernel:
+
+\[
+u_k(x,y) = \mathcal{F}^{-1} \left( \mathcal{F}(u_{\mathrm{in}}) e^{i \Delta z \sqrt{(k_0 n_{\mathrm{ref}}^{(k)})^2 - k_x^2 - k_y^2}} \right)
+\]
+
+To evaluate the field at a specific spatial coordinate $(x,y)$ where the local refractive index is $n(x,y)$,
+we identify the two bounding reference bins such that $n_L \le n(x,y) < n_R$, where $n_L, n_R \in \{n_{\mathrm{ref}}^{(k)}\}$.
+We adopt a differentiable interpolation scheme by defining a local interpolation weight
+
+\[
+w_{\mathrm{raw}} = \frac{n(x,y) - n_L}{n_R - n_L}, \quad w_{\mathrm{raw}} \in [0, 1]
+\]
+
+To ensure smooth gradients and minimize discretization artifacts, we map this linear weight through a smoothstep activation function $S(w)$,
+akin to the spatial partitioning technique demonstrated by \cite{BarreBrunel} via a cubic Hermite interpolation function:
+
+\[
+w = S(w_{\mathrm{raw}}) = 3w_{\mathrm{raw}}^2 - 2w_{\mathrm{raw}}^3
+\]
+While linear interpolation would satisfy the requirement for differentiability, it could result in discontinuities in the gradient at the bin boundaries in a gradient-based optimization scheme.
+
+The final field at the next step $u(x,y, z+\Delta z)$ is computed as the weighted superposition of the fields
+propagated at the bounding indices:
+
+\[
+u(x,y) = (1 - w) \cdot u_L(x,y) + w \cdot u_R(x,y)
+\]
+
+This formulation ensures that the propagation model is fully differentiable with respect to the refractive index map $n(x,y)$, enabling inverse reconstruction of potentials via automatic differentiation,
+and that only a limited number of FFTs (equal to $N_{\mathrm{bins}}$) are required per propagation step, significantly reducing the computational cost compared to a naive WPM implementation.
+The accuracy of this binned WPM multislice method depends on the number of bins $N_{\mathrm{bins}}$ chosen and will change on a case-by-case basis depending on the refractive index distribution of the sample.
+One can mitigate this potential source of error by performing a test simulation and doubling the number of bins until no difference is observed in the output wavefunction.
+
+In general, the WPM will need a GPU for efficient computation, and we have found that $N_{\mathrm{bins}}$ between 64 and 512 are sufficient for the simulations presented in this work.
+This is a marked improvement over the naive case, as it enables the WPM to simulate many slices with larger grid sizes ($512 \times 512$ or $1024 \times 1024$ pixels)
+in a reasonable time frame (seconds to minutes), provided the refractive index binning strategy is capable of correctly capturing the refractive index distribution of the sample.
 
 \end{document}
