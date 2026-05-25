@@ -1,7 +1,6 @@
 # Fdb version 4
-["pdflatex"] 1778145579.33438 "/home/dl277493/Documents/Code/WideAnglePropagation/Paper/figures/method_summary_standalone.tex" "method_summary_standalone.pdf" "method_summary_standalone" 1778145580.6274 0
+["pdflatex"] 1779457299.33963 "method_summary_standalone.tex" "method_summary_standalone.pdf" "method_summary_standalone" 1779457300.62132 0
   "/etc/texmf/web2c/texmf.cnf" 1723130536.00682 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/dl277493/Documents/Code/WideAnglePropagation/Paper/figures/method_summary_standalone.tex" 1778145578.53393 4812 fbd9b93eda6ac7e372e7bb40e2d60e1d ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1246382020 1004 54797486969f23fa377b128694d548df ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm" 1246382020 988 bdf658c3bfc2d96d3c8b02cfc1c94c20 ""
@@ -157,8 +156,8 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1723130681.70983 5353513 5ed5862036d4682a97b92bdbb24a70e8 ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1723130750 6837962 1ecb84dd045c7e95dc614e70cd0e5c1e ""
-  "method_summary_standalone.aux" 1778145580.40639 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
-  "method_summary_standalone.tex" 1778145578.53393 4812 fbd9b93eda6ac7e372e7bb40e2d60e1d ""
+  "method_summary_standalone.aux" 1779457300.39854 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
+  "method_summary_standalone.tex" 1779457274.09092 4362 05276795a0ddedf95b35501d07a443f4 ""
   (generated)
   "method_summary_standalone.aux"
   "method_summary_standalone.log"

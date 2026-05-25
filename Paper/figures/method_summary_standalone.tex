@@ -5,7 +5,7 @@
 \newcommand{\note}[1]{{\small\itshape #1}}
 \newcommand{\boxtitle}[1]{{\bfseries #1}}
 \newcommand{\eq}[1]{{\small $#1$}}
-\newcommand{\boxgap}{0.8cm}
+\newcommand{\boxgap}{0.9cm}
 \newcommand{\derivdrop}{0.6cm}
 \newcommand{\topclearance}{0.65cm}
 \newcommand{\bottomclearance}{2.45cm}
@@ -18,7 +18,7 @@
         draw,
         rounded corners,
         align=center,
-        text width=5.1cm,
+        text width=5.25cm,
         minimum height=4.2cm,
         inner sep=6pt,
         anchor=center
@@ -32,66 +32,54 @@
     >=Stealth
 ]
 
-    % --- 1) Helmholtz ---
+    % --- 1) Helmholtz / KG equation ---
     \node[box] (helm) {%
-        \boxtitle{Helmholtz Wave Equation}\\[6pt]
+        \boxtitle{Klein--Gordon / Helmholtz Equation}\\[6pt]
         \eq{\bigl[\nabla^2 + k_0^2\,n^2(\mathbf{r})\bigr]\;\psi(\mathbf{r})=0}\\[12pt]
-        \note{Reference full-wave formulation}
+        \note{Parent relativistic scalar wave equation}
     };
 
-    % --- 2) Second-order wave ODE ---
+    % --- 2) Forward KG ODE ground truth ---
     \node[box, right=\boxgap of helm] (ode) {%
-        \boxtitle{Second-Order Wave ODE}\\[6pt]
-        \eq{\partial_z^2\psi+\bigl(\nabla_\perp^2+k_0^2 n^2(\mathbf{r})\bigr)\psi=0}\\[12pt]
-        \note{Adaptive second-order non-paraxial solve}
+        \boxtitle{Forward KG ODE Ground Truth}\\[6pt]
+        \eqtight{\frac{d}{dz}\begin{pmatrix}\psi\\\phi\end{pmatrix}=\begin{pmatrix}\phi\\-(\nabla_\perp^2+k_0^2n^2)\psi\end{pmatrix}}\\[10pt]
+        \note{Adaptive second-order solve; no split-step approximation}
     };
 
-    % --- 3) Forward square-root propagator ---
-    \node[box, right=\boxgap of ode] (lanczos) {%
-        \boxtitle{Forward Square-Root Propagator}\\[6pt]
-        \eqtight{\psi(z\!+\!\Delta z)\approx \exp\!\left(i\Delta z\sqrt{\nabla_\perp^2+k_0^2 n^2}\right)\psi(z)}\\[10pt]
-        \note{Applied numerically with a Lanczos/Krylov matrix-function approximation}
-    };
-
-    % --- 4) WPM (index-dependent spectral step) ---
-    \node[box, right=\boxgap of lanczos] (wpm) {%
+    % --- 3) WPM (index-dependent spectral step) ---
+    \node[box, right=\boxgap of ode] (wpm) {%
         \boxtitle{WPM (Wide-angle, local $n$)}\\[6pt]
-        \eq{\psi(z\!+\!\Delta z)=\mathcal F^{-1}\!\left[ e^{\,i k_z^{(m)}\Delta z}\mathcal F\{\psi(z)\} \right]}\\[4pt]
-        \eq{k_z^{(m)}=\sqrt{(k_0 n_m)^2-k_x^2-k_y^2}}\\[6pt]
-        \note{Wide-angle split-step with local refractive index}
+        \eqtight{\psi(z\!+\!\Delta z)\approx\sum_m w_m(x,y)\,\psi_m}\\[3pt]
+        \eqtight{\psi_m=\mathcal F^{-1}\!\left[e^{i\Delta z\sqrt{k_0^2n_m^2-k_\perp^2}}\mathcal F\{\psi(z)\}\right]}\\[8pt]
+        \note{Binned local-index approximation to the one-way square-root operator}
     };
 
-    % --- 5) Angular Spectrum (single homogeneous propagator) ---
+    % --- 4) Angular Spectrum (single homogeneous propagator) ---
     \node[box, right=\boxgap of wpm] (as) {%
-        \boxtitle{Angular Spectrum (Non-Paraxial)}\\[6pt]
-        \eq{\psi(z\!+\!\Delta z)=\mathcal F^{-1}\!\left[ e^{\,i k_z\Delta z}\mathcal F\{\psi(z)\} \right]}\\[4pt]
-        \eq{k_z=\sqrt{k^2-k_x^2-k_y^2}}\\[6pt]
-        \note{Wide-angle split-step in free space}
+        \boxtitle{Angular Spectrum Multislice}\\[6pt]
+        \eqtight{\psi(z\!+\!\Delta z)\approx e^{i\sigma V_{\mathrm{proj}}}\,\mathcal F^{-1}\!\left[e^{i\Delta z\sqrt{k_0^2-k_\perp^2}}\mathcal F\{\psi(z)\}\right]}\\[8pt]
+        \note{Exact free-space dispersion with standard transmission step}
     };
 
-    % --- 6) Fresnel (paraxial) ---
+    % --- 5) Fresnel (paraxial) ---
     \node[box, right=\boxgap of as] (fres) {%
-        \boxtitle{Fresnel (Paraxial)}\\[6pt]
-        \eq{\psi(z\!+\!\Delta z)=\mathcal F^{-1}\!\left[ e^{-i\pi\lambda\Delta z k_\perp^2}\mathcal F\{\psi(z)\} \right]}\\[4pt]
-        \eq{k_\perp^2=k_x^2+k_y^2}\\[6pt]
-        \note{Paraxial split-step in free space}
+        \boxtitle{Fresnel Multislice}\\[6pt]
+        \eqtight{\psi(z\!+\!\Delta z)\approx e^{i\sigma V_{\mathrm{proj}}}\,\mathcal F^{-1}\!\left[e^{-i k_\perp^2\Delta z/(2k_0)}\mathcal F\{\psi(z)\}\right]}\\[8pt]
+        \note{Paraxial limit of the angular-spectrum kernel}
     };
 
     % --- Local derivation annotations between methods ---
     \draw[semithick, ->] ($(helm.south east)+(0,-\derivdrop)$) -- ($(ode.south west)+(0,-\derivdrop)$)
         node[midway, below=2pt, deriv]{choose $z$ as propagation axis\\$\nabla^2=\partial_z^2+\nabla_\perp^2$};
 
-    \draw[semithick, ->] ($(ode.south east)+(0,-\derivdrop)$) -- ($(lanczos.south west)+(0,-\derivdrop)$)
-        node[midway, below=2pt, deriv]{factor into forward/backward branches\\$\partial_z\psi=i\sqrt{\nabla_\perp^2+k_0^2 n^2}\,\psi$};
-
-    \draw[semithick, ->] ($(lanczos.south east)+(0,-\derivdrop)$) -- ($(wpm.south west)+(0,-\derivdrop)$)
-        node[midway, below=2pt, deriv]{evaluate the square-root operator slicewise in Fourier space\\$\sqrt{\nabla_\perp^2+k_0^2 n^2}\to\sqrt{(k_0 n_m)^2-k_x^2-k_y^2}$};
+    \draw[semithick, ->] ($(ode.south east)+(0,-\derivdrop)$) -- ($(wpm.south west)+(0,-\derivdrop)$)
+        node[midway, below=2pt, deriv]{one-way branch plus Schmidt WPM approximation\\$\sqrt{\nabla_\perp^2+k_0^2n^2}\to\sqrt{k_0^2n_m^2-k_\perp^2}$};
 
     \draw[semithick, ->] ($(wpm.south east)+(0,-\derivdrop)$) -- ($(as.south west)+(0,-\derivdrop)$)
-        node[midway, below=2pt, deriv]{homogeneous-slice limit\\$n(x,y)=\mathrm{const.}$ during the step};
+        node[midway, below=2pt, deriv]{homogeneous/free-space limit\\$n_m\to 1$ in the propagation kernel};
 
     \draw[semithick, ->] ($(as.south east)+(0,-\derivdrop)$) -- ($(fres.south west)+(0,-\derivdrop)$)
-        node[midway, below=2pt, deriv]{small-angle Taylor expansion\\$k_z=\sqrt{k^2-k_\perp^2}\approx k-k_\perp^2/(2k)$};
+        node[midway, below=2pt, deriv]{small-angle Taylor expansion\\$\sqrt{k_0^2-k_\perp^2}\approx k_0-k_\perp^2/(2k_0)$};
 
     % --- Tradeoff arrows (top: faster, bottom: more accurate) ---
     % Calculate exact start and end x-coordinates based on bounding boxes
