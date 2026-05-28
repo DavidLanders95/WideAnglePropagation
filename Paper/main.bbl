@@ -1,14 +1,14 @@
 \begin{thebibliography}{1}
 
-\bibitem{Brenner1993}
-K.-H. Brenner and W.~Singer.
-\newblock Light propagation through graded-index media using the wave propagation method.
-\newblock {\em Applied Optics}, 32(26):4984--4988, 1993.
-
 \bibitem{RotherScheerschmidt2009}
 A.~Rother and K.~Scheerschmidt.
 \newblock Relativistic effects in elastic scattering of electrons in {TEM}.
 \newblock {\em Ultramicroscopy}, 109(2):154--160, 2009.
+
+\bibitem{Brenner1993}
+K.-H. Brenner and W.~Singer.
+\newblock Light propagation through graded-index media using the wave propagation method.
+\newblock {\em Applied Optics}, 32(26):4984--4988, 1993.
 
 \bibitem{Schmidt2016}
 S.~Schmidt, T.~Tiess, S.~Schr{\"o}ter, R.~Hambach, M.~J{\"a}ger, H.~Bartelt, A.~T{\"u}nnermann, and H.~Gross.
