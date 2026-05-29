@@ -34,6 +34,7 @@ jax_ptychography/
 *.bin
 *.venv
 venv/
+*.npz
 
 # Generated paper artifacts (LaTeX build outputs and PDFs)
 Paper/*.aux
