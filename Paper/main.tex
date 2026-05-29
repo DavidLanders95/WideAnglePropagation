@@ -5,6 +5,7 @@
 % Useful packages
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{array}
 \usepackage{graphicx}
 \usepackage{float}
 \graphicspath{{figures/}{../wpm/}}
@@ -21,6 +22,7 @@
 \usepackage{tikz}
 \usetikzlibrary{positioning}
 \usepackage[colorlinks=true, allcolors=blue]{hyperref}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 
 \title{Wide-Angle Multislice for Electron Microscopy via the Wave Propagation Method}
 \author{Author Name}
@@ -51,79 +53,126 @@ The standard forward model for electron propagation through a crystalline specim
 
 Corrections to the paraxial propagation step have been explored within electron microscopy, but methods that fully preserve large-angle scattering generally introduce operator-valued square roots that cannot be evaluated by the single FFT pair used in standard multislice. The central question is therefore whether high-angle accuracy can be recovered without giving up the computational structure that made multislice useful: a real-space transmission step combined with a Fourier-domain propagation kernel. The mathematical origin of this question is easiest to see by writing the relativistic wave equation and comparing the exact free-space propagator with its Fresnel approximation.
 
-We begin from the equation most widely used to describe elastic electron--specimen interaction in the TEM: the time-independent Schr\"odinger equation with a relativistic correction. Cast in the Helmholtz form of a scalar wave equation it reads
-\begin{equation}
-\label{eq:kg_helmholtz_intro}
-\nabla^2 \psi + k_0^2\, n^2(\mathbf{r})\, \psi = 0,
-\end{equation}
-where $E$ is the total relativistic energy of the electron, $m_0$ its rest mass, $c$ the speed of light, $\hbar$ the reduced Planck constant, $k_0 = \sqrt{E^2 - m_0^2 c^4}\,/\,\hbar c$ the vacuum wavenumber, and $n(\mathbf r)$ an effective electron refractive index set by the local electrostatic potential energy $V(\mathbf r)$. Throughout this derivation $V$ is an energy; the equivalent electrostatic-potential convention can be recovered by absorbing the electron charge into the interaction parameter used below.
-
-The physical content of equation~\eqref{eq:kg_helmholtz_intro} is fixed entirely by how the refractive index is written, and three successive choices---in decreasing order of physical completeness---recur throughout this work:
-\begin{subequations}
-\label{eq:n_intro}
-\begin{align}
-n^2(\mathbf r) &= \frac{\bigl(E - V(\mathbf r)\bigr)^2 - m_0^2 c^4}{E^2 - m_0^2 c^4}, \label{eq:index_kg}\\[6pt]
-n^2(\mathbf r) &= 1 - \frac{2\gamma m_0}{\hbar^2 k_0^2}\,V(\mathbf r), \label{eq:index_schrodinger}\\[6pt]
-n(\mathbf r) &\approx 1 - \frac{\gamma m_0}{\hbar^2 k_0^2}\,V(\mathbf r), \label{eq:index_linear}
-\end{align}
-\end{subequations}
-where $\gamma=(1-v^2/c^2)^{-1/2}$ is the relativistic Lorentz factor and $E=\gamma m_0 c^2$. The first form, equation~\eqref{eq:index_kg}, is the full relativistic index and turns equation~\eqref{eq:kg_helmholtz_intro} into the time-independent Klein--Gordon equation; it equals unity in vacuum and encodes the complete relativistic energy--momentum relation. Expanding its potential-dependent term,
-\begin{equation}
-\label{eq:linearized_index_intro}
-k_0^2 n^2(\mathbf r)
-=
-k_0^2-\frac{2EV(\mathbf r)}{\hbar^2c^2}+\frac{V^2(\mathbf r)}{\hbar^2c^2},
-\end{equation}
-shows that the only difference between the three choices is the treatment of the quadratic term $V^2$: retaining it gives the Klein--Gordon index~\eqref{eq:index_kg}, dropping it gives the relativistically corrected Schr\"odinger index~\eqref{eq:index_schrodinger}, and linearising the square root of the latter gives the optical-style refractive index~\eqref{eq:index_linear}.
-
-For $|V|\ll E$ the quadratic term is negligible---a high-energy approximation accurate to better than 1\% for all $V$ encountered in TEM---so all three indices in equation~\eqref{eq:n_intro} collapse to the same linear wave equation, the relativistically corrected Schr\"odinger equation
+We begin from the equation most widely used to describe elastic electron--specimen interaction in TEM: the time-independent Schr\"odinger equation with a relativistic correction,
 \begin{equation}
 \label{eq:relativistic_schrodinger_intro}
 \nabla^2\psi+
-\left(k_0^2-\frac{2\gamma m_0}{\hbar^2}V(\mathbf r)\right)\psi=0.
+\left(k_0^2-\frac{2\gamma m_0}{\hbar^2}V(\mathbf r)\right)\psi=0,
 \end{equation}
-The Klein--Gordon equation and the linearised Schr\"odinger equation therefore agree to high accuracy in the TEM regime, differing only through the small $V^2$ term that the wide-angle solvers below retain and the paraxial multislice methods discard. 
+where $\psi$ is the electron wavefunction, $V(\mathbf r)$ the local electrostatic potential energy, $m_0$ the electron rest mass, $\hbar$ the reduced Planck constant, $\gamma=(1-v^2/c^2)^{-1/2}$ the relativistic Lorentz factor, $c$ the speed of light, and $k_0 = \sqrt{E^2 - m_0^2 c^4}\,/\,\hbar c$ the vacuum wavenumber set by the total relativistic energy $E=\gamma m_0 c^2$.
 
-The standard approach to solving either \eqref{eq:kg_helmholtz_intro} or \eqref{eq:relativistic_schrodinger_intro} is to neglect backscattering and divide the specimen into thin slices with free-space propagation in between---the multislice method. Each slice of thickness $\Delta z$ applies a phase-shifting transmission factor $\exp(i\sigma V_\mathrm{proj})$, where $V_\mathrm{proj}(x,y)=\int_\mathrm{slice} V\,\mathrm{d}z$ is the projected potential energy and $\sigma$ is the corresponding relativistic interaction parameter; between slices the wave propagates through vacuum. Once the thin-slice transmission step is fixed, the only remaining modelling choice is the free-space propagator. Setting $V=0$ in equation~\eqref{eq:relativistic_schrodinger_intro} and splitting the Laplacian as $\nabla^2=\partial_z^2+\nabla_\perp^2$ leaves
+This Schr\"odinger equation can also be written as a Helmholtz wave equation by grouping the two terms multiplying $\psi$ into a single refractive-index factor. This is useful because the possible approximations then appear as changes to $n(\mathbf r)$, rather than as separate-looking wave equations. Dividing the coefficient in equation~\eqref{eq:relativistic_schrodinger_intro} by the vacuum factor $k_0^2$ defines the relativistically corrected Schr\"odinger index,
+\begin{equation}
+\label{eq:index_schrodinger}
+n_\mathrm{S}^2(\mathbf r)
+\equiv
+\frac{1}{k_0^2}\left(k_0^2-\frac{2\gamma m_0}{\hbar^2}V(\mathbf r)\right)
+=
+1-\frac{2\gamma m_0}{\hbar^2 k_0^2}\,V(\mathbf r).
+\end{equation}
+The same scalar wave equation can then be written in the compact Helmholtz form,
+\begin{equation}
+\label{eq:kg_helmholtz_intro}
+\nabla^2 \psi + k_0^2\, n^2(\mathbf{r})\, \psi = 0.
+\end{equation}
+The index equals unity in vacuum and departs from it wherever the potential is nonzero. Its form is the first approximation choice: starting from the Schr\"odinger index~\eqref{eq:index_schrodinger}, adding or removing terms selects the underlying wave equation while preserving the same Helmholtz notation,
+\begin{subequations}
+\label{eq:n_intro}
+\begin{align}
+n_\mathrm{KG}^2(\mathbf r)
+&= n_\mathrm{S}^2(\mathbf r)+\frac{V^2(\mathbf r)}{\hbar^2 c^2 k_0^2}
+= \frac{\bigl(E - V(\mathbf r)\bigr)^2 - m_0^2 c^4}{E^2 - m_0^2 c^4}, \label{eq:index_kg}\\[6pt]
+n_\mathrm{NR}^2(\mathbf r)
+&= 1 - \frac{2m_0}{\hbar^2 k_\mathrm{NR}^2}\,V(\mathbf r),
+\qquad k_\mathrm{NR}=\frac{\sqrt{2m_0 T}}{\hbar}. \label{eq:index_nonrel}
+\end{align}
+\end{subequations}
+Equation~\eqref{eq:index_kg} adds back the quadratic potential-energy term that appears in the full relativistic energy--momentum relation $(E-V)^2=m_0^2c^4+\hbar^2c^2k^2$; substituting this index into equation~\eqref{eq:kg_helmholtz_intro} gives the time-independent Klein--Gordon equation, which is used below as the ground-truth reference. Equation~\eqref{eq:index_nonrel} instead removes the relativistic mass and dispersion corrections by replacing $\gamma m_0$ with $m_0$ and $k_0$ with the non-relativistic vacuum wavenumber $k_\mathrm{NR}$ for kinetic energy $T$. Thus the first line of approximation is the choice of refractive index: full relativistic Klein--Gordon, relativistically corrected Schr\"odinger, or non-relativistic Schr\"odinger.
+
+After the refractive index has been chosen, a second and independent approximation controls the propagation direction. Splitting the Laplacian as $\nabla^2=\partial_z^2+\nabla_\perp^2$ and factoring out the rapidly varying carrier wave, $\psi=e^{ik_0z}\tilde\psi$, rewrites the Helmholtz equation as an envelope equation containing both $\partial_z\tilde\psi$ and $\partial_z^2\tilde\psi$. The high-energy, one-way, or paraxial approximation assumes the envelope varies slowly along $z$ and drops $\partial_z^2\tilde\psi$, giving the parabolic Helmholtz equation
+\begin{equation}
+\label{eq:paraxial_schrodinger}
+\frac{\partial\tilde\psi}{\partial z}
+=
+\frac{i}{2k_0}\nabla_\perp^2\tilde\psi
++\frac{i k_0}{2}\left[n^2(x,y,z)-1\right]\tilde\psi.
+\end{equation}
+This is the paraxial Helmholtz form of the same refractive-index model.
+
+If the multislice algorithm is employed to solve either the second-order Helmholtz equation~\eqref{eq:kg_helmholtz_intro} or the paraxial Helmholtz equation~\eqref{eq:paraxial_schrodinger}, the difference appears in the free-space propagator inserted between thin specimen slices. Setting $V=0$ in the second-order equation gives
 \begin{equation}
 \label{eq:nonparabolic_free_intro}
 \left(\nabla_\perp^2+\partial_z^2+k_0^2\right)\psi = 0,
 \end{equation}
-with $z$ the beam direction and $(x,y)$ the transverse coordinates. The two standard free-space propagators correspond to whether equation~\eqref{eq:nonparabolic_free_intro} is solved in its full second-order form or reduced to first order in $z$. Retaining the second $z$-derivative, the exact update is the angular spectrum propagator, which applies the spherical dispersion relation $k_z=\sqrt{k_0^2-k_\perp^2}$ to each transverse Fourier component. Factoring out the carrier wave $e^{ik_0 z}$ and discarding the second $z$-derivative reduces equation~\eqref{eq:nonparabolic_free_intro} to a first-order paraxial equation whose solution is the Fresnel propagator; equivalently, expanding the square root to leading order,
+where $z$ is the beam direction and $(x,y)$ are transverse coordinates. Keeping equation~\eqref{eq:nonparabolic_free_intro} in this second-order form gives the angular spectrum propagator, which applies the exact spherical dispersion relation $k_z=\sqrt{k_0^2-k_\perp^2}$ to each transverse Fourier component. Applying the paraxial approximation instead is equivalent in free space to expanding the square root,
 \[
 \sqrt{k_0^2-k_\perp^2}=k_0-\frac{k_\perp^2}{2k_0}+\mathcal O\!\left(\frac{k_\perp^4}{k_0^3}\right),
 \]
-and absorbing the carrier phase $e^{ik_0\Delta z}$ yields the same familiar Fresnel propagator. The two free-space propagators therefore differ only in how the longitudinal dispersion is treated:
+and absorbing the carrier phase $e^{ik_0\Delta z}$, which gives the Fresnel propagator. The two free-space kernels therefore differ only in how they treat longitudinal dispersion:
 \begin{equation}
 \label{eq:propagator_correspondence_intro}
 \underbrace{\exp\!\left(i\sqrt{k_0^2-k_\perp^2}\,\Delta z\right)}_{\text{angular spectrum: exact dispersion}}
 \qquad\text{vs.}\qquad
 \underbrace{\exp\!\left(-i\frac{k_\perp^2}{2k_0}\Delta z\right)}_{\text{Fresnel: parabolic dispersion}}.
 \end{equation}
-Combining the same thin-slice transmission step with the angular spectrum kernel yields angular spectrum multislice; combining it with the Fresnel kernel and taking the continuous-slice limit, after removing the rapidly varying carrier phase $e^{ik_0z}$, yields the parabolic (paraxial) Schr\"odinger equation
+Thus a multislice discretisation of the second-order Helmholtz equation leads naturally to angular spectrum multislice, while a multislice discretisation of the paraxial Helmholtz equation leads to Fresnel multislice. The Bloch-wave formulation traditionally applies the same parabolic linearisation about the incident beam direction, so conventional Bloch-wave and Fresnel multislice are two numerical realisations of the same one-way paraxial approximation. This is accurate for small scattering angles and thin specimens, but it breaks down at high angles and in thick, high-$Z$ materials where the neglected longitudinal curvature becomes significant.
+
+The central difficulty is that the split-step form avoids the true medium-propagation operator. It applies the specimen as a thin transmission function and then propagates the wave through vacuum. If one wants to propagate through the medium itself, or to retain backward-propagating components, the starting point is again the second-order Helmholtz equation, now written as an evolution problem in $z$:
 \begin{equation}
-\label{eq:paraxial_schrodinger}
-\frac{\partial\psi}{\partial z}
+\label{eq:helmholtz_operator_intro}
+\partial_z^2\psi
 =
-\frac{i}{2k_0}\nabla_\perp^2\psi + i\sigma V(x,y,z)\,\psi,
+-\mathcal{H}_\perp(z)\psi,
+\qquad
+\mathcal{H}_\perp(z)
+=
+\nabla_\perp^2+k_0^2n^2(x,y,z).
 \end{equation}
-which standard paraxial multislice solves. The Bloch-wave formulation traditionally applies the same parabolic linearisation about the incident beam direction, and as a result conventional Bloch-wave and Fresnel multislice are two numerical realisations of the same one-way paraxial approximation. The primary difference between \eqref{eq:paraxial_schrodinger} and the Klein--Gordon equation~\eqref{eq:kg_helmholtz_intro} is the neglect of the second $z$-derivative, which is equivalent to assuming that the wavefunction envelope varies slowly along $z$ compared to the wavelength. This is a good approximation for small scattering angles and thin specimens, but it breaks down at high angles and in thick, high-$Z$ materials where the potential causes rapid longitudinal variations in the wavefunction.
+For a homogeneous slice, $n$ is constant and this operator is diagonal in Fourier space, giving $k_z=\sqrt{k_0^2n^2-k_\perp^2}$. In a real specimen, however, $n(x,y,z)$ varies across the slice. The operator then contains both transverse differentiation and multiplication by $n^2(x,y,z)$, so it is not diagonal in either real space or Fourier space.
 
-The cost of this approximation has been examined repeatedly in the electron microscopy literature. Chen and Van Dyck derived an accurate multislice scheme directly from the Schr\"odinger equation without making the high-energy approximation: factoring out the carrier wave but retaining the second derivative in $z$, the envelope equation factorises into forward- and backward-propagating branches whose forward slice propagator contains an operator-valued square root that preserves the spherical dispersion relation. This square root operator cannot be split into the usual Fourier-space propagator and real-space transmission product, and the square root must instead be approximated as an operator or matrix function---at substantially higher cost than conventional multislice. Wacker and Schröder give a clear derivation of this construction and benchmark it against conventional Fresnel multislice and direct Runge--Kutta/Lobatto integration of the non-approximated Schr\"odinger equation, showing that dropping the second $z$-derivative introduces substantial errors at low voltages, large thicknesses, and high scattering angles. Rother and Scheerschmidt approached this problem from a relativistic perspective: their comparison of Dirac, Klein--Gordon, and relativistically corrected Schr\"odinger calculations confirms that the dominant high-angle error is the parabolic propagation step of the Fresnel multislice method itself. In the electron-microscopy literature, high-angle-accurate treatments have therefore tended to appear as direct integrations, matrix methods, or operator approximations rather than as drop-in replacements for the Fourier-domain propagator in standard multislice.
+There are two ways to proceed from equation~\eqref{eq:helmholtz_operator_intro}. If backward waves are retained, the second-order equation is solved as a two-component first-order system,
+\begin{equation}
+\label{eq:second_order_state_intro}
+\frac{d}{dz}
+\begin{pmatrix}
+\psi\\
+\partial_z\psi
+\end{pmatrix}
+=
+\begin{pmatrix}
+0 & 1\\
+-\mathcal{H}_\perp(z) & 0
+\end{pmatrix}
+\begin{pmatrix}
+\psi\\
+\partial_z\psi
+\end{pmatrix}.
+\end{equation}
+This is the most direct route when backscattered components are to be included. If instead a one-way forward equation is desired, the same second-order operator is formally factorised and the forward branch is
+\begin{equation}
+\label{eq:one_way_square_root_intro}
+\partial_z\psi
+=
+i\sqrt{\mathcal{H}_\perp(z)}\,\psi
+=
+i\sqrt{k_0^2n^2(x,y,z)+\nabla_\perp^2}\,\psi.
+\end{equation}
+This square-root operator is the object that must be approximated if one wants high-angle one-way propagation without falling back to a purely vacuum propagator.
 
-The light and X-ray optics communities have approached this same problem differently, developing solutions that retain the Fourier-domain split-step structure but have received little attention in electron microscopy. In X-ray ptychography it is now standard to retain the angular spectrum kernel in free space while keeping the specimen interaction in split-step form, which recovers high-angle propagation almost for free. Padé approximant methods replace the square root by a rational function that remains accurate to larger angles than the Fresnel expansion while preserving the Fourier-domain split-step structure. Wave Propagation Method (WPM)-type schemes go further still and admit a local, potential-dependent longitudinal wavelength inside the medium, restoring the change of wavelength that the paraxial reduction discards. These techniques span a useful accuracy--cost trade-off that has been partially explored but not systematically benchmarked in the electron-microscopy regime. The aim of this work is to evaluate that trade-off for electron-microscopy specimens: can high-angle propagation be recovered while retaining the FFT-based split-step structure that makes multislice practical?
+The cost of this operator is what has been examined repeatedly in the electron microscopy literature. Chen and Van Dyck derived an accurate multislice scheme directly from the Schr\"odinger equation without making the high-energy approximation: they factor out the carrier wave but retain the second derivative in $z$, so the envelope equation separates into forward- and backward-propagating branches. The forward branch contains an operator-valued square root of the same kind as equation~\eqref{eq:one_way_square_root_intro}. Because this square root mixes real-space multiplication by the specimen potential with transverse differentiation, it cannot be evaluated as the usual product of a Fourier-space propagator and a real-space transmission function. It must instead be approximated as an operator or matrix function, at substantially higher cost than conventional multislice. Wacker and Schröder give a clear derivation of this construction and benchmark it against conventional Fresnel multislice and direct Runge--Kutta/Lobatto integration of the non-approximated Schr\"odinger equation, showing that dropping the second $z$-derivative introduces substantial errors at low voltages, large thicknesses, and high scattering angles. Rother and Scheerschmidt approached this problem from a relativistic perspective: their comparison of Dirac, Klein--Gordon, and relativistically corrected Schr\"odinger calculations confirms that the dominant high-angle error is the parabolic propagation step of the Fresnel multislice method itself. In the electron-microscopy literature, high-angle-accurate treatments have therefore tended to appear as direct integrations, matrix methods, or operator approximations rather than as drop-in replacements for the Fourier-domain propagator in standard multislice.
+
+The light and X-ray optics communities have already explored solutions to including high angle effects without solving an expensive ODE. The simplest correction is to keep the specimen interaction in split-step form but replace the Fresnel free-space kernel with the angular spectrum kernel, which is exact when $n=1$ and already recovers the spherical free-space dispersion. Other solutions, known as Padé approximant methods approximate the square root in equation~\eqref{eq:one_way_square_root_intro} by rational functions, extending the angular range while preserving a split-step structure. In light optics, the Wave Propagation Method (WPM) can be understood as another practical approximation to equation~\eqref{eq:one_way_square_root_intro}: within each slice, WPM treats small transverse regions as locally homogeneous, applies the homogeneous one-way propagator $\exp\!\left(i\Delta z\sqrt{k_0^2n_m^2-k_\perp^2}\right)$ for representative refractive indices $n_m$, and recombines those propagated fields according to the local value of $n(x,y)$. It therefore keeps the potential-dependent wavelength inside the propagation step without forming the full dense square-root operator directly. The WPM also permits a backscattering solution that can still avail of the Fourier Transform. These techniques span a useful accuracy--cost trade-off that have been systematically benchmarked in the electron-microscopy regime. The aim of this work is to evaluate that trade-off for electron-microscopy specimens: can high-angle propagation be recovered while retaining the FFT-based split-step structure that makes multislice practical?
 
 
 \section{Numerical methods}
 \label{sec:methods}
 
-We compare four models of increasing physical complexity---standard Fresnel multislice, angular spectrum multislice, the Wave Propagation Method, and a direct forward-ODE solver for the full second-order Klein--Gordon equation~\eqref{eq:kg_helmholtz_intro}. The three approximate solvers are benchmarked against the Klein--Gordon ODE reference in two high-angle settings: the Au~[100] beam-amplitude benchmark of Rother and Scheerschmidt, which tracks a 135~mrad beam through a thick gold crystal, and a convergent-beam electron diffraction (CBED) geometry in Au~[110], where we test each method as a function of probe convergence semi-angle up to 100~mrad. In every case the specimen is divided into thin slices of thickness $\Delta z$ perpendicular to the optic axis and the wavefunction is advanced slice-by-slice on a transverse $N_x\times N_y$ grid; the methods differ only in how the slice propagator is constructed. The forward-ODE solver makes no split-step or one-way approximation and serves as the numerical ground truth throughout.
+We compare four models of increasing physical complexity---standard Fresnel multislice, angular spectrum multislice, the Wave Propagation Method, and a direct forward-ODE solver for the full second-order Klein--Gordon equation obtained from the Helmholtz form~\eqref{eq:kg_helmholtz_intro} with the full relativistic index~\eqref{eq:index_kg}. The three approximate solvers are benchmarked against the Klein--Gordon ODE reference in two high-angle settings: the Au~[100] beam-amplitude benchmark of Rother and Scheerschmidt, which tracks a 135~mrad beam through a thick gold crystal, and a convergent-beam electron diffraction (CBED) geometry in Au~[110], where we test each method as a function of probe convergence semi-angle up to 100~mrad. In every case the specimen is divided into thin slices of thickness $\Delta z$ perpendicular to the optic axis and the wavefunction is advanced slice-by-slice on a transverse $N_x\times N_y$ grid; the methods differ only in how the slice propagator is constructed. The forward-ODE solver makes no split-step or one-way approximation and serves as the numerical ground truth throughout.
 
 \subsection{Forward Klein-Gordon ODE ground truth}
 \label{sec:kg_ode}
 
-The most accurate scheme retains the full second-order Klein-Gordon equation~\eqref{eq:kg_helmholtz_intro}
-without making a one-way approximation. Separating the Laplacian as
+The most accurate scheme retains the full second-order Klein-Gordon equation obtained by using the full relativistic index~\eqref{eq:index_kg} in the Helmholtz form~\eqref{eq:kg_helmholtz_intro}, without making a one-way approximation. Separating the Laplacian as
 $\nabla^2 = \partial_z^2 + \nabla_\perp^2$, equation~\eqref{eq:kg_helmholtz_intro} reads
 \begin{equation}
 \label{eq:kg_second_order}
@@ -225,7 +274,7 @@ and the one-slice update is
 \psi(x,y,z+\Delta z) \;\approx\; e^{\,i\sigma V_\mathrm{proj}(x,y)}\;
 \mathcal{F}^{-1}\!\bigl[\hat P_\mathrm{ASM}(k_\perp;\Delta z)\,\mathcal{F}\{\psi(x,y,z)\}\bigr].
 \end{equation}
-The transmission factor is identical to standard multislice. Replacing only the Fresnel kernel
+Here $V_\mathrm{proj}(x,y)=\int_\mathrm{slice}V\,\mathrm{d}z$ is the projected potential energy and $\sigma$ is the corresponding relativistic interaction parameter. The transmission factor is identical to standard multislice. Replacing only the Fresnel kernel
 costs nothing: the FFT pair is unchanged and the per-slice cost remains $\mathcal{O}(N\log N)$. The
 relationship to Fresnel multislice is made transparent by expanding the square-root operator,
 \begin{equation*}
@@ -249,6 +298,28 @@ $\exp(-ik_\perp^2\Delta z/(2k_0))$, obtained by truncating the square-root opera
 in $k_\perp/k_0$. It is the cheapest of these schemes---one FFT pair per slice---and the
 standard tool of quantitative TEM simulation. Its accuracy is bounded by the paraxial assumption
 $k_\perp^2 \ll k_0^2$.
+
+Table~\ref{tab:method_axes} summarizes the two independent choices made throughout this work. The
+row selects the refractive index, and therefore the scalar wave equation being represented. The
+column selects the mathematical approximation used to advance the resulting $z$-propagation
+problem.
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{L{0.17\textwidth}L{0.20\textwidth}L{0.20\textwidth}L{0.18\textwidth}L{0.16\textwidth}}
+\hline
+Refractive index & Full second-order ODE & WPM approximation & Non-paraxial ASM & Paraxial multislice \\
+\hline
+Full relativistic / Klein--Gordon, equation~\eqref{eq:index_kg} & $\partial_z^2\psi=-\bigl(\nabla_\perp^2+k_0^2n_\mathrm{KG}^2\bigr)\psi$. This is the reference solved here. & $\sqrt{\mathcal H_\perp[n_\mathrm{KG}]}$ approximated by local homogeneous propagators, equation~\eqref{eq:wpm_bank}. & Equation~\eqref{eq:asm_step}: transmission from $n_\mathrm{KG}$, propagation by $\hat P_\mathrm{ASM}$. & Equation~\eqref{eq:propagator_correspondence_intro}: transmission from $n_\mathrm{KG}$, propagation by the Fresnel kernel. \\
+Relativistically corrected Schr\"odinger, equation~\eqref{eq:index_schrodinger} & $\partial_z^2\psi=-\bigl(\nabla_\perp^2+k_0^2n_\mathrm{S}^2\bigr)\psi$; Chen--Van Dyck-type route. & Same WPM construction with $n_m$ sampled from $n_\mathrm{S}(x,y)$. & Equation~\eqref{eq:asm_step}: Schr\"odinger transmission, vacuum $\hat P_\mathrm{ASM}$. & Equation~\eqref{eq:propagator_correspondence_intro}: Schr\"odinger transmission, Fresnel kernel. \\
+\hline
+\end{tabular}
+\caption{Separation of refractive-index choice from propagation approximation. The rows determine which scalar wave equation is represented; the columns determine whether the resulting Helmholtz problem is solved directly, approximated by WPM as a local-homogeneous approximation to the one-way square-root operator, propagated with the non-paraxial angular-spectrum kernel, or reduced to the conventional paraxial Fresnel multislice limit. In the split-step columns, the row's refractive index enters through the transmission term, while the ASM and Fresnel propagation kernels are the vacuum kernels of equations~\eqref{eq:asm_kernel} and~\eqref{eq:propagator_correspondence_intro}.}
+\label{tab:method_axes}
+\end{table}
 
 \begin{figure}[ht]
     \centering
