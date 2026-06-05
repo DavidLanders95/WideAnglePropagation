@@ -163,7 +163,6 @@ def wpm_propagation_kernel(Ek, n_val, k0, k_perp2, dz):
     Core kernel for Wave Propagation Method (WPM).
     Propagates a wave with a SINGLE homogeneous refractive index n_val.
     """
-    # kz = sqrt((n * k0)^2 - k_perp^2)
     kz = jnp.sqrt(jnp.array(n_val**2 * k0**2 - k_perp2, dtype=jnp.complex128))
     H = jnp.exp(1j * dz * kz)
     return jnp.fft.ifft2(H * Ek)
