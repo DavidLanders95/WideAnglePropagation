@@ -3,54 +3,44 @@ Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: main.aux
 The style file: unsrt.bst
 Database file #1: sample.bib
-Warning--I didn't find a database entry for "2013"
-Warning--I didn't find a database entry for "DiffWPM2025"
-Warning--I didn't find a database entry for "2025ChenDyckPaper"
-Warning--I didn't find a database entry for "Glaser1933"
-Warning--I didn't find a database entry for "Ehrenberg-Siday1949"
-Warning--I didn't find a database entry for "Reimer1989"
-Warning--I didn't find a database entry for "BarreBrunel"
-Warning--I didn't find a database entry for "2013ChenPaper"
-Warning--I didn't find a database entry for "2013paper"
-You've used 5 entries,
+You've used 28 entries,
             1791 wiz_defined-function locations,
-            501 strings with 4517 characters,
-and the built_in function-call counts, 1270 in all, are:
-= -- 118
-> -- 50
+            614 strings with 7643 characters,
+and the built_in function-call counts, 6375 in all, are:
+= -- 623
+> -- 226
 < -- 0
-+ -- 19
-- -- 14
-* -- 103
-:= -- 205
-add.period$ -- 15
-call.type$ -- 5
-change.case$ -- 5
++ -- 87
+- -- 59
+* -- 458
+:= -- 1011
+add.period$ -- 85
+call.type$ -- 28
+change.case$ -- 28
 chr.to.int$ -- 0
-cite$ -- 5
-duplicate$ -- 46
-empty$ -- 124
-format.name$ -- 14
-if$ -- 271
+cite$ -- 28
+duplicate$ -- 250
+empty$ -- 638
+format.name$ -- 59
+if$ -- 1384
 int.to.chr$ -- 0
-int.to.str$ -- 5
-missing$ -- 6
-newline$ -- 28
-num.names$ -- 5
-pop$ -- 9
+int.to.str$ -- 28
+missing$ -- 30
+newline$ -- 144
+num.names$ -- 28
+pop$ -- 47
 preamble$ -- 1
 purify$ -- 0
 quote$ -- 0
-skip$ -- 16
+skip$ -- 98
 stack$ -- 0
-substring$ -- 124
-swap$ -- 5
+substring$ -- 590
+swap$ -- 28
 text.length$ -- 0
 text.prefix$ -- 0
 top$ -- 0
 type$ -- 0
 warning$ -- 0
-while$ -- 13
-width$ -- 6
-write$ -- 58
-(There were 9 warnings)
+while$ -- 74
+width$ -- 30
+write$ -- 313
