@@ -293,11 +293,13 @@
 
 % --- 2025 Chen--Van Dyck paper on FC-MS cutoff ---
 @article{2025ChenDyckPaper,
-    author  = {Chen, J. H. and Van Dyck, D.},
-    title   = {Beyond the Taylor-series cutoff in fully corrected multislice},
-    journal = {Ultramicroscopy},
+    author  = {Chen, G. S. and He, Y. T. and Ming, W. Q. and Wu, C. L. and Van Dyck, D. and Chen, J. H.},
+    title   = {Fast {STEM} image simulation in low-energy transmission electron microscopy by the accurate {Chen}-van-{Dyck} multislice method},
+    journal = {Micron},
+    volume  = {190},
+    pages   = {103778},
     year    = {2025},
-    note    = {In press / submitted. Update with final details.}
+    doi     = {10.1016/j.micron.2024.103778}
 }
 
 % --- 2013 Chen paper (cited as 2013ChenPaper) ---
@@ -653,10 +655,12 @@
 	abstract = {{The} simulation of (scanning) transmission electron microscopy images and diffraction patterns is most often performed using the forward-scattering approximation where the second-order derivative term in z is assumed to be small with respect to the first-order derivative term in the modified {Schr}ödinger equation. {This} assumption is very good at high incident electron energies, but breaks down at low energies. {In} order to study the differences between first- and second-order methods, convergent beam electron diffraction patterns were simulated for silicon at the [111] zone-axis orientation at 20 {keV} and compared using electron intensity difference maps and integrated intensity profiles. {The} geometrical differences in the calculated diffraction patterns could be explained by an {Ewald} surface analysis. {Furthermore}, it was found that solutions based on the second-order derivative equation contained small amplitude oscillations that need to be resolved in order to ensure numerical integration stability. {This} required the use of very small integration steps resulting in significantly increased computation time compared to the first-order differential equation solution. {Lastly}, the efficiency of the numerical integration technique is discussed.},
 	pages = {73--80},
 	journaltitle = {{Ultramicroscopy}},
+	journal = {Ultramicroscopy},
 	shortjournal = {{Ultramicroscopy}},
 	author = {{Hillier}, {S}. {C}. and {Robertson}, {E}. {T}. and {Reid}, {G}. {D}. and {Haynes}, {R}. {D}. and {Robertson}, {M}. {D}.},
 	urldate = {2026-06-08},
 	date = {2017-08-01},
+	year = {2017},
 	keywords = {({S}){TEM} image simulation, {Computational} physics, {Electron} diffraction},
 	file = {ScienceDirect Snapshot:C\:\\Users\\dl277493\\Zotero\\storage\\5BF7JA8Q\\S0304399117300384.html:text/html},
 }
@@ -733,4 +737,21 @@
 	date = {2016-12-26},
 	langid = {english},
 	file = {Schmidt et al. - 2016 - Wave-optical modeling beyond the thin-element-appr.pdf:C\:\\Users\\dl277493\\Zotero\\storage\\SJAUMZQ2\\Schmidt et al. - 2016 - Wave-optical modeling beyond the thin-element-appr.pdf:application/pdf},
+}
+
+@article{chen_fast_2025,
+	title = {{Fast} {STEM} image simulation in low-energy transmission electron microscopy by the accurate {Chen}-van-{Dyck} multislice method},
+	volume = {190},
+	issn = {0968-4328},
+	url = {https://www.sciencedirect.com/science/article/pii/S0968432824001951},
+	doi = {10.1016/j.micron.2024.103778},
+	abstract = {{The} {Chen}-van-{Dyck} ({CVD}) formulation as a rigorous numerical solution to the {Schr}ödinger equation has been demonstrated being the only accurate multislice method for calculating diffraction and imaging in low-energy transmission electron microscopy. {The} {CVD} formulation not only considers the forward scattering effects but also includes the backscattering effects. {However}, since its numerical computation has to be performed in real-space, the {CVD} method may suffer from divergence and inefficiency in computing time, especially when used for low-energy scanning transmission electron microscopy ({STEM}) image simulation. {The} present study investigates the influence of cutoff value and slice thickness on the accuracy and efficiency of {STEM} image simulation using this formula. {The} results show that a small cutoff value is required in the low-energy regime to ensure accuracy, especially for thick specimens. {The} optimal slice thickness can be predicted approximately by a simple equation. {To} speed up {STEM} imaging simulation by up to 17 times using the {CVD} formulation, a hybrid computation model incorporating multiple graphic process units ({GPUs}) is suggested, which is of great significance for quantitative {STEM} imaging in low-energy transmission electron microscopy. {The} significance of including backscattering effect in {STEM} image simulation is estimated in comparison with forward-scattering effect.},
+	pages = {103778},
+	journaltitle = {{Micron}},
+	shortjournal = {{Micron}},
+	author = {{Chen}, {G}. {S}. and {He}, {Y}. {T}. and {Ming}, {W}. {Q}. and {Wu}, {C}. {L}. and {Van} {Dyck}, {D}. and {Chen}, {J}. {H}.},
+	urldate = {2026-06-11},
+	date = {2025-03-01},
+	keywords = {{Backscattering} effects, {Chen}-van-{Dyck} formulation, {Multiple} graphic process units, {Multislice} method, {Transmission} electron microscopy},
+	file = {ScienceDirect Snapshot:C\:\\Users\\dl277493\\Zotero\\storage\\X24MUUXJ\\S0968432824001951.html:text/html},
 }

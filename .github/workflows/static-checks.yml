@@ -1,0 +1,22 @@
+name: Static checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run dependency-light checks
+        run: python scripts/check_static.py
+
+      - name: Check package metadata
+        run: python setup.py check
