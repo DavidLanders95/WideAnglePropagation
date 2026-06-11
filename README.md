@@ -1,53 +1,74 @@
 # Wide-Angle Propagation
 
-A Python package for simulating wave propagation in electron microscopy using various numerical methods.
+Numerical propagation tools for electron-wave simulations, with examples for
+multislice, angular-spectrum propagation, wave-propagation multislice (WPM),
+and second-order Klein-Gordon propagation.
 
-## Features
+## What Is Included
 
-- **Fresnel Propagation**: Paraxial approximation for near-field propagation
-- **Angular Spectrum Method**: Full angular spectrum propagation
-- **Wave Propagation Method (WPM)**: Adaptive binning for wide-angle propagation
-- **FDTD Solver**: Finite-difference time-domain solver for relativistic scattering
-- **CUDA Acceleration**: GPU-accelerated FDTD implementation
+- `wide_angle_propagation/propagation_methods.py`: public propagation kernels
+  and simulation loops.
+- `wide_angle_propagation/notebook_utils.py`: beam/amplitude utilities, plotting
+  helpers, and compact result-file helpers used by the notebooks.
+- `tests/`: regression and behavior tests for the propagation methods.
+- `notebooks/verification/01_axel_lubk_verification.ipynb`: Au [100]
+  beam-amplitude verification against the full KG ODE reference.
+- `notebooks/cbed/02_converge_probe_si.ipynb`: Si CBED comparison notebook.
+- `notebooks/cbed/03_convergent_probe_au.ipynb`: Au CBED comparison notebook.
+
+See `notebooks/README.md` for notebook run notes and output locations.
 
 ## Installation
 
-### From Source
+From a local checkout:
 
 ```bash
-git clone https://github.com/yourusername/wide-angle-propagation.git
-cd wide-angle-propagation
-pip install -e .
+python -m pip install -e ".[dev]"
 ```
 
-### Dependencies
+GPU-enabled notebook workflows also require a working CuPy/JAX/abTEM
+installation compatible with your CUDA runtime.
 
-- numpy
-- jax
-- jaxlib
-- abtem
-- ase
-- matplotlib
-- tqdm
-- scipy
-
-## Usage
+## Minimal Usage
 
 ```python
-import wide_angle_propagation as wap
-import numpy as np
+import jax.numpy as jnp
 
-# Example: Fresnel propagation
-potential = ...  # Your potential array
-probe = ...      # Your probe wavefront
-propagator = wap.fresnel_propagation_kernel(...)
-exit_wave, diffraction_pattern = wap.simulate_fresnel(potential, probe, propagator, ...)
+from wide_angle_propagation import (
+    angular_spectrum_propagation_kernel,
+    simulate_fresnel_as,
+)
+
+energy = 300e3
+sampling = (0.1, 0.1)
+slice_thickness = 2.0
+potential = jnp.zeros((4, 64, 64))
+probe = jnp.ones((64, 64), dtype=jnp.complex128)
+
+kernel = angular_spectrum_propagation_kernel(
+    64, 64, sampling, z=slice_thickness, energy=energy
+)
+exit_wave, diffraction_pattern, wavefronts = simulate_fresnel_as(
+    potential, probe, kernel, slice_thickness, energy
+)
 ```
 
-## Notebooks
+## Tests
 
-The `wpm/` and `FDTDmethod/` directories contain Jupyter notebooks demonstrating various propagation methods and comparisons.
+```bash
+python scripts/check_static.py
+pytest tests/test_basic.py
+pytest
+```
 
-## License
+`scripts/check_static.py` validates package syntax, exported names, and the
+three maintained notebooks without importing the GPU/scientific runtime stack.
+The pytest suite requires JAX, and some integration tests and notebooks also
+require GPU dependencies (`cupy`, JAX with the appropriate backend, and abTEM
+data generation).
 
-MIT License
+## Notes
+
+The notebooks save generated figures and compact `.npz` results under
+`notebooks/cbed/results/` and `Paper/figures/` when the corresponding save
+flags are enabled.
