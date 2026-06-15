@@ -33,11 +33,21 @@
 \maketitle
 
 \begin{abstract}
-Multislice simulation is the standard method for modeling electron beam-sample interactions in transmission electron microscopy (TEM).
-The traditional Multislice algorithm is calculated using a split-step Fourier method that employs a paraxial (Fresnel) propagator, limiting its accuracy
-to small scattering angles (typically $<7^\circ$) and ignoring the change of the electron wavelength inside the sample potential.
-These limitations can result in amplitude errors and peak diffraction peak position errors involving thick, high-$Z$ samples.
-Here we compare three FFT-based multislice propagators of increasing physical complexity: F-MS, angular-spectrum multislice (AS-MS), and a wave-propagation multislice (WP-MS) method adapted from scalar light optics. The methods are first benchmarked for Au~[100] against direct ODE integration of the second-order Klein--Gordon Helmholtz equation, and are then compared in high-angle CBED simulations of Si~[111] and Au~[100]. Across these tests, replacing the Fresnel kernel with the exact angular-spectrum kernel removes most of the wide-angle error at essentially the same per-slice cost as F-MS. WP-MS is the most complete one-way split-step model and is closest to the ODE reference, but its additional accuracy over AS-MS is modest under the high-energy conditions considered here. These results suggest that in cases where the sampling of the forward simulation is large, AS-MS should be the default propagator for high-angle elastic forward simulations when conventional multislice is otherwise used.
+Conventional Fresnel multislice (F-MS) is computationally efficient but loses
+accuracy at large scattering angles. We investigate FFT-based alternatives that
+improve wide-angle accuracy without the high computational cost of directly
+solving the wave equation. We introduce wave-propagation multislice (WP-MS), a
+small adaptation of the wave propagation method from scalar optics, and compare
+it with F-MS and angular-spectrum multislice (AS-MS). The three methods are
+first benchmarked against a direct ordinary-differential-equation solution of
+the second-order Klein--Gordon Helmholtz equation, using the on-axis and
+high-angle beam amplitudes of Au~[100]. We then compare their predictions for
+high-angle Si~[111] and Au~[100] convergent-beam electron diffraction. AS-MS
+removes most of the wide-angle error of F-MS at essentially the same per-slice
+cost. WP-MS is closest to the ODE reference, but its additional accuracy over
+AS-MS is modest under the conditions studied. We therefore identify when F-MS
+remains adequate, recommend AS-MS as the practical wide-angle default, and
+reserve WP-MS for cases requiring the most complete one-way split-step model.
 \end{abstract}
 
 \section{Introduction}
