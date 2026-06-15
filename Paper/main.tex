@@ -35,17 +35,18 @@
 \begin{abstract}
 Conventional Fresnel multislice (F-MS) is the standard method for modeling
 electron--sample interactions in transmission electron microscopy (TEM), as it
-can efficiently simulate both perfect crystals and crystals containing defects.
-However, F-MS loses accuracy at large scattering angles. Here, we investigate
+can efficiently simulate both perfect crystals and crystals containing defects and is computer efficient.
+However, F-MS loses accuracy at large scattering angles. 
+Here, we investigate
 FFT-based alternatives that improve wide-angle accuracy without the high
 computational cost of directly solving the wave equation. We introduce
 wave-propagation multislice (WP-MS), a minor adaptation of the wave propagation
-method from scalar optics, and compare it with F-MS and angular-spectrum
+method (WPM) from scalar optics, and compare it with F-MS and angular-spectrum
 multislice (AS-MS). The three methods are first benchmarked against a direct
-ordinary-differential-equation solution of the second-order Klein--Gordon
+ordinary-differential-equation (ODE) solution of the second-order Klein--Gordon
 Helmholtz equation using the on-axis and high-angle beam amplitudes of Au~[100].
-We then compare their predictions for high-angle convergent-beam electron
-diffraction from Si~[111] and Au~[100]. AS-MS removes most of the wide-angle
+We then compare their predictions for convergent-beam electron
+diffraction (CBED) from Si~[111] and Au~[100]. AS-MS removes most of the wide-angle
 error of F-MS at essentially the same per-slice computational cost. WP-MS is
 closest to the ODE reference, but its additional accuracy over AS-MS is modest
 under the conditions studied. We therefore identify the conditions under which

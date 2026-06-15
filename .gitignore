@@ -50,3 +50,4 @@ Paper/figures/*.pdf
 # Executed notebook artifacts and temporary notebook files
 notebooks/**/*_executed.ipynb
 notebooks/**/*.ipynb.tmp
+.tools/
