@@ -43,6 +43,7 @@ Paper/*.blg
 Paper/*.fdb_latexmk
 Paper/*.fls
 Paper/*.log
+Paper/*.spl
 Paper/*.pdf
 Paper/*.synctex.gz
 Paper/figures/*.pdf

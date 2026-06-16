@@ -1,6 +1,5 @@
-\documentclass{article}
+\documentclass[preprint,12pt,number]{elsarticle}
 \usepackage[english]{babel}
-\usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
 
 % Useful packages
 \usepackage{amsmath}
@@ -26,20 +25,38 @@
 \usepackage[colorlinks=true, allcolors=blue]{hyperref}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 
-\title{Wide-Angle Multislice for Electron Microscopy via the Wave Propagation Method}
-\author{Author Name}
+\journal{Ultramicroscopy}
+\biboptions{numbers,sort&compress}
 
 \begin{document}
-\maketitle
+\begin{frontmatter}
+
+\title{Wide-Angle Multislice Propagation for Electron Microscopy:
+Comparison of Fresnel, Angular-Spectrum, and Wave-Propagation Methods}
+\author[inst1]{David Landers}
+\ead{david.landers@cea.fr}
+\author[inst1]{Jean-Luc Rouviere}
+\ead{jean-luc.rouviere@cea.fr}
+\affiliation[inst1]{
+    organization={Univ. Grenoble Alpes, CEA, IRIG, MEM, LEMMA},
+    addressline={17 av. des Martyrs},
+    city={Grenoble},
+    postcode={38000},
+    country={France}
+}
 
 \begin{abstract}
+
 Conventional Fresnel multislice (F-MS) is the standard method for modeling
-electron--sample interactions in transmission electron microscopy (TEM), as it
-can efficiently simulate both perfect crystals and crystals containing defects and is computer efficient.
-However, F-MS loses accuracy at large scattering angles. 
+electron--sample interactions in transmission electron microscopy (TEM). It is
+computationally efficient and can simulate both perfect and defective crystals.
+However, F-MS loses accuracy at large scattering angles.
 Here, we investigate
-FFT-based alternatives that improve wide-angle accuracy without the high
-computational cost of directly solving the wave equation. We introduce
+FFT-based alternatives that retain these practical advantages while improving
+wide-angle accuracy
+without the high
+computational cost of directly solving the wave equation. 
+We introduce
 wave-propagation multislice (WP-MS), a minor adaptation of the wave propagation
 method (WPM) from scalar optics, and compare it with F-MS and angular-spectrum
 multislice (AS-MS). The three methods are first benchmarked against a direct
@@ -55,19 +72,33 @@ reserve WP-MS for applications requiring the most complete one-way split-step
 model.
 \end{abstract}
 
+\begin{keyword}
+electron microscopy \sep multislice \sep electron diffraction \sep Fresnel propagator \sep angular spectrum \sep wave propagation method
+\end{keyword}
+
+\end{frontmatter}
+
 \section{Introduction}
 \label{sec:introduction}
 
-Image simulations are increasingly being used as
-forward models within inverse reconstruction algorithms to recover
-two-dimensional (2D) or three-dimensional (3D) potentials
-and answer material-science questions. Such use is in contrast
-with image simulations traditional use as a forward model for comparison with an experimental
-image, in which a structure was proposed, an image was calculated
-from that structure, and agreement with experiment was improved by trial and
-error. In reconstruction workflows, the accuracy of the forward model is more
-critical than ever because the model is not merely used for semi-quantitative
-comparison, but is a central component of the reconstruction algorithm.
+Electron microscopy (EM) has recently entered a new era. For a long time, its central role was to produce images of matter, often interpretable only through comparison with image simulations. In this traditional workflow, simulations were used as a forward model: a structural hypothesis was proposed, an image was calculated from this structure, and the agreement with experiment was improved by trial and error. In this sense, image simulation has always been an indispensable tool for extracting reliable structural information from EM data.
+
+This situation is now changing. In modern approaches, especially ptychography and related phase-retrieval methods, the recorded data are no longer simply interpreted as images. Instead, they are used as input for numerical reconstruction algorithms that aim to recover the sample structure, projected potential, or phase shift. In these inverse methods, the electron–matter interaction model is not merely used after the experiment for comparison; it becomes part of the reconstruction itself. Consequently, the accuracy of the forward model is more critical than ever.
+
+A complete description of electron propagation through matter would require solving a many-body quantum-mechanical problem including elastic and inelastic scattering, multiple scattering, and, in principle, backscattering processes. Such a brute-force treatment is not feasible for realistic specimens of interest in transmission electron microscopy (TEM). Practical and accurate propagation models are therefore essential. In this work, we focus on multislice approaches, leaving aside Bloch-wave methods, which remain powerful for periodic crystals but are less general for defects, interfaces, amorphous regions, finite objects, and iterative reconstruction schemes.
+
+The multislice algorithm introduced by Cowley and Moodie ~\cite{cowley1957scattering,ishizuka1977practical} provides such a practical framework. It was originally motivated by a physical-optics picture in which the specimen is represented as a succession of thin phase objects, separated by free-space propagation. In modern terms, the electron wave is alternately multiplied by a transmission function associated with the projected potential of a slice and propagated to the next slice. This simple and efficient construction has become one of the standard tools for simulating electron scattering in TEM.
+
+The conventional implementation of multislice uses a Fresnel, or paraxial, propagator between slices. This approximation is highly efficient and accurate for small scattering angles, but its limitations become increasingly important when high-angle components contribute significantly to the exit wave, for example in thick specimens, high-Z materials, or strongly scattering objects or low energy EM ~\cite{RotherScheerschmidt2009,hillier_role_2017,WackerSchroeder2015,ming2013pcms}.  Since modern quantitative and inverse EM methods rely directly on the fidelity of the propagation model, it is timely to revisit this propagation step and assess whether a more accurate yet still efficient alternative can improve the standard Fresnel multislice framework.
+
+In this work, 3 main multislice (MS) methods are compared and  analysed : F-MS, AS-MS and WP-MS. We start by reviewing the basic equations describing the propagation of electrons in matter an (section 2.1) and review quickly the more advanced methods to solve these equation (section 2.2); in particular we will detailed the ODE that will used to validate/benchmark our 3 MS methods. Afterwards the 3 studied MS methods are introduced (sections 2.3). Then the 3 basics 
+
+\section{Electron-matter interaction models or Background Theory ? }
+\label{sec:propagation_models}
+
+\subsection{Wave equation and refractive index}
+\label{sec:wave_equation_refractive_index}
+
 
 The standard tool for simulating electron propagation through a crystalline
 specimen is the paraxial Fresnel multislice (F-MS) method
@@ -189,7 +220,7 @@ quantify accuracy and computational cost and determine whether either method
 can provide an efficient correction to paraxial multislice for representative
 crystalline TEM and STEM simulations.
 
-\section{Background Theory}
+\section{Electron-matter interaction models or Background Theory ? }
 \label{sec:propagation_models}
 
 \subsection{Wave equation and refractive index}
@@ -943,6 +974,8 @@ kernel becomes singular. (Jean Luc needs to add a section here about sampling)
 \section{Discussion}
 \label{sec:discussion}
 
+
+
 The results point to the Fresnel free-space propagator as the main limitation
 of F-MS in the high-angle and thick-specimen regimes tested here. In the
 Au~[100] ODE benchmark, the discrepancy appears first in the 135~mrad beam and
@@ -1027,7 +1060,7 @@ backscattering, and then benchmark it against FC-MS in lower-energy simulations,
 measure how F-MS, AS-MS, and WP-MS affect ptychographic reconstructions across
 specimen thickness, accelerating voltage, and atomic number.
 
-\bibliographystyle{unsrt}
+\bibliographystyle{elsarticle-num}
 \IfFileExists{Paper/sample.bib}{\bibliography{Paper/sample}}{\bibliography{sample}}
 
 \end{document}

@@ -1,149 +1,173 @@
 \begin{thebibliography}{10}
+\expandafter\ifx\csname url\endcsname\relax
+  \def\url#1{\texttt{#1}}\fi
+\expandafter\ifx\csname urlprefix\endcsname\relax\def\urlprefix{URL }\fi
+\expandafter\ifx\csname href\endcsname\relax
+  \def\href#1#2{#2} \def\path#1{#1}\fi
 
 \bibitem{cowley1957scattering}
-J.~M. Cowley and A.~F. Moodie.
-\newblock The scattering of electrons by atoms and crystals. {I}. {A} new
-  theoretical approach.
-\newblock {\em Acta Crystallographica}, 10(10):609--619, 1957.
+J.~M. Cowley, A.~F. Moodie, The scattering of electrons by atoms and crystals.
+  {I}. {A} new theoretical approach, Acta Crystallographica 10~(10) (1957)
+  609--619.
+\newblock \href {https://doi.org/10.1107/S0365110X57002194}
+  {\path{doi:10.1107/S0365110X57002194}}.
 
 \bibitem{ishizuka1977practical}
-K.~Ishizuka and N.~Uyeda.
-\newblock A new theoretical and practical approach to the multislice method.
-\newblock {\em Acta Crystallographica Section A}, 33(5):740--749, 1977.
+K.~Ishizuka, N.~Uyeda, A new theoretical and practical approach to the
+  multislice method, Acta Crystallographica Section A 33~(5) (1977) 740--749.
+\newblock \href {https://doi.org/10.1107/S0567739477001879}
+  {\path{doi:10.1107/S0567739477001879}}.
 
 \bibitem{RotherScheerschmidt2009}
-A.~Rother and K.~Scheerschmidt.
-\newblock Relativistic effects in elastic scattering of electrons in {TEM}.
-\newblock {\em Ultramicroscopy}, 109(2):154--160, 2009.
+A.~Rother, K.~Scheerschmidt, Relativistic effects in elastic scattering of
+  electrons in {TEM}, Ultramicroscopy 109~(2) (2009) 154--160.
+\newblock \href {https://doi.org/10.1016/j.ultramic.2008.08.008}
+  {\path{doi:10.1016/j.ultramic.2008.08.008}}.
 
 \bibitem{hillier_role_2017}
-{S}.~{C}. {Hillier}, {E}.~{T}. {Robertson}, {G}.~{D}. {Reid}, {R}.~{D}.
-  {Haynes}, and {M}.~{D}. {Robertson}.
-\newblock {On} the role of the second-order derivative term in the calculation
-  of convergent beam diffraction patterns.
-\newblock {\em Ultramicroscopy}, 179:73--80, 2017.
+S.~C. {Hillier}, E.~T. {Robertson}, G.~D. {Reid}, R.~D. {Haynes}, M.~D.
+  {Robertson},
+  \href{https://www.sciencedirect.com/science/article/pii/S0304399117300384}{{On}
+  the role of the second-order derivative term in the calculation of convergent
+  beam diffraction patterns}, Ultramicroscopy 179 (2017) 73--80.
+\newblock \href {https://doi.org/10.1016/j.ultramic.2017.04.001}
+  {\path{doi:10.1016/j.ultramic.2017.04.001}}.
+\newline\urlprefix\url{https://www.sciencedirect.com/science/article/pii/S0304399117300384}
 
 \bibitem{WackerSchroeder2015}
-C.~Wacker and R.~R. Schr{\"o}der.
-\newblock Multislice algorithms revisited: Solving the {Schr{\"o}dinger}
-  equation numerically for imaging with electrons.
-\newblock {\em Ultramicroscopy}, 151:211--223, 2015.
+C.~Wacker, R.~R. Schr{\"o}der, Multislice algorithms revisited: Solving the
+  {Schr{\"o}dinger} equation numerically for imaging with electrons,
+  Ultramicroscopy 151 (2015) 211--223.
+\newblock \href {https://doi.org/10.1016/j.ultramic.2014.12.008}
+  {\path{doi:10.1016/j.ultramic.2014.12.008}}.
 
 \bibitem{ming2013pcms}
-W.~Q. Ming and J.~H. Chen.
-\newblock Validities of three multislice algorithms for quantitative low-energy
-  transmission electron microscopy.
-\newblock {\em Ultramicroscopy}, 134:135--143, 2013.
+W.~Q. Ming, J.~H. Chen, Validities of three multislice algorithms for
+  quantitative low-energy transmission electron microscopy, Ultramicroscopy 134
+  (2013) 135--143.
+\newblock \href {https://doi.org/10.1016/j.ultramic.2013.04.013}
+  {\path{doi:10.1016/j.ultramic.2013.04.013}}.
 
 \bibitem{goodman}
-Joseph~W. Goodman.
-\newblock {\em Introduction to {Fourier} Optics}.
-\newblock W. H. Freeman, New York, 4 edition, 2017.
+J.~W. Goodman, Introduction to {Fourier} Optics, 4th Edition, W. H. Freeman,
+  New York, 2017.
 
 \bibitem{ChenVanDyck1997}
-J.~H. Chen and D.~Van~Dyck.
-\newblock Accurate multislice theory for elastic electron scattering in
-  transmission electron microscopy.
-\newblock {\em Ultramicroscopy}, 70:29--44, 1997.
+J.~H. Chen, D.~Van~Dyck, Accurate multislice theory for elastic electron
+  scattering in transmission electron microscopy, Ultramicroscopy 70 (1997)
+  29--44.
+\newblock \href {https://doi.org/10.1016/S0304-3991(97)00071-5}
+  {\path{doi:10.1016/S0304-3991(97)00071-5}}.
 
 \bibitem{Hadley1992}
-G.~Ronald Hadley.
-\newblock Wide-angle beam propagation using {Pad\'e} approximant operators.
-\newblock {\em Optics Letters}, 17(20):1426--1428, 1992.
+G.~R. Hadley, Wide-angle beam propagation using {Pad\'e} approximant operators,
+  Optics Letters 17~(20) (1992) 1426--1428.
+\newblock \href {https://doi.org/10.1364/OL.17.001426}
+  {\path{doi:10.1364/OL.17.001426}}.
 
 \bibitem{Brenner1993}
-K.-H. Brenner and W.~Singer.
-\newblock Light propagation through graded-index media using the wave
-  propagation method.
-\newblock {\em Applied Optics}, 32(26):4984--4988, 1993.
+K.-H. Brenner, W.~Singer, Light propagation through graded-index media using
+  the wave propagation method, Applied Optics 32~(26) (1993) 4984--4988.
+\newblock \href {https://doi.org/10.1364/AO.32.004984}
+  {\path{doi:10.1364/AO.32.004984}}.
 
 \bibitem{Schmidt2016}
 S.~Schmidt, T.~Tiess, S.~Schr{\"o}ter, R.~Hambach, M.~J{\"a}ger, H.~Bartelt,
-  A.~T{\"u}nnermann, and H.~Gross.
-\newblock Wave-optical modeling beyond the thin-element approximation.
-\newblock {\em Optics Express}, 24(26):30188--30200, 2016.
+  A.~T{\"u}nnermann, H.~Gross, Wave-optical modeling beyond the thin-element
+  approximation, Optics Express 24~(26) (2016) 30188--30200.
+\newblock \href {https://doi.org/10.1364/OE.24.030188}
+  {\path{doi:10.1364/OE.24.030188}}.
 
 \bibitem{BarreBrunel2025}
-Nicolas Barr{\'e} and Marc Brunel.
-\newblock Differentiable wave propagation method for shape optimization of
-  freeform optics beyond the paraxial approximation.
-\newblock {\em Optics Letters}, 50(9):2860--2863, 2025.
+N.~Barr{\'e}, M.~Brunel, Differentiable wave propagation method for shape
+  optimization of freeform optics beyond the paraxial approximation, Optics
+  Letters 50~(9) (2025) 2860--2863.
+\newblock \href {https://doi.org/10.1364/OL.559067}
+  {\path{doi:10.1364/OL.559067}}.
 
 \bibitem{2025ChenDyckPaper}
-G.~S. Chen, Y.~T. He, W.~Q. Ming, C.~L. Wu, D.~Van~Dyck, and J.~H. Chen.
-\newblock Fast {STEM} image simulation in low-energy transmission electron
-  microscopy by the accurate {Chen}-van-{Dyck} multislice method.
-\newblock {\em Micron}, 190:103778, 2025.
+G.~S. Chen, Y.~T. He, W.~Q. Ming, C.~L. Wu, D.~Van~Dyck, J.~H. Chen, Fast
+  {STEM} image simulation in low-energy transmission electron microscopy by the
+  accurate {Chen}-van-{Dyck} multislice method, Micron 190 (2025) 103778.
+\newblock \href {https://doi.org/10.1016/j.micron.2024.103778}
+  {\path{doi:10.1016/j.micron.2024.103778}}.
 
 \bibitem{Glaser1933}
-W.~Glaser.
-\newblock {\"U}ber die elektronenoptische abbildung bei hohem {V}akuum.
-\newblock {\em Zeitschrift f{\"u}r Physik}, 83:104--122, 1933.
+W.~Glaser, {\"U}ber die elektronenoptische abbildung bei hohem {V}akuum,
+  Zeitschrift f{\"u}r Physik 83 (1933) 104--122.
+\newblock \href {https://doi.org/10.1007/BF01331099}
+  {\path{doi:10.1007/BF01331099}}.
 
 \bibitem{Ehrenberg-Siday1949}
-W.~Ehrenberg and R.~E. Siday.
-\newblock The refractive index in electron optics and the principles of
-  dynamics.
-\newblock {\em Proceedings of the Physical Society B}, 62:8--21, 1949.
+W.~Ehrenberg, R.~E. Siday, The refractive index in electron optics and the
+  principles of dynamics, Proceedings of the Physical Society B 62 (1949)
+  8--21.
+\newblock \href {https://doi.org/10.1088/0370-1301/62/1/303}
+  {\path{doi:10.1088/0370-1301/62/1/303}}.
 
 \bibitem{Reimer1989}
-L.~Reimer.
-\newblock {\em Transmission Electron Microscopy: Physics of Image Formation and
-  Microanalysis}.
-\newblock Springer, Berlin, 2 edition, 1989.
+L.~Reimer, Transmission Electron Microscopy: Physics of Image Formation and
+  Microanalysis, 2nd Edition, Springer, Berlin, 1989.
 
 \bibitem{kirkland2010advanced}
-Earl~J. Kirkland.
-\newblock {\em Advanced Computing in Electron Microscopy}.
-\newblock Springer, New York, 2 edition, 2010.
+E.~J. Kirkland, Advanced Computing in Electron Microscopy, 2nd Edition,
+  Springer, New York, 2010.
+\newblock \href {https://doi.org/10.1007/978-1-4419-6533-2}
+  {\path{doi:10.1007/978-1-4419-6533-2}}.
 
 \bibitem{fresnel1818memoire}
-Augustin-Jean Fresnel.
-\newblock M{\'e}moire sur la diffraction de la lumi{\`e}re, 1818.
-\newblock Prize memoir of 1818; reprinted in \emph{Oeuvres compl{\`e}tes
-  d'Augustin Fresnel}, vol.~1, Impr. Imp{\'e}riale, Paris, 1866, pp.~247--382.
+A.-J. Fresnel,
+  \href{https://books.google.com/books?id=1l0_AAAAcAAJ}{M{\'e}moire sur la
+  diffraction de la lumi{\`e}re}, prize memoir of 1818; reprinted in
+  \emph{Oeuvres compl{\`e}tes d'Augustin Fresnel}, vol.~1, Impr. Imp{\'e}riale,
+  Paris, 1866, pp.~247--382 (1818).
+\newline\urlprefix\url{https://books.google.com/books?id=1l0_AAAAcAAJ}
 
 \bibitem{fleck1976atmosphere}
-J.~A. Fleck, J.~R. Morris, and M.~D. Feit.
-\newblock Time-dependent propagation of high energy laser beams through the
-  atmosphere.
-\newblock {\em Applied Physics}, 10(2):129--160, 1976.
+J.~A. Fleck, J.~R. Morris, M.~D. Feit, Time-dependent propagation of high
+  energy laser beams through the atmosphere, Applied Physics 10~(2) (1976)
+  129--160.
+\newblock \href {https://doi.org/10.1007/BF00896333}
+  {\path{doi:10.1007/BF00896333}}.
 
 \bibitem{booker1950angular}
-H.~G. Booker and P.~C. Clemmow.
-\newblock The concept of an angular spectrum of plane waves, and its relation
-  to that of polar diagram and aperture distribution.
-\newblock {\em Proceedings of the IEE, Part III}, 97:11--17, 1950.
+H.~G. Booker, P.~C. Clemmow, The concept of an angular spectrum of plane waves,
+  and its relation to that of polar diagram and aperture distribution,
+  Proceedings of the IEE, Part III 97 (1950) 11--17.
+\newblock \href {https://doi.org/10.1049/pi-3.1950.0002}
+  {\path{doi:10.1049/pi-3.1950.0002}}.
 
 \bibitem{korpel1986splitstep}
-A.~Korpel, K.~E. Lonngren, P.~P. Banerjee, H.~K. Sim, and M.~R. Chatterjee.
-\newblock Split-step-type angular plane-wave spectrum method for the study of
-  self-refractive effects in nonlinear wave propagation.
-\newblock {\em Journal of the Optical Society of America B}, 3(6):885--890,
-  1986.
+A.~Korpel, K.~E. Lonngren, P.~P. Banerjee, H.~K. Sim, M.~R. Chatterjee,
+  Split-step-type angular plane-wave spectrum method for the study of
+  self-refractive effects in nonlinear wave propagation, Journal of the Optical
+  Society of America B 3~(6) (1986) 885--890.
+\newblock \href {https://doi.org/10.1364/JOSAB.3.000885}
+  {\path{doi:10.1364/JOSAB.3.000885}}.
 
 \bibitem{lee1994wideangle}
-P.~C. Lee and E.~Voges.
-\newblock Three-dimensional semi-vectorial wide-angle beam propagation method.
-\newblock {\em Journal of Lightwave Technology}, 12(2):215--225, 1994.
+P.~C. Lee, E.~Voges, Three-dimensional semi-vectorial wide-angle beam
+  propagation method, Journal of Lightwave Technology 12~(2) (1994) 215--225.
+\newblock \href {https://doi.org/10.1109/50.350601}
+  {\path{doi:10.1109/50.350601}}.
 
 \bibitem{vandyck1979higherorder}
-Dirk van Dyck.
-\newblock Improved methods for the high speed calculation of electron
-  microscopic structure images.
-\newblock {\em Physica Status Solidi A}, 52(1):283--292, 1979.
+D.~van Dyck, Improved methods for the high speed calculation of electron
+  microscopic structure images, Physica Status Solidi A 52~(1) (1979) 283--292.
+\newblock \href {https://doi.org/10.1002/pssa.2210520131}
+  {\path{doi:10.1002/pssa.2210520131}}.
 
 \bibitem{banerjee1989helmholtz}
-Swagata Banerjee and Anurag Sharma.
-\newblock Propagation characteristics of optical waveguiding structures by
-  direct solution of the helmholtz equation for total fields.
-\newblock {\em Journal of the Optical Society of America A}, 6(12):1884--1894,
-  1989.
+S.~Banerjee, A.~Sharma, Propagation characteristics of optical waveguiding
+  structures by direct solution of the helmholtz equation for total fields,
+  Journal of the Optical Society of America A 6~(12) (1989) 1884--1894.
+\newblock \href {https://doi.org/10.1364/JOSAA.6.001884}
+  {\path{doi:10.1364/JOSAA.6.001884}}.
 
 \bibitem{sharma1989totalfields}
-Anurag Sharma and Swagata Banerjee.
-\newblock Method for propagation of total fields or beams through optical
-  waveguides.
-\newblock {\em Optics Letters}, 14(1):96--98, 1989.
+A.~Sharma, S.~Banerjee, Method for propagation of total fields or beams through
+  optical waveguides, Optics Letters 14~(1) (1989) 96--98.
+\newblock \href {https://doi.org/10.1364/OL.14.000096}
+  {\path{doi:10.1364/OL.14.000096}}.
 
 \end{thebibliography}
