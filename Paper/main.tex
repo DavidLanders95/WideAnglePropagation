@@ -73,7 +73,7 @@ model.
 \end{abstract}
 
 \begin{keyword}
-electron microscopy \sep multislice \sep electron diffraction \sep Fresnel propagator \sep angular spectrum \sep wave propagation method
+electron microscopy \sep multislice \sep electron diffraction \sep TEM image simulation \sep Fresnel propagator \sep angular spectrum \sep wave propagation method
 \end{keyword}
 
 \end{frontmatter}
@@ -85,19 +85,178 @@ Electron microscopy (EM) has recently entered a new era. For a long time, its ce
 
 This situation is now changing. In modern approaches, especially ptychography and related phase-retrieval methods, the recorded data are no longer simply interpreted as images. Instead, they are used as input for numerical reconstruction algorithms that aim to recover the sample structure, projected potential, or phase shift. In these inverse methods, the electron–matter interaction model is not merely used after the experiment for comparison; it becomes part of the reconstruction itself. Consequently, the accuracy of the forward model is more critical than ever.
 
-A complete description of electron propagation through matter would require solving a many-body quantum-mechanical problem including elastic and inelastic scattering, multiple scattering, and, in principle, backscattering processes. Such a brute-force treatment is not feasible for realistic specimens of interest in transmission electron microscopy (TEM). Practical and accurate propagation models are therefore essential. In this work, we focus on multislice approaches, leaving aside Bloch-wave methods, which remain powerful for periodic crystals but are less general for defects, interfaces, amorphous regions, finite objects, and iterative reconstruction schemes.
+A complete description of electron propagation through matter would require solving a many-body quantum-mechanical problem including elastic and inelastic scattering, multiple scattering, and, in principle, backscattering processes. Such a brute-force treatment is not feasible for realistic specimens of interest in transmission electron microscopy (TEM). Practical and accurate propagation models are therefore essential. In this work, we focus on multislice approaches, leaving aside Bloch-wave methods, which remain powerful for periodic crystals ~\cite{Bethe_theorie_1928,Hirsch1965} but are less general for defects, interfaces, amorphous regions, finite objects, and iterative reconstruction schemes.
 
 The multislice algorithm introduced by Cowley and Moodie ~\cite{cowley1957scattering,ishizuka1977practical} provides such a practical framework. It was originally motivated by a physical-optics picture in which the specimen is represented as a succession of thin phase objects, separated by free-space propagation. In modern terms, the electron wave is alternately multiplied by a transmission function associated with the projected potential of a slice and propagated to the next slice. This simple and efficient construction has become one of the standard tools for simulating electron scattering in TEM.
 
 The conventional implementation of multislice uses a Fresnel, or paraxial, propagator between slices. This approximation is highly efficient and accurate for small scattering angles, but its limitations become increasingly important when high-angle components contribute significantly to the exit wave, for example in thick specimens, high-Z materials, or strongly scattering objects or low energy EM ~\cite{RotherScheerschmidt2009,hillier_role_2017,WackerSchroeder2015,ming2013pcms}.  Since modern quantitative and inverse EM methods rely directly on the fidelity of the propagation model, it is timely to revisit this propagation step and assess whether a more accurate yet still efficient alternative can improve the standard Fresnel multislice framework.
 
-In this work, 3 main multislice (MS) methods are compared and  analysed : F-MS, AS-MS and WP-MS. We start by reviewing the basic equations describing the propagation of electrons in matter an (section 2.1) and review quickly the more advanced methods to solve these equation (section 2.2); in particular we will detailed the ODE that will used to validate/benchmark our 3 MS methods. Afterwards the 3 studied MS methods are introduced (sections 2.3). Then the 3 basics 
+In this work, we compare three multislice (MS) propagators: F-MS, AS-MS, and
+WP-MS. Section~\ref{sec:algorithms_electron_matter} first reviews the wave
+equation and the main propagation algorithms used to model electron--matter
+interactions. Section~\ref{sec:results} then benchmarks the methods and
+presents their behaviour in representative CBED simulations. Finally,
+Section~\ref{sec:discussion} discusses when each propagator method is expected to be
+adequate.
 
-\section{Electron-matter interaction models or Background Theory ? }
-\label{sec:propagation_models}
+\section{Algorithms for Modeling Electron--Matter Interaction}
+\label{sec:algorithms_electron_matter}
 
-\subsection{Wave equation and refractive index}
-\label{sec:wave_equation_refractive_index}
+This section introduces the wave-equation framework and the numerical
+propagation methods considered in this work. We first recall how electron
+propagation in an electrostatic crystal potential can be written as a
+stationary wave equation, closely related to a Helmholtz equation
+(Subsection~\ref{sec:schrodinger_helmholtz}). We then
+briefly discuss higher-accuracy reference and dynamical-diffraction methods,
+focusing specifically on the ODE used in this work
+(Subsection~\ref{sec:forward_ode_reference}) and on the three
+FFT-based multislice propagators compared in this paper: F-MS, AS-MS, and
+WP-MS (Subsection~\ref{sec:fresnel_angular_spectrum}).
+
+\subsection{From the Schr\"odinger Equation to a Helmholtz Equation}
+\label{sec:schrodinger_helmholtz}
+
+Throughout this work we use the convention now commonly adopted in the electron
+microscopy literature, and used for example in Kirkland's textbook~\cite{kirkland2010advanced}, in which
+spatial frequencies are measured in cycles per unit length rather than radians
+per unit length. This convention differs from that used in some older electron
+microscopy papers, including the original multislice formulation of Cowley and
+Moodie~\cite{cowley1957scattering}, and in much of the optics literature. The
+incident electron wavenumber is therefore
+\begin{equation}
+k_0 = \frac{1}{\lambda},
+\end{equation}
+where $\lambda$ is the relativistic electron wavelength. This differs from the
+optics convention $K_0=2\pi/\lambda$, so that $K_0=2\pi k_0$.
+
+The consequence of this convention is twofold. First, we define the Fourier
+transform with the phase factor
+\begin{equation}
+\mathcal F\{f(x,y)\}(q_x,q_y)
+=
+\int f(x,y)
+\exp\left[-2\pi i(q_x x+q_y y)\right]\,dx\,dy,
+\label{eq:fourier_convention}
+\end{equation}
+where $(q_x,q_y)$ are transverse spatial frequencies in cycles per unit length.
+Second, a plane wave propagating in the direction
+$\mathbf k=(k_x,k_y,k_z)$ is written as
+\begin{equation}
+\psi(\mathbf r)
+=
+\exp\left[2\pi i(k_x x+k_y y+k_z z)\right],
+\label{eq:plane_wave_convention}
+\end{equation}
+with
+\begin{equation}
+|\mathbf k| = k_0 = \frac{1}{\lambda}.
+\end{equation}
+In the optics convention, the same wave would be written with the wavevector
+$\mathbf K=2\pi\mathbf k$ and phase factor $\exp(i\mathbf K\cdot\mathbf r)$.
+
+
+The propagation of an electron through a specimen can be described, at the
+single-particle level, by a Schr\"odinger-type wave equation in the
+electrostatic potential of the sample. In transmission electron microscopy, the
+incident electron energy is typically high enough that relativistic effects
+must be included. A convenient way to do this is to retain the Schr\"odinger
+form of the wave equation while using the relativistic electron mass, or
+equivalently the relativistic momentum and wavelength, in the propagation
+constants.
+
+Starting from the time-dependent Schr\"odinger equation,
+\begin{equation}
+i\hbar \frac{\partial \Psi(\mathbf r,t)}{\partial t}
+=
+\left[
+-\frac{\hbar^2}{2\gamma m_0}\nabla^2
++
+V(\mathbf r)
+\right]\Psi(\mathbf r,t),
+\label{eq:time_dependent_schrodinger}
+\end{equation}
+where $m_0$ is the electron rest mass, $\gamma$ is the Lorentz factor, and
+$V(\mathbf r)$ is the electrostatic potential energy of the electron in the
+specimen, we look for stationary solutions of the form
+\begin{equation}
+\Psi(\mathbf r,t)=\psi(\mathbf r)\exp\left(-\frac{iEt}{\hbar}\right).
+\label{eq:stationary_ansatz}
+\end{equation}
+Substitution into Eq.~\eqref{eq:time_dependent_schrodinger} gives the
+time-independent equation
+\begin{equation}
+\nabla^2\psi(\mathbf r)
++
+\frac{2\gamma m_0}{\hbar^2}
+\left[E-V(\mathbf r)\right]\psi(\mathbf r)
+=0.
+\label{eq:time_independent_schrodinger}
+\end{equation}
+
+This equation can be written in Helmholtz form by introducing the vacuum
+wavenumber $k_0$ and an electron-optical refractive index $n(\mathbf r)$:
+\begin{equation}
+\nabla^2\psi(\mathbf r)+k_0^2 n^2(\mathbf r)\psi(\mathbf r)=0.
+\label{eq:helmholtz_form}
+\end{equation}
+In this notation, the effect of the electrostatic potential is absorbed into
+$n(\mathbf r)$. For the relativistically corrected Schr\"odinger equation, one
+may write
+\begin{equation}
+n_\mathrm{S}^2(\mathbf r)
+=
+1-\frac{2\gamma m_0}{\hbar^2 k_0^2}V(\mathbf r),
+\label{eq:schrodinger_refractive_index}
+\end{equation}
+up to the sign convention used for the electron potential energy. The same
+formalism can also accommodate more complete scalar relativistic descriptions,
+such as the Klein--Gordon equation, by changing the definition of
+$n(\mathbf r)$.
+
+The usefulness of Eq.~\eqref{eq:helmholtz_form} is that it separates two
+questions. The first is the physical model used to describe the interaction
+between the electron and the electrostatic potential, which determines the
+refractive index. The second is the numerical propagation method used to solve
+the resulting wave equation. F-MS, AS-MS, WP-MS, and ODE propagation can
+therefore be understood as different approximations or numerical solutions of
+the same underlying Helmholtz-type problem.
+
+The identification of the electrostatic potential with an electron-optical
+refractive index is due to~\cite{Glaser1933, Ehrenberg-Siday1949, Reimer1989}.
+The refractive index notation is useful because the choice of scalar wave equation can be
+expressed through the choice of $n(\mathbf r)$, separating approximations to the
+wave equation from approximations to the potential. For example, retaining the
+quadratic potential-energy term gives the time-independent Klein--Gordon
+refractive index
+\begin{equation}
+\label{eq:index_kg_intro}
+n_\mathrm{KG}^2(\mathbf r)
+=
+\frac{(E-V(\mathbf r))^2-m_0^2c^4}{E^2-m_0^2c^4}.
+\end{equation}
+ 
+The relativistically
+corrected Schr\"odinger refractive index is a linearised potential
+approximation to the Klein--Gordon refractive index, while retaining the relativistic
+vacuum momentum through $k_0$. Therefore changing
+from $n_\mathrm{S}$ to $n_\mathrm{KG}$ changes the potential model, whereas the
+choice between Fresnel, angular-spectrum, and WPM propagation changes how a
+given refractive-index field is propagated.
+
+In the electron microscopy literature, the same interaction is conventionally
+expressed through the relativistic interaction constant
+$\sigma=2\pi\gamma m_0/(\hbar^2k_0)$~\cite{kirkland2010advanced}.  For weak
+potentials, $n_\mathrm{S}\approx 1-(\sigma/2\pi k_0)V$, so that the
+transmission phase per slice is $k_0(n_\mathrm{S}-1)\Delta z \propto \sigma V\Delta z$,
+consistent with the standard multislice transmission function
+$\exp(i\sigma V)$ up to conventional differences in the definition of the
+projected potential $V$.  We use the refractive-index form throughout because
+it clearly separates the choice of wave equation from the choice of propagation
+algorithm.
+
+
+\subsection{Advanced Propagation Methods}
+\label{sec:advanced_propagation_methods}
 
 
 The standard tool for simulating electron propagation through a crystalline
@@ -210,7 +369,7 @@ to choose a Taylor-series cutoff, a noted drawback of the FC-MS method
 practical and more efficient wide-angle multislice method, but to our knowledge this adaptation has
 not yet been systematically assessed in the electron microscopy context.
 
-The aim of this work is therefore to re-evaluate high-angle propagation methods
+This overview motivates the aim of this work: to re-evaluate high-angle propagation methods
 that retain the FFT-based split-step structure that makes multislice practical,
 using representative thick specimens at high electron energies, and demonstrate an alternative
 high-angle propagator to the FC-MS method (ignoring backscattering). In particular, we
@@ -220,77 +379,9 @@ quantify accuracy and computational cost and determine whether either method
 can provide an efficient correction to paraxial multislice for representative
 crystalline TEM and STEM simulations.
 
-\section{Electron-matter interaction models or Background Theory ? }
-\label{sec:propagation_models}
 
-\subsection{Wave equation and refractive index}
-\label{sec:wave_equation_refractive_index}
 
-We start from the scalar relativistically corrected Schr\"odinger equation for an
-electron in an electrostatic potential,
-\begin{equation}
-\label{eq:relativistic_schrodinger_intro}
-\nabla^2\psi+
-\left(k_0^2-\frac{2\gamma m_0}{\hbar^2}V(\mathbf r)\right)\psi=0,
-\end{equation}
-where $\psi$ is the electron wavefunction, $V(\mathbf r)$ is the local
-electrostatic potential energy, $m_0$ is the electron rest mass, $\gamma$ is the
-Lorentz factor, and
-\[
-k_0 = \frac{\sqrt{E^2-m_0^2c^4}}{\hbar c}
-\]
-is the vacuum wavenumber. Equation~\eqref{eq:relativistic_schrodinger_intro} is
-relativistically corrected because it keeps the relativistic electron momentum,
-but neglects the quadratic term in the specimen potential in the full
-relativistic energy--momentum relation. The same equation can be written in
-Helmholtz form as
-\begin{equation}
-\label{eq:helmholtz_intro}
-\nabla^2\psi+k_0^2 n^2(\mathbf r)\psi=0.
-\end{equation}
-For the relativistically corrected Schr\"odinger equation this corresponds to
-the refractive index
-\begin{equation}
-\label{eq:index_schrodinger_intro}
-n_\mathrm{S}^2(\mathbf r)
-=
-1-\frac{2\gamma m_0}{\hbar^2k_0^2}V(\mathbf r).
-\end{equation}
-
-The identification of the electrostatic potential with an electron-optical
-refractive index is due to~\cite{Glaser1933, Ehrenberg-Siday1949, Reimer1989}.
-The refractive index notation is useful because the choice of scalar wave equation can be
-expressed through the choice of $n(\mathbf r)$, separating approximations to the
-wave equation from approximations to the potential. For example, retaining the
-quadratic potential-energy term gives the time-independent Klein--Gordon
-refractive index
-\begin{equation}
-\label{eq:index_kg_intro}
-n_\mathrm{KG}^2(\mathbf r)
-=
-\frac{(E-V(\mathbf r))^2-m_0^2c^4}{E^2-m_0^2c^4}.
-\end{equation}
- 
-The relativistically
-corrected Schr\"odinger refractive index is a linearised potential
-approximation to the Klein--Gordon refractive index, while retaining the relativistic
-vacuum momentum through $k_0$. Therefore changing
-from $n_\mathrm{S}$ to $n_\mathrm{KG}$ changes the potential model, whereas the
-choice between Fresnel, angular-spectrum, and WPM propagation changes how a
-given refractive-index field is propagated.
-
-In the electron microscopy literature, the same interaction is conventionally
-expressed through the relativistic interaction constant
-$\sigma=2\pi\gamma m_0/(\hbar^2k_0)$~\cite{kirkland2010advanced}.  For weak
-potentials, $n_\mathrm{S}\approx 1-(\sigma/2\pi k_0)V$, so that the
-transmission phase per slice is $k_0(n_\mathrm{S}-1)\Delta z \propto \sigma V\Delta z$,
-consistent with the standard multislice transmission function
-$\exp(i\sigma V)$ up to conventional differences in the definition of the
-projected potential $V$.  We use the refractive-index form throughout because
-it clearly separates the choice of wave equation from the choice of propagation
-algorithm.
-
-\subsection{Fresnel and angular-spectrum multislice}
+\subsection{Multislice Propagators}
 \label{sec:fresnel_angular_spectrum}
 
 To connect equation~\eqref{eq:helmholtz_intro} to conventional multislice, we
@@ -365,7 +456,7 @@ free-space dispersion relation. The approximation that remains is the split-step
 treatment of the specimen: the potential is still applied as a thin transmission
 function, while propagation between slices is still performed in vacuum.
 
-\subsection{Classical Wave Propagation Method in scalar optics}
+\subsection{Classical Wave Propagation Method in Scalar Optics}
 \label{sec:wpm_optics}
 
 \begin{figure}[H]
@@ -459,7 +550,7 @@ discretised. A second issue is that hard grouping introduces sharp masks, which
 are inconvenient for gradient-based optimisation because the assignment of pixels
 to refractive-index groups is not smoothly differentiable.
 
-\subsection{Wave propagation multislice}
+\subsection{Wave Propagation Multislice}
 \label{sec:wp_ms}
 
 We refer to our adaptation of the WPM suitable for electron microscopy as wave propagation
@@ -614,7 +705,7 @@ enables WP-MS to simulate many slices with larger grid sizes
 (seconds to minutes), provided the refractive-index binning strategy is capable
 of correctly capturing the refractive-index distribution of the sample.
 
-\subsection{Forward ODE reference}
+\subsection{Forward ODE Reference}
 \label{sec:forward_ode_reference}
 
 We use a direct Ordinary Differential Equation (ODE) solution of the second-order Klein--Gordon Helmholtz
@@ -736,20 +827,21 @@ closely related developments in light and electron optics}
 \label{tab:method_timeline}
 \end{table}
 
-\section{Results}
+\section{Benchmarks and Results}
+\label{sec:results}
 
-We present three numerical experiments that aim to seperate when each of the computational methods are useful,
-in particular the three methods which make use of the fourier transform - F-MS, AS-MS and WP-MS. The first experiment 
-reproduces the Au~[100] beam-amplitude benchmark of Rother and
-Scheerschmidt~\cite{RotherScheerschmidt2009}, where F-MS, AS-MS, and WP-MS can be tested
-against an ODE solution of the full second-order Klein--Gordon
-equation. Having verified and tested the methods against the ODE benchmark in the first experiment, we ignore the ODE in subsequent tests
-due to it's expensive nature. The second experiment tests what differences between only the fourier methods are present in a lower-$Z$
-Si~[111] CBED calculation at high energy and a thick sample. The third experiment compares each method in a thicker
-Au~[100] convergent-probe calculation, where WP-MS is used as the practical
-high-angle reference having verified it previously against the ODE benchmark. 
+We present three numerical experiments designed to identify when each
+propagation method is useful. The first reproduces the Au~[100] beam-amplitude
+benchmark of Rother and Scheerschmidt~\cite{RotherScheerschmidt2009}, where
+F-MS, AS-MS, and WP-MS can be compared with an ODE solution of the full
+second-order Klein--Gordon equation. After this validation, the ODE reference is
+not used in the remaining tests because of its high computational cost. The
+second experiment compares the FFT-based methods for a lower-$Z$ Si~[111] CBED
+calculation at high energy and large thickness. The third experiment considers
+a thicker Au~[100] convergent-probe calculation, using WP-MS as the practical
+high-angle reference.
 
-\subsection{Verification against Rother \& Scheerschmidt (2009)}
+\subsection{Au~[100] ODE Benchmark}
 \label{sec:verification}
 
 \begin{figure}[H]
@@ -808,12 +900,16 @@ and WP-MS method can adequately track a complete ODE solution to the wave equati
 an appreciable improvement over the F-MS method, without the need to solve a higher order
 taylor expanded method like the FC-MS solution presented by \cite{ChenVanDyck1997}. 
 
-\subsection{Convergent Probe Silicon CBED and Au}
+\subsection{Si~[111] and Au~[100] CBED Simulations}
 \label{sec:silicon_cbed}
 
-Having verified the AS-MS and WP-MS methods against the ODE solution, we focus the next experiments on 
-just the methods which can make use of the Fourier Transfrom - the F-MS, AS-MS and WP-MS.  We simulate two representative low Z and high Z CBED samples, to explore the differences in position of the Laue Zone rings, and differences in amplitude in each CBED pattern. Firstly, we repeated a similar experiment to that of \cite{hillier_role_2017}, albeit at a higher energy by simulating a CBED image of Si~[111] at 100~keV with an 8~mrad probe, and a specimen thickness near 1000~\AA. The maximum
-scattering angle was set to 300~mrad.
+After verifying AS-MS and WP-MS against the ODE solution, we focus on the three
+FFT-based multislice methods: F-MS, AS-MS, and WP-MS. The aim is to compare how
+their predictions differ in CBED patterns for representative low-$Z$ and
+high-$Z$ specimens. We first simulate Si~[111] at 100~keV with an 8~mrad probe
+and a specimen thickness near 1000~\AA, following the spirit of the low-energy
+CBED comparison of Hillier et al.~\cite{hillier_role_2017} but at a higher
+accelerating voltage. The maximum scattering angle was set to 300~mrad.
 
 \begin{figure}[H]
     \centering
