@@ -66,18 +66,19 @@ E.~J. Kirkland, Advanced Computing in Electron Microscopy, 2nd Edition,
 \newblock \href {https://doi.org/10.1007/978-1-4419-6533-2}
   {\path{doi:10.1007/978-1-4419-6533-2}}.
 
-\bibitem{Glaser1933}
-W.~Glaser, {\"U}ber die elektronenoptische abbildung bei hohem {V}akuum,
-  Zeitschrift f{\"u}r Physik 83 (1933) 104--122.
-\newblock \href {https://doi.org/10.1007/BF01331099}
-  {\path{doi:10.1007/BF01331099}}.
+\bibitem{ChenVanDyck1997}
+J.~H. Chen, D.~Van~Dyck, Accurate multislice theory for elastic electron
+  scattering in transmission electron microscopy, Ultramicroscopy 70 (1997)
+  29--44.
+\newblock \href {https://doi.org/10.1016/S0304-3991(97)00071-5}
+  {\path{doi:10.1016/S0304-3991(97)00071-5}}.
 
-\bibitem{Ehrenberg-Siday1949}
-W.~Ehrenberg, R.~E. Siday, The refractive index in electron optics and the
-  principles of dynamics, Proceedings of the Physical Society B 62 (1949)
-  8--21.
-\newblock \href {https://doi.org/10.1088/0370-1301/62/1/303}
-  {\path{doi:10.1088/0370-1301/62/1/303}}.
+\bibitem{2025ChenDyckPaper}
+G.~S. Chen, Y.~T. He, W.~Q. Ming, C.~L. Wu, D.~Van~Dyck, J.~H. Chen, Fast
+  {STEM} image simulation in low-energy transmission electron microscopy by the
+  accurate {Chen}-van-{Dyck} multislice method, Micron 190 (2025) 103778.
+\newblock \href {https://doi.org/10.1016/j.micron.2024.103778}
+  {\path{doi:10.1016/j.micron.2024.103778}}.
 
 \bibitem{Reimer1989}
 L.~Reimer, Transmission Electron Microscopy: Physics of Image Formation and
@@ -86,13 +87,6 @@ L.~Reimer, Transmission Electron Microscopy: Physics of Image Formation and
 \bibitem{goodman}
 J.~W. Goodman, Introduction to {Fourier} Optics, 4th Edition, W. H. Freeman,
   New York, 2017.
-
-\bibitem{ChenVanDyck1997}
-J.~H. Chen, D.~Van~Dyck, Accurate multislice theory for elastic electron
-  scattering in transmission electron microscopy, Ultramicroscopy 70 (1997)
-  29--44.
-\newblock \href {https://doi.org/10.1016/S0304-3991(97)00071-5}
-  {\path{doi:10.1016/S0304-3991(97)00071-5}}.
 
 \bibitem{Hadley1992}
 G.~R. Hadley, Wide-angle beam propagation using {Pad\'e} approximant operators,
@@ -119,13 +113,6 @@ N.~Barr{\'e}, M.~Brunel, Differentiable wave propagation method for shape
   Letters 50~(9) (2025) 2860--2863.
 \newblock \href {https://doi.org/10.1364/OL.559067}
   {\path{doi:10.1364/OL.559067}}.
-
-\bibitem{2025ChenDyckPaper}
-G.~S. Chen, Y.~T. He, W.~Q. Ming, C.~L. Wu, D.~Van~Dyck, J.~H. Chen, Fast
-  {STEM} image simulation in low-energy transmission electron microscopy by the
-  accurate {Chen}-van-{Dyck} multislice method, Micron 190 (2025) 103778.
-\newblock \href {https://doi.org/10.1016/j.micron.2024.103778}
-  {\path{doi:10.1016/j.micron.2024.103778}}.
 
 \bibitem{fresnel1818memoire}
 A.-J. Fresnel,

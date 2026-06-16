@@ -106,22 +106,22 @@ This section introduces the wave-equation framework and the numerical
 propagation methods considered in this work. We first recall how electron
 propagation in an electrostatic crystal potential can be written as a
 stationary wave equation, closely related to a Helmholtz equation
-(Subsection~\ref{sec:schrodinger_helmholtz}). We then
-briefly discuss higher-accuracy reference and dynamical-diffraction methods,
-focusing specifically on the ODE used in this work
-(Subsection~\ref{sec:forward_ode_reference}) and on the three
-FFT-based multislice propagators compared in this paper: F-MS, AS-MS, and
-WP-MS (Subsection~\ref{sec:fresnel_angular_spectrum}).
+(Subsection~\ref{sec:schrodinger_helmholtz}). We then introduce the two
+FFT-based multislice propagators that differ only in their free-space
+propagation kernel, F-MS and AS-MS (Subsection~\ref{sec:fresnel_angular_spectrum}).
+Finally, we discuss more advanced wide-angle methods, including WP-MS and the
+ODE reference calculation used for benchmarking
+(Subsection~\ref{sec:advanced_propagation_methods}).
 
 \subsection{From the Schr\"odinger Equation to a Helmholtz Equation}
 \label{sec:schrodinger_helmholtz}
 
 Throughout this work we use the convention now commonly adopted in the electron
-microscopy literature, and used for example in Kirkland's textbook~\cite{kirkland2010advanced}, in which
+microscopy literature, and used for example in Kirkland's textbook~\cite{kirkland2010advanced} or \cite{ChenVanDyck1997}, in which
 spatial frequencies are measured in cycles per unit length rather than radians
 per unit length. This convention differs from that used in some older electron
 microscopy papers, including the original multislice formulation of Cowley and
-Moodie~\cite{cowley1957scattering}, and in much of the optics literature. The
+Moodie~\cite{cowley1957scattering} or \cite { WackerSchroeder2015} and in much of the optics literature (for instance \cite{goodman}). The
 incident electron wavenumber is therefore
 \begin{equation}
 k_0 = \frac{1}{\lambda},
@@ -140,7 +140,7 @@ transform with the phase factor
 \end{equation}
 where $(q_x,q_y)$ are transverse spatial frequencies in cycles per unit length.
 Second, a plane wave propagating in the direction
-$\mathbf k=(k_x,k_y,k_z)$ is written as
+$\mathbf k_0=(k_0_x,k_0_y,k_0_z)$ is written as
 \begin{equation}
 \psi(\mathbf r)
 =
@@ -153,6 +153,16 @@ with
 \end{equation}
 In the optics convention, the same wave would be written with the wavevector
 $\mathbf K=2\pi\mathbf k$ and phase factor $\exp(i\mathbf K\cdot\mathbf r)$.
+This distinction is important when comparing the present notation with papers
+written in the optics convention. Wacker and Schr\"oder~\cite{WackerSchroeder2015},
+for example, write the free-space plane wave with an angular wavevector; in the
+present convention their vacuum wavenumber is therefore $K_0=2\pi k_0$. This is
+only a change of notation, but the conversion must be applied when comparing
+their formulas with equations written in the present convention.
+By contrast, the Chen--Van Dyck formulation writes the free-space kinetic term
+as $h^2K_0^2/(2m)$~\cite{ChenVanDyck1997,2025ChenDyckPaper}. Despite the capital
+letter, this identifies their $K_0$ as a spatial frequency, $K_0=1/\lambda$,
+rather than an angular wavenumber.
 
 
 The propagation of an electron through a specimen can be described, at the
@@ -160,137 +170,235 @@ single-particle level, by a Schr\"odinger-type wave equation in the
 electrostatic potential of the sample. In transmission electron microscopy, the
 incident electron energy is typically high enough that relativistic effects
 must be included. A convenient way to do this is to retain the Schr\"odinger
-form of the wave equation while using the relativistic electron mass, or
-equivalently the relativistic momentum and wavelength, in the propagation
-constants.
+form of the wave equation while using the relativistic momentum and wavelength
+in the free-space propagation term and the corresponding first-order
+relativistic correction to the electrostatic interaction.
 
-Starting from the time-dependent Schr\"odinger equation,
+In the time-dependent Schr\"odinger form, the wavefunction satisfies
 \begin{equation}
-i\hbar \frac{\partial \Psi(\mathbf r,t)}{\partial t}
+i\hbar\frac{\partial \Psi(\mathbf r,t)}{\partial t}
 =
-\left[
--\frac{\hbar^2}{2\gamma m_0}\nabla^2
-+
-V(\mathbf r)
-\right]\Psi(\mathbf r,t),
+\hat H\Psi(\mathbf r,t),
 \label{eq:time_dependent_schrodinger}
 \end{equation}
-where $m_0$ is the electron rest mass, $\gamma$ is the Lorentz factor, and
-$V(\mathbf r)$ is the electrostatic potential energy of the electron in the
-specimen, we look for stationary solutions of the form
+where $\hat H$ is the effective single-electron Hamiltonian. For a stationary
+incident electron we write
 \begin{equation}
-\Psi(\mathbf r,t)=\psi(\mathbf r)\exp\left(-\frac{iEt}{\hbar}\right).
+\Psi(\mathbf r,t)=\psi(\mathbf r)
+\exp\left(-\frac{iEt}{\hbar}\right),
 \label{eq:stationary_ansatz}
 \end{equation}
-Substitution into Eq.~\eqref{eq:time_dependent_schrodinger} gives the
-time-independent equation
+where $E$ denotes the kinetic energy of the incident electron, after removal of
+the rest-energy term. This $E$ is the relativistic kinetic energy, not the
+low-speed approximation $m_0v^2/2$. The total relativistic energy is therefore
+$E_\mathrm{tot}=m_0c^2+E$.
+
+Substitution of Eq.~\eqref{eq:stationary_ansatz} gives
+$\hat H\psi=E\psi$ for the spatial wavefunction. In electron microscopy, this
+stationary equation is usually written directly in terms of the incident
+electron wavelength. With the relativistically corrected mass
+$\gamma m_0$ in the kinetic term, the standard corrected Schr\"odinger equation
+can be written
+\begin{equation}
+\left[
+\frac{h^2}{8\pi^2\gamma m_0}\nabla^2
+-
+V(\mathbf r)
++
+\frac{h^2 k_0^2}{2\gamma m_0}
+\right]\psi(\mathbf r)
+=0.
+\label{eq:stationary_schrodinger_wavelength}
+\end{equation}
+This is the same form as the Chen--Van Dyck equation
+~\cite{ChenVanDyck1997,2025ChenDyckPaper}, after translating notation and sign
+conventions: here $V(\mathbf r)$ denotes the potential energy of the electron,
+whereas some electron-microscopy papers write the specimen electrostatic
+potential separately. The relativistic factor is
+\[
+\gamma =
+\frac{E_\mathrm{tot}}{m_0c^2}
+=
+\frac{1}{\sqrt{1-v^2/c^2}}
+=
+1+\frac{E}{m_0c^2}
+\]
+where $m_0$ is the electron rest mass and $E_\mathrm{tot}=m_0c^2+E$.
+
+The vacuum spatial frequency $k_0$ in
+Eq.~\eqref{eq:stationary_schrodinger_wavelength} is fixed by the incident
+kinetic energy. Combining the energy--momentum relation
+$E_\mathrm{tot}^2=p^2c^2+m_0^2c^4$ with the de Broglie relation
+$p=h/\lambda=h k_0$~\cite{Reimer1989,kirkland2010advanced} gives
+\begin{equation}
+(h k_0)^2
+=
+\left(\frac{h}{\lambda}\right)^2
+=
+\frac{E_\mathrm{tot}^2-m_0^2c^4}{c^2}
+=
+2m_0E\left(1+\frac{E}{2m_0c^2}\right).
+\label{eq:energy_wavenumber_relation}
+\end{equation}
+With this definition of $k_0$,
+Eq.~\eqref{eq:stationary_schrodinger_wavelength} can be rearranged into the
+form used below:
 \begin{equation}
 \nabla^2\psi(\mathbf r)
 +
-\frac{2\gamma m_0}{\hbar^2}
-\left[E-V(\mathbf r)\right]\psi(\mathbf r)
+\left[
+(2\pi k_0)^2
+-
+\frac{2m_0\gamma}{\hbar^2}V(\mathbf r)
+\right]\psi(\mathbf r)
 =0.
-\label{eq:time_independent_schrodinger}
+\label{eq:corrected_schrodinger}
 \end{equation}
 
 This equation can be written in Helmholtz form by introducing the vacuum
-wavenumber $k_0$ and an electron-optical refractive index $n(\mathbf r)$:
+spatial frequency $k_0$ and an electron-optical refractive index
+$n(\mathbf r)$:
 \begin{equation}
-\nabla^2\psi(\mathbf r)+k_0^2 n^2(\mathbf r)\psi(\mathbf r)=0.
+\nabla^2\psi(\mathbf r)+(2\pi k_0)^2 n^2(\mathbf r)\psi(\mathbf r)=0.
 \label{eq:helmholtz_form}
 \end{equation}
-In this notation, the effect of the electrostatic potential is absorbed into
+In this notation, the effect of the electrostatic potential is included through
 $n(\mathbf r)$. For the relativistically corrected Schr\"odinger equation, one
 may write
 \begin{equation}
 n_\mathrm{S}^2(\mathbf r)
 =
-1-\frac{2\gamma m_0}{\hbar^2 k_0^2}V(\mathbf r),
+1-\frac{2m_0\gamma}{h^2 k_0^2}V(\mathbf r),
 \label{eq:schrodinger_refractive_index}
 \end{equation}
-up to the sign convention used for the electron potential energy. The same
-formalism can also accommodate more complete scalar relativistic descriptions,
-such as the Klein--Gordon equation, by changing the definition of
-$n(\mathbf r)$.
+up to the sign convention used for the electron potential energy.
 
-The usefulness of Eq.~\eqref{eq:helmholtz_form} is that it separates two
-questions. The first is the physical model used to describe the interaction
-between the electron and the electrostatic potential, which determines the
-refractive index. The second is the numerical propagation method used to solve
-the resulting wave equation. F-MS, AS-MS, WP-MS, and ODE propagation can
-therefore be understood as different approximations or numerical solutions of
-the same underlying Helmholtz-type problem.
-
-The identification of the electrostatic potential with an electron-optical
-refractive index is due to~\cite{Glaser1933, Ehrenberg-Siday1949, Reimer1989}.
-The refractive index notation is useful because the choice of scalar wave equation can be
-expressed through the choice of $n(\mathbf r)$, separating approximations to the
-wave equation from approximations to the potential. For example, retaining the
-quadratic potential-energy term gives the time-independent Klein--Gordon
-refractive index
+The same Helmholtz form can also be used with a more complete scalar
+relativistic description. For example, retaining the quadratic potential-energy
+term in the Klein--Gordon equation gives
 \begin{equation}
 \label{eq:index_kg_intro}
 n_\mathrm{KG}^2(\mathbf r)
 =
-\frac{(E-V(\mathbf r))^2-m_0^2c^4}{E^2-m_0^2c^4}.
+\frac{(E_\mathrm{tot}-V(\mathbf r))^2-m_0^2c^4}{E_\mathrm{tot}^2-m_0^2c^4}.
 \end{equation}
- 
-The relativistically
-corrected Schr\"odinger refractive index is a linearised potential
-approximation to the Klein--Gordon refractive index, while retaining the relativistic
-vacuum momentum through $k_0$. Therefore changing
-from $n_\mathrm{S}$ to $n_\mathrm{KG}$ changes the potential model, whereas the
-choice between Fresnel, angular-spectrum, and WPM propagation changes how a
-given refractive-index field is propagated.
+The relativistically corrected Schr\"odinger refractive index
+$n_\mathrm{S}$ can therefore be viewed as a linearised-potential approximation
+to $n_\mathrm{KG}$, while retaining the relativistic vacuum momentum
+$2\pi k_0$.
+
+Equation~\eqref{eq:helmholtz_form} provides a common framework in which the
+interaction model and the propagation algorithm can be discussed separately.
+The interaction model determines the refractive index $n(\mathbf r)$, whereas
+the propagation algorithm determines how the corresponding wave equation is
+solved. Thus, changing from $n_\mathrm{S}$ to $n_\mathrm{KG}$ changes the
+physical wave-equation model, while changing from F-MS to AS-MS, WP-MS, or ODE
+propagation changes the numerical treatment of a given Helmholtz-type problem.
+
 
 In the electron microscopy literature, the same interaction is conventionally
 expressed through the relativistic interaction constant
-$\sigma=2\pi\gamma m_0/(\hbar^2k_0)$~\cite{kirkland2010advanced}.  For weak
+$\sigma=2\pi\gamma m_0/(h^2k_0)$~\cite{kirkland2010advanced}.  For weak
 potentials, $n_\mathrm{S}\approx 1-(\sigma/2\pi k_0)V$, so that the
-transmission phase per slice is $k_0(n_\mathrm{S}-1)\Delta z \propto \sigma V\Delta z$,
+transmission phase per slice is
+$\pi k_0\left(n_\mathrm{S}^2-1\right)\Delta z \propto \sigma V\Delta z$,
 consistent with the standard multislice transmission function
 $\exp(i\sigma V)$ up to conventional differences in the definition of the
 projected potential $V$.  We use the refractive-index form throughout because
 it clearly separates the choice of wave equation from the choice of propagation
 algorithm.
 
+\subsection{Multislice Propagators}
+\label{sec:fresnel_angular_spectrum}
+
+To connect equation~\eqref{eq:helmholtz_form} to conventional multislice, we
+make the standard high-energy, or slowly varying envelope approximation used in
+electron microscopy~\cite{kirkland2010advanced}. Writing the wavefunction as a
+rapidly oscillating carrier multiplied by a slowly varying envelope,
+\[
+\psi(x,y,z)=e^{2\pi i k_0z}\tilde\psi(x,y,z),
+\]
+gives the parabolic wave equation
+\begin{equation}
+\label{eq:paraxial_helmholtz_intro}
+\frac{\partial\tilde\psi}{\partial z}
+=
+\frac{i}{4\pi k_0}\nabla_\perp^2\tilde\psi
++
+i\pi k_0\left[n^2(x,y,z)-1\right]\tilde\psi .
+\end{equation}
+The F-MS method is the split-step solution of
+equation~\eqref{eq:paraxial_helmholtz_intro}: the specimen is applied as a thin
+transmission function, and the wave is propagated between slices using the
+Fresnel propagation kernel. Dropping the tilde for notational simplicity, one
+slice can be written as
+\begin{equation}
+\label{eq:fresnel_step}
+\psi(x,y,z+\Delta z)
+\approx
+\exp\left[
+i\pi k_0\left(n^2(x,y)-1\right)\Delta z
+\right]
+\mathcal F^{-1}
+\left[
+\exp\left(-i\pi\frac{k_\perp^2}{k_0}\Delta z\right)
+\mathcal F\{\psi(x,y,z)\}
+\right].
+\end{equation}
+Computing the above equation is fast because each slice requires only one FFT pair. Its
+approximation is that the free-space longitudinal wavenumber
+has been expanded as
+\[
+k_z
+=
+\sqrt{k_0^2-k_\perp^2}
+\simeq
+k_0-\frac{k_\perp^2}{2k_0}.
+\]
+After removal of the carrier phase $e^{2\pi i k_0z}$, this expansion gives the
+Fresnel kernel in equation~\eqref{eq:fresnel_step}. Conventional multislice is
+therefore both a split-step approximation to the specimen and a small-angle
+approximation to the longitudinal dispersion relation.
+
+The angular spectrum method~\cite{goodman,ming2013pcms} keeps the same
+split-step structure but replaces the Fresnel kernel by the exact free-space
+dispersion relation:
+\begin{equation}
+\label{eq:asm_step}
+\psi(x,y,z+\Delta z)
+\approx
+\exp\left[
+i\pi k_0\left(n^2(x,y)-1\right)\Delta z
+\right]
+\mathcal F^{-1}
+\left[
+\exp\left(2\pi i\left[\sqrt{k_0^2-k_\perp^2}-k_0\right]\Delta z\right)
+\mathcal F\{\psi(x,y,z)\}
+\right].
+\end{equation}
+Apart from the change in the Fourier-space phase factor, the algorithm is the
+same as standard multislice and has the same $\mathcal O(P\log P)$ per-slice
+cost, where $P$ is the number of transverse pixels. It is therefore the smallest
+change one can make to F-MS in order to restore the exact
+free-space dispersion relation. The approximation that remains is the split-step
+treatment of the specimen: the potential is still applied as a thin transmission
+function, while propagation between slices is still performed in vacuum.
 
 \subsection{Advanced Propagation Methods}
 \label{sec:advanced_propagation_methods}
 
-
-The standard tool for simulating electron propagation through a crystalline
-specimen is the paraxial Fresnel multislice (F-MS) method
-~\cite{cowley1957scattering,ishizuka1977practical}, primarily due to its
-simplicity and the computational efficiency provided by the fast Fourier
-transform (FFT). In paraxial multislice, the specimen is divided into thin
-slices perpendicular to the beam direction. Each slice applies a projected
-transmission function that phase-shifts the wave, after which the wave is
-propagated through free space to the next slice. F-MS normally simulates 
-the electron-beam sample interaction with a high-energy input beam ($>$ 100 KeV), a thin specimen, and low-$Z$ material typical of
-conventional TEM and STEM analysis, and since discrepancies between simulation and
-experiment are often dominated by other factors, such as thermal diffuse
-scattering, detector response, or microscope aberration characterization, the F-MS method 
-is usually adequate. 
-However, for low incident electron energies, thick specimens, or high-$Z$
-materials, F-MS can exhibit significant errors relative to more accurate
-methods because of its paraxial approximation and omission of backscattering
+F-MS is usually adequate for conventional high-energy TEM and STEM simulations
+of thin, low-$Z$ specimens, where other uncertainties such as thermal diffuse
+scattering, detector response, or microscope aberration characterization often
+dominate the comparison with experiment. However, for low incident electron
+energies, thick specimens, or high-$Z$ materials, F-MS can exhibit significant
+errors because of its paraxial approximation and omission of backscattering
 ~\cite{RotherScheerschmidt2009,hillier_role_2017,WackerSchroeder2015,ming2013pcms}.
-
-The simplest improvement to F-MS is to replace the paraxial, parabolic Fresnel
-propagator between slices with the exact spherical-wave propagator. To our
-knowledge, \cite{ming2013pcms} were the first to explicitly propose this
-solution to the wave equation in electron microscopy, without expanding the propagator in a Taylor
-series. Equation~7 of their work gives a
-spherical-wave propagator that can be evaluated efficiently using the Angular
-Spectrum method. We refer to this approach as Angular Spectrum multislice
-(AS-MS), following terminology long established in light optics \cite{goodman}. They showed
-visually significant differences between F-MS and AS-MS for specimens up to
-20~nm thick at incident energies of 100~keV and below, particularly for
-high-$Z$ materials at low energies. Although AS-MS is easy to implement and
-requires almost no additional computational cost relative to F-MS, it does not
-appear to have been widely adopted by the electron microscopy multislice
-community.
+AS-MS is the minimal FFT-based correction to the paraxial propagation step, but
+it still treats the specimen as a sequence of thin transmission functions
+separated by vacuum propagation. More complete wide-angle methods therefore
+seek to improve the propagation inside the specimen, or to use the full
+second-order wave equation as a reference.
 
 Further improvements in accuracy, particularly the treatment of large-angle
 scattering and backward-propagating components, incur significant computational
@@ -381,82 +489,7 @@ crystalline TEM and STEM simulations.
 
 
 
-\subsection{Multislice Propagators}
-\label{sec:fresnel_angular_spectrum}
-
-To connect equation~\eqref{eq:helmholtz_intro} to conventional multislice, we
-make the standard high-energy, or slowly varying envelope approximation used in
-electron microscopy~\cite{kirkland2010advanced}. Writing the wavefunction as a
-rapidly oscillating carrier multiplied by a slowly varying envelope,
-\[
-\psi(x,y,z)=e^{ik_0z}\tilde\psi(x,y,z),
-\]
-gives the parabolic wave equation
-\begin{equation}
-\label{eq:paraxial_helmholtz_intro}
-\frac{\partial\tilde\psi}{\partial z}
-=
-\frac{i}{2k_0}\nabla_\perp^2\tilde\psi
-+
-\frac{ik_0}{2}\left[n^2(x,y,z)-1\right]\tilde\psi .
-\end{equation}
-The F-MS method is the split-step solution of
-equation~\eqref{eq:paraxial_helmholtz_intro}: the specimen is applied as a thin
-transmission function, and the wave is propagated between slices using the
-Fresnel propagation kernel. Dropping the tilde for notational simplicity, one
-slice can be written as
-\begin{equation}
-\label{eq:fresnel_step}
-\psi(x,y,z+\Delta z)
-\approx
-\exp\left[
-\frac{ik_0}{2}\left(n^2(x,y)-1\right)\Delta z
-\right]
-\mathcal F^{-1}
-\left[
-\exp\left(-i\frac{k_\perp^2}{2k_0}\Delta z\right)
-\mathcal F\{\psi(x,y,z)\}
-\right].
-\end{equation}
-Computing the above equation is fast because each slice requires only one FFT pair. Its
-approximation is that the free-space longitudinal wavevector
-has been expanded as
-\[
-k_z
-=
-\sqrt{k_0^2-k_\perp^2}
-\simeq
-k_0-\frac{k_\perp^2}{2k_0}.
-\]
-After removal of the carrier phase $e^{ik_0z}$, this expansion gives the
-Fresnel kernel in equation~\eqref{eq:fresnel_step}. Conventional multislice is
-therefore both a split-step approximation to the specimen and a small-angle
-approximation to the longitudinal dispersion relation.
-
-The angular spectrum method keeps the same split-step structure but replaces the
-Fresnel kernel by the exact free-space dispersion relation:
-\begin{equation}
-\label{eq:asm_step}
-\psi(x,y,z+\Delta z)
-\approx
-\exp\left[
-\frac{ik_0}{2}\left(n^2(x,y)-1\right)\Delta z
-\right]
-\mathcal F^{-1}
-\left[
-\exp\left(i\left[\sqrt{k_0^2-k_\perp^2}-k_0\right]\Delta z\right)
-\mathcal F\{\psi(x,y,z)\}
-\right].
-\end{equation}
-Apart from the change in the Fourier-space phase factor, the algorithm is the
-same as standard multislice and has the same $\mathcal O(P\log P)$ per-slice
-cost, where $P$ is the number of transverse pixels. It is therefore the smallest
-change one can make to F-MS in order to restore the exact
-free-space dispersion relation. The approximation that remains is the split-step
-treatment of the specimen: the potential is still applied as a thin transmission
-function, while propagation between slices is still performed in vacuum.
-
-\subsection{Classical Wave Propagation Method in Scalar Optics}
+\subsubsection{Classical Wave Propagation Method in Scalar Optics}
 \label{sec:wpm_optics}
 
 \begin{figure}[H]
@@ -476,13 +509,13 @@ function, while propagation between slices is still performed in vacuum.
 The Wave Propagation Method (WPM) addresses the remaining split-step
 approximation in AS-MS by allowing the propagation kernel itself to depend on
 the refractive index of the medium. Returning to the full second-order
-Helmholtz equation \eqref{eq:helmholtz_intro}, it can be rearranged into an operator equation with a forward and backward branch \cite{Schmidt2016}. Ignoring the backward branch, the forward branch may be written as
+Helmholtz equation \eqref{eq:helmholtz_form}, it can be rearranged into an operator equation with a forward and backward branch \cite{Schmidt2016}. Ignoring the backward branch, the forward branch may be written as
 \begin{equation}
 \label{eq:one_way_square_root_intro}
 \partial_z\psi
 =
-i\left[
-\sqrt{k_0^2n^2(x,y,z)+\nabla_\perp^2}-k_0
+2\pi i\left[
+\sqrt{k_0^2n^2(x,y,z)+\frac{1}{4\pi^2}\nabla_\perp^2}-k_0
 \right]\psi .
 \end{equation}
 The central concern is that the square-root operator inside the wave equation
@@ -550,7 +583,7 @@ discretised. A second issue is that hard grouping introduces sharp masks, which
 are inconvenient for gradient-based optimisation because the assignment of pixels
 to refractive-index groups is not smoothly differentiable.
 
-\subsection{Wave Propagation Multislice}
+\subsubsection{Wave Propagation Multislice}
 \label{sec:wp_ms}
 
 We refer to our adaptation of the WPM suitable for electron microscopy as wave propagation
@@ -607,7 +640,7 @@ u_k(x,y)
 \left[
 \mathcal{F}\{u_{\mathrm{in}}\}
 \exp\left(
-i \Delta z
+2\pi i \Delta z
 \left[\sqrt{(k_0 n_{\mathrm{ref}}^{(k)})^2-k_x^2-k_y^2}-k_0\right]
 \right)
 \right].
@@ -656,7 +689,7 @@ WP-MS update can be written as
 \mathcal F^{-1}
 \left[
 \exp\left(
-i\left[
+2\pi i\left[
 \sqrt{k_0^2\left(n_{\mathrm{ref}}^{(m)}\right)^2-k_\perp^2}
 -k_0
 \right]\Delta z
@@ -705,7 +738,7 @@ enables WP-MS to simulate many slices with larger grid sizes
 (seconds to minutes), provided the refractive-index binning strategy is capable
 of correctly capturing the refractive-index distribution of the sample.
 
-\subsection{Forward ODE Reference}
+\subsubsection{Forward ODE Reference}
 \label{sec:forward_ode_reference}
 
 We use a direct Ordinary Differential Equation (ODE) solution of the second-order Klein--Gordon Helmholtz
@@ -718,7 +751,7 @@ Substituting $n_\mathrm{KG}$ into the Helmholtz equation gives
 \label{eq:kg_second_order}
 \partial_z^2\psi
 =
--\left(\nabla_\perp^2+k_0^2n_\mathrm{KG}^2(x,y,z)\right)\psi .
+-\left[\nabla_\perp^2+(2\pi k_0)^2n_\mathrm{KG}^2(x,y,z)\right]\psi .
 \end{equation}
 Introducing $\phi=\partial_z\psi$ gives the equivalent first-order system
 \begin{equation}
@@ -731,7 +764,7 @@ Introducing $\phi=\partial_z\psi$ gives the equivalent first-order system
 =
 \begin{pmatrix}
 \phi\\
--\left(\nabla_\perp^2+k_0^2n_\mathrm{KG}^2(x,y,z)\right)\psi
+-\left[\nabla_\perp^2+(2\pi k_0)^2n_\mathrm{KG}^2(x,y,z)\right]\psi
 \end{pmatrix}.
 \end{equation}
 We integrate this system with an adaptive high-order Runge--Kutta method. The
@@ -746,7 +779,7 @@ entrance wave $\psi(z=0)$ is supplemented by the longitudinal derivative
 =
 \mathcal F^{-1}
 \left[
-i\sqrt{k_0^2-k_\perp^2}\,
+2\pi i\sqrt{k_0^2-k_\perp^2}\,
 \mathcal F\{\psi(z=0)\}
 \right],
 \end{equation}
@@ -1015,9 +1048,10 @@ from the angular-spectrum propagation phase, which is steeper than the Fresnel
 phase at large transverse wavevector. For one propagation step,
 
 \[
-\phi_{\mathrm{F}}(k_\perp) = -\frac{\Delta z}{2k_0}k_\perp^2,
+\phi_{\mathrm{F}}(k_\perp) = -\pi\frac{\Delta z}{k_0}k_\perp^2,
 \qquad
-\phi_{\mathrm{ASM}}(k_\perp) = \Delta z\sqrt{k_0^2-k_\perp^2}.
+\phi_{\mathrm{ASM}}(k_\perp) =
+2\pi\Delta z\left[\sqrt{k_0^2-k_\perp^2}-k_0\right].
 \]
 
 Comparing the phase gradients gives the relative axial sampling penalty
@@ -1051,9 +1085,9 @@ condition is
 so the axial sampling bound is tightened by only about 2\%. The transverse grid sets a separate 
 limit as it determines the largest
 scattering angle that can be represented without aliasing. A real-space pixel
-size $\Delta x$ gives a maximum transverse wavevector
-$k_{\perp,\mathrm{Nyq}}=\pi/\Delta x$. Since
-$k_\perp=k_0\sin\theta$ and $k_0=2\pi/\lambda$, the corresponding Nyquist
+size $\Delta x$ gives a maximum transverse spatial frequency
+$k_{\perp,\mathrm{Nyq}}=1/(2\Delta x)$. Since
+$k_\perp=k_0\sin\theta$ and $k_0=1/\lambda$, the corresponding Nyquist
 angle is
 
 \[
@@ -1116,8 +1150,8 @@ thick Au~[100] CBED calculation shows that this modeling error is much larger
 for F-MS than for AS-MS after approximately 10~nm. For forward models that
 already use F-MS, most of the wide-angle correction can be recovered by
 replacing
-$\exp(-i k_\perp^2 \Delta z / 2k_0)$ with
-$\exp(i\Delta z\sqrt{k_0^2-k_\perp^2})$, while keeping the same FFT structure,
+$\exp(-i\pi k_\perp^2 \Delta z/k_0)$ with
+$\exp(2\pi i\Delta z[\sqrt{k_0^2-k_\perp^2}-k_0])$, while keeping the same FFT structure,
 transmission step, and per-slice computational complexity. The sampling estimate
 above shows that the corresponding sampling penalty is only a few percent under
 the TEM conditions considered here.
