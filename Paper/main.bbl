@@ -77,23 +77,6 @@ J.~H. Chen, D.~Van~Dyck, Accurate multislice theory for elastic electron
 J.~W. Goodman, Introduction to {Fourier} Optics, 4th Edition, W. H. Freeman,
   New York, 2017.
 
-\bibitem{fujiwara1961relativistic}
-K.~{Fujiwara},
-  \href{https://journals.jps.jp/doi/10.1143/JPSJ.16.2226}{{Relativistic}
-  dynamical theory of electron diffraction}, Journal of the Physical Society of
-  Japan 16~(11) (1961) 2226--2238.
-\newblock \href {https://doi.org/10.1143/JPSJ.16.2226}
-  {\path{doi:10.1143/JPSJ.16.2226}}.
-\newline\urlprefix\url{https://journals.jps.jp/doi/10.1143/JPSJ.16.2226}
-
-\bibitem{jackson1999classical}
-J.~D. Jackson, Classical Electrodynamics, 3rd Edition, John Wiley \& Sons, New
-  York, 1999.
-
-\bibitem{Reimer1989}
-L.~Reimer, Transmission Electron Microscopy: Physics of Image Formation and
-  Microanalysis, 2nd Edition, Springer, Berlin, 1989.
-
 \bibitem{Glaser1933}
 W.~Glaser, {\"U}ber die elektronenoptische abbildung bei hohem {V}akuum,
   Zeitschrift f{\"u}r Physik 83 (1933) 104--122.
@@ -106,6 +89,15 @@ W.~Ehrenberg, R.~E. Siday, The refractive index in electron optics and the
   8--21.
 \newblock \href {https://doi.org/10.1088/0370-1301/62/1/303}
   {\path{doi:10.1088/0370-1301/62/1/303}}.
+
+\bibitem{fujiwara1961relativistic}
+K.~{Fujiwara},
+  \href{https://journals.jps.jp/doi/10.1143/JPSJ.16.2226}{{Relativistic}
+  dynamical theory of electron diffraction}, Journal of the Physical Society of
+  Japan 16~(11) (1961) 2226--2238.
+\newblock \href {https://doi.org/10.1143/JPSJ.16.2226}
+  {\path{doi:10.1143/JPSJ.16.2226}}.
+\newline\urlprefix\url{https://journals.jps.jp/doi/10.1143/JPSJ.16.2226}
 
 \bibitem{Hadley1992}
 G.~R. Hadley, Wide-angle beam propagation using {Pad\'e} approximant operators,
