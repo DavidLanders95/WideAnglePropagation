@@ -99,7 +99,7 @@ presents their behaviour in representative CBED simulations. Finally,
 Section~\ref{sec:discussion} discusses when each propagator method is expected to be
 adequate.
 
-\section{Algorithms for Modeling Electron--Matter Interaction}
+\section{Modeling Electron--Matter Interaction: theory and algorithms}
 \label{sec:algorithms_electron_matter}
 
 This section introduces the wave-equation framework and the numerical
@@ -112,9 +112,6 @@ propagation kernel, F-MS and AS-MS (Subsection~\ref{sec:fresnel_angular_spectrum
 Finally, we discuss more advanced wide-angle methods, including WP-MS and the
 ODE reference calculation used for benchmarking
 (Subsection~\ref{sec:advanced_propagation_methods}).
-
-\subsection{From the Schr\"odinger Equation to a Helmholtz Equation}
-\label{sec:schrodinger_helmholtz}
 
 Throughout this work we use the convention now commonly adopted in the electron
 microscopy literature, and used for example in Kirkland's textbook~\cite{kirkland2010advanced} or \cite{ChenVanDyck1997}, in which
@@ -129,6 +126,7 @@ k_0 = \frac{1}{\lambda},
 where $\lambda$ is the relativistic electron wavelength. This differs from the
 optics convention $K_0=2\pi/\lambda$, so that $K_0=2\pi k_0$.
 
+
 The consequence of this convention is twofold. First, we define the Fourier
 transform with the phase factor
 \begin{equation}
@@ -140,58 +138,209 @@ transform with the phase factor
 \end{equation}
 where $(q_x,q_y)$ are transverse spatial frequencies in cycles per unit length.
 Second, a plane wave propagating in the direction
-$\mathbf k_0=(k_0_x,k_0_y,k_0_z)$ is written as
+$\mathbf k=(k_x,k_y,k_z)$ with $\mathbf |k| = k_0 = \frac{1}{\lambda} $ is written as
 \begin{equation}
 \psi(\mathbf r)
 =
 \exp\left[2\pi i(k_x x+k_y y+k_z z)\right],
 \label{eq:plane_wave_convention}
 \end{equation}
-with
-\begin{equation}
-|\mathbf k| = k_0 = \frac{1}{\lambda}.
-\end{equation}
-In the optics convention, the same wave would be written with the wavevector
-$\mathbf K=2\pi\mathbf k$ and phase factor $\exp(i\mathbf K\cdot\mathbf r)$.
-This distinction is important when comparing the present notation with papers
-written in the optics convention. Wacker and Schr\"oder~\cite{WackerSchroeder2015},
-for example, write the free-space plane wave with an angular wavevector; in the
-present convention their vacuum wavenumber is therefore $K_0=2\pi k_0$. This is
-only a change of notation, but the conversion must be applied when comparing
-their formulas with equations written in the present convention.
-By contrast, the Chen--Van Dyck formulation writes the free-space kinetic term
-as $h^2K_0^2/(2m)$~\cite{ChenVanDyck1997,2025ChenDyckPaper}. Despite the capital
-letter, this identifies their $K_0$ as a spatial frequency, $K_0=1/\lambda$,
-rather than an angular wavenumber.
+
+As in \cite{kirkland2010advanced} and \cite{Reimer1989}, $e$ will be the absolute value of the negative electron charge $q_e$; so $q_e = -e$. 
+
+\subsection{From the Schr\"odinger Equation to a Helmholtz Equation}
+\label{sec:schrodinger_helmholtz}
 
 
-The propagation of an electron through a specimen can be described, at the
-single-particle level, by a Schr\"odinger-type wave equation in the
-electrostatic potential of the sample. In transmission electron microscopy, the
+\subsubsection{Klein-Gordon Helmholtz Equation}
+\label{sec:KG_helmholtz}
+
+In transmission electron microscopy, the
 incident electron energy is typically high enough that relativistic effects
 must be included. A convenient way to do this is to retain the Schr\"odinger
 form of the wave equation while using the relativistic momentum and wavelength
 in the free-space propagation term and the corresponding first-order
 relativistic correction to the electrostatic interaction.
 
-In the time-dependent Schr\"odinger form, the wavefunction satisfies
+In order to model the propagation of electron in matter one has to use a quantum mechanical description of the interaction between the imaging electrons and the atoms of the specimen and the electrons are thus to be described by a complex wave fucntion $\Phi(\mathbf r)$ that may be calculated at any position in the microscope.
+Of course, in principe one should start with the Dirac Equation to describe the propagation of electrons, but it has been shown that the interaction can be described by a 'time-independent relatistically corrected' Schrodinger equation with sufficient accuracy (Fujiwara et Lubkt ), where the energy of the electron beam is not only the kinect energy, but the relavistic one $E_{\mathrm{tot}}$ and its mass $m$ is also the relativistic one, i.e. $ m = m_0 \gamma$, $\gamma = $ being the Lorenz factor and c and v being respectively the speed of light and of the considered electrons. 
+
+Below, in order to make a link between different fields in physics, we are going to derive again these results starting from a spin-independent relativistic Hamiltonian $\hat H$ of a charged particle  $q_e$ in an electromagnetic field starting from the time-dependent Schrodinger form : 
 \begin{equation}
 i\hbar\frac{\partial \Psi(\mathbf r,t)}{\partial t}
 =
 \hat H\Psi(\mathbf r,t),
 \label{eq:time_dependent_schrodinger}
 \end{equation}
-where $\hat H$ is the effective single-electron Hamiltonian. For a stationary
-incident electron we write
+
+Following ~\cite{jackson1999classical} the hamiltonian $\hat H$  has the form : 
+\begin{equation}
+\hat H
+=
+\sqrt{
+c^2\left(\hat{\mathbf p}-q_e\mathbf A/c\right)^2
++
+m_0^2c^4
+}
++
+q_e\Phi(\mathbf r),
+\label{eq:app_minimal_coupling_hamiltonian}
+\end{equation}
+where $\mathbf A$ and $\Phi(\mathbf r)$ are respecively  the magnetic vector and electrostatic potentials, $m_0$ is the electron rest
+mass, and $\hat{\mathbf p}=-i\hbar\nabla$ is the momentum operator. In the
+free-electron--light problem, the interaction is mainly carried by
+$\mathbf A$. In elastic electron diffraction by a crystal, we neglect
+$\mathbf A$ and retain the scalar electrostatic potential. Equation
+\eqref{eq:app_minimal_coupling_hamiltonian} then reduces to
+\begin{equation}
+\hat H
+=
+\sqrt{c^2\hat{\mathbf p}^{\,2}+m_0^2c^4}
++
+V_{\mathrm{pot}}(\mathbf r).
+\label{eq:app_relativistic_hamiltonian}
+\end{equation}
+
+where now  $ E_{\mathrm{pot}}(\mathbf r) $ is the electron potential energy (measured for instance in eV or J) of an electron in the field  $V(\mathbf r)$.
+
+\begin{equation}
+V_{\mathrm{pot}}(\mathbf r)
+=
+q_e\Phi(\mathbf r)
+=
+-e\Phi(\mathbf r),
+\label{eq:app_electron_potential_energy}
+\end{equation}
+
+A stationay electron waves in the sample will separate the time variations from the spacial one and will be of the form : 
 \begin{equation}
 \Psi(\mathbf r,t)=\psi(\mathbf r)
 \exp\left(-\frac{iEt}{\hbar}\right),
 \label{eq:stationary_ansatz}
 \end{equation}
-where $E$ denotes the kinetic energy of the incident electron, after removal of
-the rest-energy term. This $E$ is the relativistic kinetic energy, not the
-low-speed approximation $m_0v^2/2$. The total relativistic energy is therefore
-$E_\mathrm{tot}=m_0c^2+E$.
+and \cite{eq:time_dependent_schrodinger} will becomes : 
+\begin{equation}
+\hat H\psi
+=
+E_{\mathrm{tot}}\psi,
+\label{eq:app_stationary_relativistic_hamiltonian}
+\end{equation}
+
+
+
+$E_{\mathrm{tot}}$ denotes the total relativistic energy of the electron wave and . as in this paper we are considerting only elastic interactions, $E_{\mathrm{tot}}$ 
+will be the same in vaccuum and in the sample. 
+
+In the vaccuum, before entering the sample this total energy is equal to : 
+\begin{equation}
+E_{\mathrm{tot}}
+=
+mc^2
+=
+\gamma m_0c^2
+=
+\sqrt{c^2p_0^2+m_0^2c^4},
+\qquad
+p_0
+=
+hk_0
+=
+\frac{h}{\lambda},
+\label{eq:app_incident_energy_momentum}
+\end{equation}
+
+where $m=\gamma m_0$ is the relativistic mass, $p_0$ is the vacuum
+relativistic momentum, and $k_0=1/\lambda$ is the spatial frequency convention
+used in the present paper.
+$c_2 p_0$ is here the relativisti kinetic energy of the electrons that have been accelerated up to the velocity $v$ by the accelaration potential $V_pot$ (in volt)
+of the electron gun. So : 
+$E_kin = -e V_pot$ 
+
+ This is the same energy--momentum relation as
+Fujiwara's Eq.~(2.16)~\cite{fujiwara1961relativistic}; Fujiwara denotes the
+total energy by $E$ and uses the angular, or optical, convention
+$K=2\pi/\lambda$ instead of $k_0=1/\lambda$. In the following we consider
+elastic scattering, so the incident electron energy is conserved during its
+interaction with the specimen.
+
+In the sample, the energy will be conserved meaning that the temporal variation will be the same. Equation~\eqref{eq:app_stationary_relativistic_hamiltonian} may be
+rearranged as
+\begin{equation}
+\sqrt{c^2\hat{\mathbf p}^{\,2}+m_0^2c^4}\,\psi
+=
+\left[
+E_{\mathrm{tot}}-V_{\mathrm{pot}}(\mathbf r)
+\right]\psi .
+\label{eq:app_square_root_rearranged}
+\end{equation}
+Squaring both sides gives the scalar Klein--Gordon-type equation
+\begin{equation}
+\left[
+c^2\hat{\mathbf p}^{\,2}+m_0^2c^4
+\right]\psi
+=
+\left[
+E_{\mathrm{tot}}-V_{\mathrm{pot}}(\mathbf r)
+\right]^2\psi .
+\label{eq:app_kg_before_linearisation}
+\end{equation}
+
+Reorganising this last equation and using 
+$\hat{\mathbf p}^{\,2}=-\hbar^2\nabla^2$, one obtains a "Klein-Gorden" Helmholtz-like equation with a refraction index $n_KG$ : 
+
+\begin{equation}
+\nabla^2\psi(\mathbf r)
++
+\frac{
+\left[
+E_{\mathrm{tot}}-V_{\mathrm{pot}}(\mathbf r)
+\right]^2
+-
+m_0^2c^4
+}
+{\hbar^2c^2}
+\psi(\mathbf r)
+=
+0.
+\label{eq:app_unlinearised_kg_wave_equation}
+\end{equation}
+
+or
+
+\begin{equation}
+\nabla^2\psi(\mathbf r)
++
+(2\pi k_0)^2 n_{\mathrm{KG}}^2(\mathbf r)\psi(\mathbf r)
+=
+0,
+\label{eq:app_kg_helmholtz_form}
+\end{equation}
+with
+\begin{equation}
+n_{\mathrm{KG}}^2(\mathbf r)
+=
+\frac{
+\left[
+E_{\mathrm{tot}}-V_{\mathrm{pot}}(\mathbf r)
+\right]^2
+-
+m_0^2c^4
+}
+{
+E_{\mathrm{tot}}^2-m_0^2c^4
+}.
+\label{eq:app_kg_refractive_index_from_hamiltonian}
+\end{equation}
+
+In this Helmholtz-like equation the factor $ 4 /pi $ comes from our TEM convention for plane waves. 
+This connects the modern
+Klein--Gordon form to the older electron-optical refractive-index idea of
+Glaser and of Ehrenberg and Siday, who related the index to the electron
+generalized momentum and to the de Broglie wavelength
+
+
+\subsubsection{Eletron Helmholtz Equation}
+\label{sec:electron_helmholtz}
 
 Substitution of Eq.~\eqref{eq:stationary_ansatz} gives
 $\hat H\psi=E\psi$ for the spatial wavefunction. In electron microscopy, this
@@ -311,9 +460,9 @@ algorithm.
 \subsection{Multislice Propagators}
 \label{sec:fresnel_angular_spectrum}
 
-To connect equation~\eqref{eq:helmholtz_form} to conventional multislice, we
-make the standard high-energy, or slowly varying envelope approximation used in
-electron microscopy~\cite{kirkland2010advanced}. Writing the wavefunction as a
+To connect equation~\eqref{eq:helmholtz_form} to conventional multislice,
+the standard high-energy, or slowly varying envelope approximation used in
+electron microscopy~\cite{kirkland2010advanced} has to be used. Writing the wavefunction as a
 rapidly oscillating carrier multiplied by a slowly varying envelope,
 \[
 \psi(x,y,z)=e^{2\pi i k_0z}\tilde\psi(x,y,z),
@@ -360,7 +509,7 @@ Fresnel kernel in equation~\eqref{eq:fresnel_step}. Conventional multislice is
 therefore both a split-step approximation to the specimen and a small-angle
 approximation to the longitudinal dispersion relation.
 
-The angular spectrum method~\cite{goodman,ming2013pcms} keeps the same
+The angular spectrum method~\cite{goodman,ming2013pcms}, which is called propagator Corrected Multislice (PCMS) in \cite{ming2013pcms} keeps the same
 split-step structure but replaces the Fresnel kernel by the exact free-space
 dispersion relation:
 \begin{equation}
