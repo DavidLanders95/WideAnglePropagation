@@ -407,11 +407,12 @@ by replacing $k_0$ with $k_0n(x,y)$, giving
 \]
 
 For a single refractive-index value, this kernel can be evaluated
-straightforwardly with the angular spectrum method. The WPM simply extends the
+straightforwardly with the angular spectrum method. The traditional WPM as introduced
+by Brenner simply extends the
 angular spectrum method by evaluating a bank of homogeneous angular-spectrum
 propagators for each refractive index in the slice, and then retaining the
 propagated field corresponding to the local refractive index at each output
-pixel.
+pixel. 
 
 This operation is obviously simplistic, because output pixels can receive a
 propagated field that travelled from some pixels with the incorrect refractive
@@ -420,7 +421,8 @@ refractive indices are further away from the local refractive-index value of
 that pixel, and therefore contribute less to the final result. In this manner,
 the propagation step accounts for the local wavelength inside the specimen
 without explicitly evaluating the full square-root operator. Schmidt
-et al.~\cite{Schmidt2016} showed that the leading error from neglecting coupling
+et al.~\cite{Schmidt2016} provided a more rigorous 
+derivation motivating the WPM, and showed that the leading error from neglecting coupling
 between neighbouring refractive-index regions affects amplitude rather than
 phase; consequently, the WPM phase propagation is correct up to second order.
 
@@ -429,15 +431,9 @@ form used by our electron-microscopy adaptation below. In the classical WPM as
 implemented by Schmidt, a mask is created to separate out each unique refractive index in a
 slice, the angular spectrum kernel is calculated for each refractive index, and
 then the mask is used to choose the correct angular spectrum solution from the
-bank of all computed propagations.
-
-In Brenner's original formulation~\cite{Brenner1993}, evaluating a different
-propagation kernel at every output pixel is prohibitively expensive. For a
-transverse grid with $P$ pixels, the direct mixed real/Fourier-space calculation
-scales as
-$\mathcal O(P^2)$. Schmidt et al.~\cite{Schmidt2016} made the method practical
+bank of all computed propagations. Schmidt et al.~\cite{Schmidt2016} made the method practical
 for many optical simulations by grouping pixels with the same refractive
-index. Only one homogeneous angular-spectrum propagation is then required for
+index, as only one homogeneous angular-spectrum propagation is then required for
 each distinct index value. If a slice contains $M$ such values, the cost is
 reduced to approximately
 \[
@@ -457,30 +453,25 @@ to refractive-index groups is not smoothly differentiable.
 \subsection{Wave propagation multislice}
 \label{sec:wp_ms}
 
-We refer to our adaptation of the WPM suitable for electron microscopy as wave propagation
+We refer to our electron-microscopy adaptation of WPM as wave propagation
 multislice (WP-MS), to distinguish it from the classical WPM used in scalar
-light optics. To make the computation of WP-MS tractable in the context of electron microscopy, and to avoid the naive
-$O(N^{2D})$ calculation for a $D$-dimensional transverse grid, we adapt partially the WPM
-algorithm presented in~\cite{BarreBrunel2025}. Their method makes use of a soft-partition 
-mask between a slice with two unique refractive index values to maintain differentiability of 
-the WPM algorithm. However, they note that they can only use this mask because they have chosen an object 
-with two refractive index values, and an extension to a more general case would be more challenging.
+light optics. The main practical issue is that an electron-microscopy slice has
+a nearly continuous refractive-index distribution, so grouping exactly by
+refractive-index value would require almost one homogeneous propagation
+per pixel. We therefore use a differentiable binned version of WPM, partly
+following the soft-partition idea of~\cite{BarreBrunel2025}, but generalised
+from two refractive-index values to many reference values.
 
-To adapt this method to a slice with more refractive index values, we first discretise the refractive-index range
-$[n_{\mathrm{min}}, n_{\mathrm{max}}]$ of the current slice into
+For each slice, we first discretise the refractive-index range
+$[n_{\mathrm{min}}, n_{\mathrm{max}}]$ into
 $N_{\mathrm{bins}}$ discrete reference values, denoted as
 $\{n_{\mathrm{ref}}^{(k)}\}_{k=1}^{N_{\mathrm{bins}}}$.
 
-In a typical multislice potential, many of the refractive-index values will be
-very close to $1$ in the vacuum region, while the refractive-index values inside
-an atom will concentrate in a narrow range slightly above $1$. Since there are
-likely to be many more refractive-index values near the vacuum region, and the high refractive index 
-values of the atoms are likely to be more sparsely distributed (as the atoms take up comparatively less 
-space in a slice), we employ
-a quadratic distribution for the reference indices rather than using linearly
-spaced bins, in order to allocate more bins near $n=1$. The reference indices
-are distributed according to a quadratic function determined by the parameter
-$\gamma$, with $\gamma=2.0$ for quadratic spacing:
+Most pixels in a typical slice are close to vacuum, with $n\simeq 1$, whereas
+the larger refractive-index values associated with atoms occupy a smaller
+fraction of the slice. We therefore use non-uniform reference values rather
+than linearly spaced bins, allocating more bins near $n=1$. The reference
+indices are distributed according to
 
 \begin{equation}
 \label{eq:wpm_bin_spacing}
@@ -493,9 +484,9 @@ n_{\mathrm{min}}
 \quad
 k=1,\ldots,N_{\mathrm{bins}},
 \end{equation}
-
-which allows for denser binning near the vacuum refractive index when $\gamma > 1$ See \ref{fig:wpm_binning_diagnostics} for 
-a visual diagram showing graphically the binning step of a slice.
+with $\gamma=2$ in the simulations below. Values $\gamma>1$ give denser
+binning near the vacuum refractive index. Figure~\ref{fig:wpm_binning_diagnostics}
+shows this binning step for a representative slice.
 
 Next, for a propagation step $\Delta z$, we compute a bank of propagated fields
 $u_k(x,y)$. Each field $u_k$ corresponds to the diffraction of the input field
@@ -525,29 +516,26 @@ scheme by defining a local interpolation weight
 
 \begin{equation}
 \label{eq:wpm_raw_weight}
-w_{\mathrm{raw}} = \frac{n(x,y) - n_L}{n_R - n_L}, \quad w_{\mathrm{raw}} \in [0, 1]
+w_{\mathrm{raw}} = \frac{n(x,y) - n_L}{n_R - n_L}, \quad w_{\mathrm{raw}} \in [0, 1].
 \end{equation}
 
-To ensure smooth gradients and minimise discretisation artifacts, we map this
-linear weight through a smoothstep activation function $S(w)$, akin to the
-spatial partitioning technique demonstrated by~\cite{BarreBrunel2025} via a cubic
-Hermite interpolation function:
+To obtain smooth gradients at the bin boundaries, we map this linear weight
+through the cubic smoothstep function
 
 \begin{equation}
 \label{eq:wpm_smoothstep}
-w = S(w_{\mathrm{raw}}) = 3w_{\mathrm{raw}}^2 - 2w_{\mathrm{raw}}^3
+w = S(w_{\mathrm{raw}}) = 3w_{\mathrm{raw}}^2 - 2w_{\mathrm{raw}}^3.
 \end{equation}
 
-While linear interpolation would satisfy the requirement for differentiability,
-it could result in discontinuities in the gradient at the bin boundaries in a
-gradient-based optimisation scheme.
+Linear interpolation is already differentiable inside each bin, but its
+gradient is discontinuous at the bin boundaries.
 
 The final field at the next step $u(x,y,z+\Delta z)$ is computed as the
 weighted superposition of the fields propagated at the bounding indices:
 
 \begin{equation}
 \label{eq:wpm_two_bin_interpolation}
-u(x,y) = (1 - w) \cdot u_L(x,y) + w \cdot u_R(x,y)
+u(x,y) = (1 - w) \cdot u_L(x,y) + w \cdot u_R(x,y).
 \end{equation}
 
 Equivalently, the
@@ -581,18 +569,15 @@ than AS-MS because many FFT-based propagations are required per slice, but it
 accounts for the local wavelength inside the specimen rather than propagating
 every slice with the vacuum wavelength.
 
-This formulation ensures that the propagation model is fully differentiable
-with respect to the refractive-index map $n(x,y)$, enabling inverse
-reconstruction of potentials via automatic differentiation. It also means that
-only a limited number of FFTs, equal to $N_{\mathrm{bins}}$, are required per
-propagation step, significantly reducing the computational cost compared to a
-naive WPM implementation. The accuracy of WP-MS
-depends on the number of bins $N_{\mathrm{bins}}$ chosen, and will change on a
-case-by-case basis depending on the refractive-index distribution of the sample.
-Figure~\ref{fig:wpm_binning_diagnostics} shows a representative diagnostic of
-the binning procedure. A practical way to mitigate this potential source of
-error is to perform a test simulation and double the number of bins until the 
-required tolerance is achieved in the slice error. 
+Because the binning and interpolation are smooth, the update is differentiable
+with respect to the refractive-index map $n(x,y)$ and can be used in automatic
+differentiation workflows. The cost is set by the number of bins because each
+propagation step requires $N_{\mathrm{bins}}$ FFT-based propagations rather than
+one propagation as in AS-MS. This is still much cheaper than evaluating a
+separate propagation for every distinct pixel value. The accuracy therefore
+depends on whether the chosen bins resolve the refractive-index distribution of
+the slice. In practice, we check this by increasing $N_{\mathrm{bins}}$ until
+the slice error reaches the required tolerance.
 
 \begin{figure}[H]
     \centering
@@ -606,22 +591,24 @@ required tolerance is achieved in the slice error.
     \label{fig:wpm_binning_diagnostics}
 \end{figure}
 
-In general, WP-MS will need a GPU for efficient computation, and we have found
-that $N_{\mathrm{bins}}$ between 16 and 128 are sufficient for the simulations
-presented in this work. This is a marked improvement over the naive case, as it
-enables WP-MS to simulate many slices with larger grid sizes
-($512 \times 512$ or $1024 \times 1024$ pixels) in a reasonable time frame
-(seconds to minutes), provided the refractive-index binning strategy is capable
-of correctly capturing the refractive-index distribution of the sample.
+In practice, WP-MS is most useful with GPU acceleration. For the simulations in
+this work, $N_{\mathrm{bins}}$ between 16 and 128 was sufficient for
+$512 \times 512$ and $1024 \times 1024$ grids, provided that the binning
+resolved the refractive-index distribution of the sample.
 
 \subsection{Forward ODE reference}
 \label{sec:forward_ode_reference}
 
-We use a direct Ordinary Differential Equation (ODE) solution of the second-order Klein--Gordon Helmholtz
-equation as the reference calculation. The ODE solution is a standard way to solve a wave
-equation numerically, whereby the transverse coordinates are discretised, the
-second-order equation is rewritten as a first-order system, and the resulting
-large system of ordinary differential equations is integrated along $z$.
+We use an ordinary differential equation (ODE) reference obtained by applying a
+method-of-lines discretisation to the second-order Klein--Gordon Helmholtz
+equation, representing the transverse coordinates on a periodic FFT grid while
+leaving $z$ as the evolution variable. In this formulation, the transverse
+pixel size sets the largest retained transverse spatial frequency, or
+equivalently the largest scattering angle represented on the grid, rather than
+resolving the full rapidly oscillating electron wavelength in every spatial
+direction, while the adaptive ODE integration along $z$ handles the rapid
+longitudinal oscillation. 
+
 Substituting $n_\mathrm{KG}$ into the Helmholtz equation gives
 \begin{equation}
 \label{eq:kg_second_order}
@@ -643,11 +630,15 @@ Introducing $\phi=\partial_z\psi$ gives the equivalent first-order system
 -\left[\nabla_\perp^2+(2\pi k_0)^2n_\mathrm{KG}^2(x,y,z)\right]\psi
 \end{pmatrix}.
 \end{equation}
-We integrate this system with an adaptive high-order Runge--Kutta method. The
-transverse Laplacian is evaluated spectrally using FFTs, while the potential
-term is applied by pointwise multiplication in real space.
+We integrate this system with an adaptive high-order Runge--Kutta method,
+evaluating the transverse Laplacian spectrally using FFTs and applying the
+potential term by pointwise multiplication in real space. The potential is
+treated as constant within each slice, and the adaptive integration is forced to
+land on the slice boundaries, so the result is an accurate solution, up to the
+ODE tolerance, of the transversely band-limited, laterally periodic,
+slice-wise-constant Klein--Gordon Helmholtz problem.
 
-The calculation is initialised on the forward-propagating vacuum branch. The
+To initialise the calculation on the forward-propagating vacuum branch, the
 entrance wave $\psi(z=0)$ is supplemented by the longitudinal derivative
 \begin{equation}
 \label{eq:kg_phi0}
@@ -659,23 +650,29 @@ entrance wave $\psi(z=0)$ is supplemented by the longitudinal derivative
 \mathcal F\{\psi(z=0)\}
 \right],
 \end{equation}
-which selects the positive-$k_z$ branch of the incident field in vacuum. We
-therefore refer to this as the ODE reference. The method is much more
-expensive than the split-step propagation methods, although it does include back-scattered effects
-that occur throughout the interaction process. 
+which selects the positive-$k_z$ branch of the incident field in vacuum. We use
+this calculation as the ODE reference because, after this entrance condition,
+the propagated state contains both $\psi$ and $\partial_z\psi$, so the
+subsequent evolution does not impose a one-way propagation approximation and
+any backward-propagating component generated by the discretised second-order
+equation is retained within this initial-value formulation. This is still not a
+full scattering boundary-value problem with radiation conditions imposed on
+both sides of the specimen, and the method remains much more expensive than the
+split-step propagation methods, so it is used here only as a benchmark.
 
-The four methods we have presented thus far can be read as successive changes to the same
-underlying Helmholtz problem, with a chosen refractive index representing either
-the Klein--Gordon or the relativistically corrected version of the
-time-independent wave equation, and then an appropriate approximation to the solution of the wave equation
-F-MS uses a split-step specimen approximation
-together with the paraxial free-space propagator. AS-MS keeps the
-split-step approximation but restores the exact free-space spherical propagator. WP-MS
-approximates the one-way propagation operator inside the medium by local
-homogeneous propagation. The ODE solution keeps the second-order
-Klein--Gordon Helmholtz equation and evolves the transverse Laplacian and
-specimen potential together, and it is used as the reference calculation in the first numerical experiment.
-See Table \ref{tab:method_timeline} below for a summary timeline of the methods presented in this work.
+With this reference defined, the four methods presented above can be read as
+different approximations to the same scalar Helmholtz problem, after choosing
+either the Klein--Gordon or the relativistically corrected Schr\"odinger
+refractive index. F-MS uses a split-step specimen approximation together with
+the paraxial free-space propagator, AS-MS keeps the same split-step structure
+but restores the exact free-space spherical propagator, and WP-MS approximates
+the one-way propagation operator inside the medium by local homogeneous
+propagation. By contrast, the ODE reference keeps the second-order
+Klein--Gordon Helmholtz equation after transverse discretisation and evolves
+the transverse Laplacian and specimen potential together, which is why it is
+used as the reference calculation in the first numerical experiment.
+See Table~\ref{tab:method_timeline} for a summary timeline of the methods
+presented in this work.
 
 \begin{table}[htbp]
 \centering
@@ -848,20 +845,18 @@ between F-MS and a second-order ODE solution using the Ewald sphere. Our results
 show the same effect without directly solving the second-order ODE. In
 Figure~\ref{fig:si111_cbed_combined}(c), the detected peak shifts are compared
 with a rescaled dispersion-relation phase error, namely the difference between
-the parabolic Fresnel dispersion and the exact spherical dispersion.
-The dispersion phase error is computed as
+the parabolic Fresnel dispersion and the exact spherical dispersion:
 $|\Delta\phi| = (2\pi / \lambda)\,
 \bigl|\sqrt{1-\lambda^2 q^2} - 1 + \tfrac{1}{2}\lambda^2 q^2\bigr|$,
-where $q=\sin\theta/\lambda$ is the transverse spatial frequency:
-the first term is the exact spherical dispersion $\sqrt{1-x}$ with $x=\lambda^2 q^2$,
-and the remaining terms are its first-order Taylor expansion $1-x/2$, i.e.\ the
-Fresnel kernel. The curve in panel~(c) is this expression fitted to the
-F-MS $-$ WP-MS peak shifts. The shifted peaks and the fitted curve overlap well,
-indicating that the observed displacement is mainly caused by the accumulated
-free-space dispersion error between slices. The additional correction in WP-MS,
-which tracks the potential-dependent wavelength inside each slice, is not
-visible in this Si case; replacing the F-MS propagator by the AS-MS propagator
-already recovers most of the lost accuracy.
+where $q=\sin\theta/\lambda$ is the transverse spatial frequency. This is the
+longitudinal phase error introduced when the exact spherical propagator is
+replaced by its Fresnel approximation. After fitting only the overall scale, the
+curve follows the F-MS $-$ WP-MS peak shifts closely, indicating that the
+observed displacement is mainly caused by accumulated free-space propagation
+error between slices. In this Si case, the additional WP-MS correction from the
+potential-dependent wavelength inside the specimen is not clearly visible, and
+replacing the F-MS propagator by the AS-MS propagator already recovers most of
+the lost accuracy.
 
 These high-angle peaks would often be damped by thermal diffuse scattering in a
 room-temperature TEM experiment, particularly beyond about 200~mrad. The
@@ -1002,28 +997,6 @@ F-MS amplitude error becomes roughly an order of magnitude larger than the
 AS-MS error beyond about 10~nm. Taken together, these observations indicate
 that the dominant F-MS error is the accumulated longitudinal phase error from
 the parabolic Fresnel propagator.
-
-\subsection{Role of the ODE reference}
-
-The ODE calculation is useful here because it solves the second-order
-Klein--Gordon Helmholtz equation directly after transverse discretisation, and
-therefore provides a stringent numerical reference for the split-step methods.
-This does not make it a practical forward model for routine electron
-microscopy. A direct ODE or finite-element treatment must resolve the rapidly
-oscillating wave on a fine mesh, and the resulting system becomes very large for
-lambda-scale simulations of realistic crystals. This cost is especially
-problematic for ptychography or other inverse methods, where the forward model
-must be evaluated many times.
-
-For this reason, we use the ODE reference only in the Au~[100] benchmark, where
-the geometry is simple enough to make the comparison meaningful and
-computationally feasible. Once AS-MS and WP-MS have been checked against this
-reference, the later CBED calculations focus on the FFT-based methods. This is
-also a reproducibility issue: many references to ODE wave-equation solutions in
-electron microscopy do not specify the solver, tolerances, or discretisation in
-enough detail to make direct comparison straightforward. Reporting the ODE
-setup therefore matters, but replacing multislice with ODE integration is not
-the practical goal of this work.
 
 \subsection{AS-MS and the high-angle error}
 
