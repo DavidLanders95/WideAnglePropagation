@@ -95,17 +95,15 @@ comparison after the experiment; it is part of the reconstruction algorithm
 itself. The accuracy of the forward model is therefore a central limitation on
 the accuracy of the recovered structure.
 
-A complete description of electron propagation through matter would require a
-many-body quantum-mechanical treatment including elastic and inelastic
-scattering, multiple scattering, and in principle backward-propagating
-components. Such a direct description is not practical for realistic TEM
-specimens. Bloch-wave methods remain powerful for periodic crystals
-~\cite{bethe_theorie_1928,Hirsch1965}, but are less convenient for defects,
-interfaces, amorphous regions, finite objects, and iterative reconstruction
-schemes. Multislice methods provide a more general numerical framework. The
-specimen is divided into thin slices perpendicular to the beam direction; each
-slice applies a projected transmission function, and the wave is then
-propagated to the next slice.
+At the most fundamental level, electron propagation through matter is a
+time-dependent many-body quantum problem. The incident electron interacts with
+the specimen electrons and nuclei, so a complete description would include
+elastic and inelastic scattering channels, multiple scattering, possible energy
+exchange with the specimen, and in principle both forward- and
+backward-propagating components. Such a direct treatment is not practical for
+realistic TEM specimens, and image simulations instead rely on reduced
+stationary wave equations. Multislice methods provide such a practical numerical 
+tool to simulate the electron-specimen interaction. 
 
 The standard implementation is paraxial Fresnel multislice (F-MS)
 ~\cite{cowley1957scattering,ishizuka1977practical}. F-MS is simple, fast, and
@@ -120,11 +118,11 @@ standard forward multislice neglects backscattering
 ~\cite{RotherScheerschmidt2009,hillier_role_2017,WackerSchroeder2015,ming2013pcms}.
 
 The smallest correction to F-MS is to replace the parabolic Fresnel propagator
-between slices by the exact one-way spherical-wave propagator. Ming et
-al.~\cite{ming2013pcms} explicitly proposed this correction in electron
-microscopy without expanding the propagator in a Taylor series. We refer to
+between slices by the exact one-way spherical-wave propagator. As fare as we are aware, 
+Ming et al.~\cite{ming2013pcms} were the first to explicitly propose the full spherical propagator
+correction in electron electron microscopy. We refer to
 this method as angular-spectrum multislice (AS-MS), following the terminology
-used in scalar optics~\cite{goodman}. AS-MS keeps the same split-step structure
+used in scalar light optics~\cite{goodman}. AS-MS keeps the same split-step structure
 and the same FFT-based cost as F-MS, but restores the exact free-space
 dispersion relation. It is therefore a minimal wide-angle correction, although
 it still treats the specimen as a sequence of projected phase gratings
@@ -139,14 +137,16 @@ derivatives~\cite{ChenVanDyck1997,ming2013pcms}. This improves the treatment of
 large scattering angles, low-energy electrons, thick specimens, and high-$Z$
 materials, and in its more complete form gives access to backward-propagating
 components. The cost is that the square-root operator is no longer a simple
-Fourier-space phase factor.
+Fourier-space phase factor, and can be expensive to compute depending of the number 
+of terms chosen to solve in the series expansion.
 
-A closely related problem was studied earlier in scalar light optics. Pad\'e
-beam-propagation methods approximate the same square-root operator by rational
+A closely related problem was studied earlier in scalar light optics, and are known as
+Pad\'e beam-propagation methods, which approximate the same square-root operator by rational
 functions rather than Taylor polynomials~\cite{Hadley1992}. These
 approximants can represent the square-root dispersion relation over a wider
 angular range than a truncated Taylor series of the same order, but they still
-introduce substantial overhead relative to F-MS or AS-MS. Direct integration of
+introduce substantial overhead relative to F-MS or AS-MS. 
+Finally, direct integration of
 the full second-order wave equation as an ordinary differential equation (ODE)
 provides a more accurate numerical reference, and has been used to assess
 paraxial and corrected multislice methods
@@ -156,10 +156,11 @@ step. Hillier et al.~\cite{hillier_role_2017} also showed that retaining the
 second longitudinal derivative is important for the positions of Laue-zone
 rings in low-energy Si CBED patterns. However, ODE and higher-order corrected
 methods are too expensive to use directly as routine forward models in
-large-scale inverse reconstruction.
+large-scale inverse reconstructions.
 
-The light-optics community has also developed alternatives that retain FFT
-efficiency while avoiding the need to choose a Taylor or Pad\'e expansion order.
+In order to overcome the issue of needing an accurate and efficient solution to the Time Independent
+wave equation, the light-optics community has developed alternative methods that retain the efficiency 
+of the FFT while avoiding the need to choose a Taylor or Pad\'e expansion order.
 One such method is the wave propagation method (WPM), introduced by Brenner and
 Singer~\cite{Brenner1993}. WPM treats the medium as locally homogeneous over
 small transverse regions, applies homogeneous angular-spectrum propagators for
@@ -167,13 +168,13 @@ representative refractive indices, and recombines the resulting fields
 according to the local refractive-index distribution. This retains a
 potential-dependent wavelength within the propagation step without explicitly
 forming the full dense square-root operator. Efficient and differentiable
-variants have been developed in scalar optics~\cite{Schmidt2016,BarreBrunel2025}.
+variants have been developed in scalar optics literature ~\cite{Schmidt2016,BarreBrunel2025}.
 The method is therefore a natural starting point for a practical wide-angle
 multislice algorithm in electron microscopy, but to our knowledge it has not
 yet been systematically assessed in this context.
 
-The aim of this work is to re-evaluate high-angle propagation methods that
-retain the FFT-based split-step structure that makes multislice practical. We
+The aim of this work is introduce clearly results from the light optics community, 
+and access their benefits in the context of electron microscopy multislice. We
 compare F-MS, AS-MS, and a wave-propagation multislice method (WP-MS) against a
 forward ODE reference solution of the full second-order Klein--Gordon Helmholtz
 equation, and then test the FFT-based methods in representative Si~[111] and
@@ -194,8 +195,7 @@ frequency is therefore
 k_0=\frac{1}{\lambda},
 \label{eq:spatial_frequency_convention}
 \end{equation}
-where $\lambda$ is the relativistic electron wavelength. This differs from the
-optics convention $K_0=2\pi/\lambda$, so that $K_0=2\pi k_0$. We use the
+where $\lambda$ is the relativistic electron wavelength. We use the
 Fourier transform convention
 \begin{equation}
 \mathcal F\{f(x,y)\}(k_x,k_y)
@@ -223,19 +223,15 @@ where $\psi$ is the spatial wavefunction, $m_0$ is the electron rest mass,
 $\gamma$ is the Lorentz factor, and $p_0=h/\lambda=h k_0$ is the vacuum
 momentum. We write the electrostatic potential in volts as $V(\mathbf r)$ and
 the corresponding electron potential energy as
-$E_{\mathrm{pot}}(\mathbf r)=-eV(\mathbf r)$, with $e>0$. The eigenvalue on the
-right-hand side is the effective stationary Schr\"odinger-like eigenvalue. The
-time-dependent stationary state still evolves with the conserved total
-relativistic energy $E_{\mathrm{tot}}=\gamma m_0c^2$.
+$E_{\mathrm{pot}}(\mathbf r)=-eV(\mathbf r)$, with $e>0$.
 
 Equation~\eqref{eq:relativistic_schrodinger_intro} can be written in
-Helmholtz form as
+Helmholtz form as~\cite{Reimer1989}
 \begin{equation}
 \label{eq:helmholtz_intro}
 \nabla^2\psi+(2\pi k_0)^2 n^2(\mathbf r)\psi=0.
 \end{equation}
-For the relativistically corrected Schr\"odinger equation this corresponds to
-the refractive index
+The corresponding refractive index is
 \begin{equation}
 \label{eq:index_schrodinger_intro}
 n_\mathrm{S}^2(\mathbf r)
@@ -258,9 +254,8 @@ The identification of the electrostatic potential with an electron-optical
 refractive index is due to~\cite{Glaser1933, Ehrenberg-Siday1949, Reimer1989}.
 The refractive index notation is useful because the choice of scalar wave equation can be
 expressed through the choice of $n(\mathbf r)$, separating approximations to the
-wave equation from approximations to the potential. For example, retaining the
-quadratic potential-energy term gives the time-independent Klein--Gordon
-refractive index
+wave equation from approximations to the potential. For comparison, the
+time-independent Klein--Gordon equation gives
 \begin{equation}
 \label{eq:index_kg_intro}
 n_\mathrm{KG}^2(\mathbf r)
@@ -271,14 +266,17 @@ n_\mathrm{KG}^2(\mathbf r)
 E_{\mathrm{tot}}^2-m_0^2c^4
 }.
 \end{equation}
+Here $E_{\mathrm{tot}}$ is the incident-electron energy in vacuum including the
+rest energy, so for an electron accelerated through a voltage $U$,
+$E_{\mathrm{tot}}=m_0c^2+eU=\gamma m_0c^2$.
  
 The relativistically
 corrected Schr\"odinger refractive index is a linearised potential
 approximation to the Klein--Gordon refractive index, while retaining the relativistic
 vacuum momentum through $k_0$. Therefore changing
 from $n_\mathrm{S}$ to $n_\mathrm{KG}$ changes the potential model, whereas the
-choice between Fresnel, angular-spectrum, and WPM propagation changes how a
-given refractive-index field is propagated.
+choice between Fresnel, angular-spectrum, and WP-MS propagation changes how a
+given input field through a refractive-index distribution is propagated.
 
 \subsection{Fresnel and angular-spectrum multislice}
 \label{sec:fresnel_angular_spectrum}
