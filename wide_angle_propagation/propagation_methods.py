@@ -91,12 +91,10 @@ def get_frequencies(n: int, m: int, ps: Sampling):
     return jnp.meshgrid(fy, fx, indexing="ij")
 
 
-def transverse_wavenumber_squared(shape: tuple[int, int], sampling: Sampling):
-    """Return |k_perp|^2 on the FFT grid for ``shape`` and ``(dy, dx)`` sampling."""
+def transverse_frequency_squared(shape: tuple[int, int], sampling: Sampling):
+    """Return ``k_perp^2`` on the FFT grid in cycles per unit length."""
     fy, fx = get_frequencies(shape[0], shape[1], sampling)
-    ky = 2 * jnp.pi * fy
-    kx = 2 * jnp.pi * fx
-    return ky**2 + kx**2
+    return fy**2 + fx**2
 
 
 def diffraction_intensity(exit_wave):
@@ -134,7 +132,12 @@ def fresnel_propagation_kernel(
     z: float,
     energy: float,
 ):
-    """Return the paraxial Fresnel transfer function for distance ``z``."""
+    """Return the paraxial Fresnel transfer function for distance ``z``.
+
+    FFT frequencies are in cycles per unit length. This implementation retains
+    the common vacuum carrier phase, which is a global phase relative to the
+    envelope form used in the paper equations.
+    """
     wavelength = energy2wavelength(energy)
     Fy, Fx = get_frequencies(n, m, ps)
 
@@ -150,7 +153,12 @@ def angular_spectrum_propagation_kernel(
     z: float,
     energy: float,
 ):
-    """Return the exact angular-spectrum transfer function for distance ``z``."""
+    """Return the exact angular-spectrum transfer function for distance ``z``.
+
+    FFT frequencies are in cycles per unit length. This implementation retains
+    the common vacuum carrier phase, which is a global phase relative to the
+    envelope form used in the paper equations.
+    """
     wavelength = energy2wavelength(energy)
     Fy, Fx = get_frequencies(n, m, ps)
     kz_sq = (1 / wavelength) ** 2 - Fx**2 - Fy**2
@@ -159,9 +167,15 @@ def angular_spectrum_propagation_kernel(
 
 
 def wpm_propagation_kernel(Ek, n_val, k0, k_perp2, dz):
-    """Propagate one Fourier-space wave through one homogeneous WPM bin."""
+    """Propagate one Fourier-space wave through one homogeneous WPM bin.
+
+    ``k0`` and ``k_perp2`` are spatial frequencies in cycles per unit length.
+    The factor ``2*pi`` is introduced only when converting the longitudinal
+    spatial frequency to a phase in radians. As in the Fresnel and AS kernels,
+    the common vacuum carrier is retained as a global phase.
+    """
     kz = jnp.sqrt(jnp.asarray(n_val**2 * k0**2 - k_perp2, dtype=jnp.complex128))
-    H = jnp.exp(1j * dz * kz)
+    H = jnp.exp(1j * 2 * jnp.pi * dz * kz)
     return jnp.fft.ifft2(H * Ek)
 
 
@@ -197,8 +211,8 @@ def wpm_step_adaptive(
 
     ny, nx = wave.shape
     wavelength = energy2wavelength(energy)
-    k0 = 2 * jnp.pi / wavelength
-    k_perp2 = transverse_wavenumber_squared((ny, nx), ps)
+    k0 = 1 / wavelength
+    k_perp2 = transverse_frequency_squared((ny, nx), ps)
 
     Ek = jnp.fft.fft2(wave)
 
@@ -324,7 +338,9 @@ def _kg_full_ode_rhs(t, y, args):
     phi = y[2] + 1j * y[3]
 
     psi_k = jnp.fft.fft2(psi)
-    dphi = jnp.fft.ifft2(k_perp_sq * psi_k) - k0_sq_n_sq * psi
+    dphi = (2 * jnp.pi) ** 2 * (
+        jnp.fft.ifft2(k_perp_sq * psi_k) - k0_sq_n_sq * psi
+    )
 
     return jnp.stack([phi.real, phi.imag, dphi.real, dphi.imag])
 
@@ -334,11 +350,11 @@ def _kg_forward_vacuum_phi(psi, k0, k_perp_sq):
     psi_k = jnp.fft.fft2(psi)
     kz = jnp.sqrt(jnp.asarray(k0**2 - k_perp_sq, dtype=jnp.complex128))
     kz = jnp.where(jnp.imag(kz) < 0, -kz, kz)
-    return jnp.fft.ifft2(1j * kz * psi_k)
+    return jnp.fft.ifft2(1j * 2 * jnp.pi * kz * psi_k)
 
 
 def _stack_refractive_index_squared(potential, energy, k0):
-    """Return ``k0^2 n^2`` for every potential slice."""
+    """Return ``k0^2 n^2`` in cycles-squared units for every potential slice."""
     return jnp.stack([
         k0**2 * electron_refractive_index(potential_slice, energy) ** 2
         for potential_slice in potential
@@ -362,10 +378,10 @@ def simulate_kg_ode_full(
 
     This restores the true KG ODE system,
 
-        d²ψ/dz² + (∇²⊥ + k₀² n²) ψ = 0,
+        d²ψ/dz² + (∇²⊥ + (2πk₀)² n²) ψ = 0,
 
     rather than the slowly-varying-envelope approximation obtained by
-    dropping u″ after ψ = u·exp(i·k₀·z).
+    dropping u″ after ψ = u·exp(2πi·k₀·z).
 
     The potential is treated as piecewise constant over each slice, and the
     adaptive solver is clipped to the slice boundaries so it never steps
@@ -419,8 +435,8 @@ def simulate_kg_ode_full(
     import diffrax
 
     wavelength = energy2wavelength(energy)
-    k0 = 2 * jnp.pi / wavelength
-    k_perp_sq = transverse_wavenumber_squared(probe.shape, sampling)
+    k0 = 1 / wavelength
+    k_perp_sq = transverse_frequency_squared(probe.shape, sampling)
 
     N_slices = potential.shape[0]
     total_thickness = N_slices * slice_thickness
@@ -434,7 +450,9 @@ def simulate_kg_ode_full(
 
     y0 = jnp.stack([psi0.real, psi0.imag, phi0.real, phi0.imag])
 
-    omega_bound_sq = jnp.max(k_perp_sq) + jnp.max(jnp.abs(all_k0_sq_n_sq))
+    omega_bound_sq = (2 * jnp.pi) ** 2 * (
+        jnp.max(k_perp_sq) + jnp.max(jnp.abs(all_k0_sq_n_sq))
+    )
     omega_max = jnp.sqrt(jnp.maximum(omega_bound_sq, 1e-30))
     dtmax = 3.5 / omega_max
 

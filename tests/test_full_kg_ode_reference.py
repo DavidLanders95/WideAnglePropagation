@@ -51,36 +51,36 @@ def _total_intensity(psi):
     return float(np.sum(np.abs(np.asarray(psi)) ** 2))
 
 
-def _k_perp_sq_grid(gpts, sampling):
+def _transverse_frequency_sq_grid(gpts, sampling):
     ny, nx = gpts
     dy, dx = sampling
-    ky = 2 * np.pi * np.fft.fftfreq(ny, d=dy)
-    kx = 2 * np.pi * np.fft.fftfreq(nx, d=dx)
+    ky = np.fft.fftfreq(ny, d=dy)
+    kx = np.fft.fftfreq(nx, d=dx)
     Kx, Ky = np.meshgrid(kx, ky)
     return Kx**2 + Ky**2
 
 
 def _forward_vacuum_phi(probe, energy, sampling):
     ny, nx = probe.shape
-    k0 = 2 * np.pi / float(energy2wavelength(energy))
-    k_perp_sq = _k_perp_sq_grid((ny, nx), sampling)
+    k0 = 1 / float(energy2wavelength(energy))
+    k_perp_sq = _transverse_frequency_sq_grid((ny, nx), sampling)
     probe_k = np.fft.fft2(np.asarray(probe))
     kz = np.sqrt(np.array(k0**2 - k_perp_sq, dtype=np.complex128))
     kz = np.where(np.imag(kz) < 0, -kz, kz)
-    return np.fft.ifft2(1j * kz * probe_k)
+    return np.fft.ifft2(2j * np.pi * kz * probe_k)
 
 
 def _exact_vacuum_reference(probe, total_thickness, energy, sampling):
     ny, nx = probe.shape
-    k0 = 2 * np.pi / float(energy2wavelength(energy))
-    k_perp_sq = _k_perp_sq_grid((ny, nx), sampling)
+    k0 = 1 / float(energy2wavelength(energy))
+    k_perp_sq = _transverse_frequency_sq_grid((ny, nx), sampling)
     probe_k = np.fft.fft2(np.asarray(probe))
     kz = np.sqrt(np.array(k0**2 - k_perp_sq, dtype=np.complex128))
     kz = np.where(np.imag(kz) < 0, -kz, kz)
 
-    phase = np.exp(1j * kz * total_thickness)
+    phase = np.exp(2j * np.pi * kz * total_thickness)
     exit_wave = np.fft.ifft2(phase * probe_k)
-    exit_phi = np.fft.ifft2(1j * kz * phase * probe_k)
+    exit_phi = np.fft.ifft2(2j * np.pi * kz * phase * probe_k)
     return exit_wave, exit_phi
 
 
@@ -137,7 +137,7 @@ def _small_discontinuous_stack():
 def _structure_matrix(n_sq_slice, energy, sampling):
     ny, nx = n_sq_slice.shape
     dy, dx = sampling
-    k0 = 2 * np.pi / float(energy2wavelength(energy))
+    k0 = 1 / float(energy2wavelength(energy))
 
     U_full = np.fft.fft2(np.asarray(n_sq_slice, dtype=np.complex128))
     U_full = U_full / (ny * nx)
@@ -152,9 +152,11 @@ def _structure_matrix(n_sq_slice, energy, sampling):
 
     fy = np.fft.fftfreq(ny, d=dy)
     fx = np.fft.fftfreq(nx, d=dx)
-    k_perp_sq = (2 * np.pi * fy[iy]) ** 2 + (2 * np.pi * fx[ix]) ** 2
+    k_perp_sq = fy[iy] ** 2 + fx[ix] ** 2
 
-    return (k0**2) * U_full[diy, dix] - np.diag(k_perp_sq)
+    return (2 * np.pi) ** 2 * (
+        (k0**2) * U_full[diy, dix] - np.diag(k_perp_sq)
+    )
 
 
 def _exact_full_kg_stack(
@@ -276,13 +278,13 @@ class TestUniformMediumReference:
         pot = jnp.full((n_slices, self.ny, self.nx), potential_value)
 
         plane = _plane_wave(self.ny, self.nx)
-        k0 = 2 * np.pi / float(energy2wavelength(ENERGY))
+        k0 = 1 / float(energy2wavelength(ENERGY))
         n = float(electron_refractive_index(potential_value, ENERGY))
         total_thickness = n_slices * self.dz
 
-        expected_wave = plane * np.exp(1j * k0 * n * total_thickness)
-        expected_phi = 1j * k0 * n * expected_wave
-        initial_phi = 1j * k0 * n * plane
+        expected_wave = plane * np.exp(2j * np.pi * k0 * n * total_thickness)
+        expected_phi = 2j * np.pi * k0 * n * expected_wave
+        initial_phi = 2j * np.pi * k0 * n * plane
 
         ew, phi, _, _ = simulate_kg_ode_full(
             pot,

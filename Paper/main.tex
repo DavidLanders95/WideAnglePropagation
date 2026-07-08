@@ -170,6 +170,68 @@ The method is therefore a natural starting point for a practical wide-angle
 multislice algorithm in electron microscopy, but to our knowledge it has not
 yet been systematically assessed in this context.
 
+Table~\ref{tab:method_timeline} summarizes the related developments in light
+and electron optics for the method families used or compared here.
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}L{0.18\textwidth}L{0.25\textwidth}L{0.25\textwidth}L{0.22\textwidth}@{}}
+\toprule
+\textbf{Method family} &
+\textbf{Light-optics reference} &
+\textbf{Electron-optics reference} &
+\textbf{Description} \\
+\midrule
+
+Fresnel MS &
+Fresnel (1818); Fleck--Morris--Feit (1976)
+\cite{fresnel1818memoire,fleck1976atmosphere} &
+Cowley--Moodie (1957); Ishizuka--Uyeda (1977)
+\cite{cowley1957scattering,ishizuka1977practical} &
+Split-step propagation with the paraxial Fresnel kernel. \\
+
+Angular Spectrum MS &
+Booker--Clemmow (1950); Korpel et al. (1986)
+\cite{booker1950angular,korpel1986splitstep} &
+Ming--Chen (2013)
+\cite{ming2013pcms} &
+Same split-step structure, but with the exact free-space propagator. \\
+
+Pad\'e/Series Expansion (BPMs) &
+Hadley (1992); Lee--Voges (1994)
+\cite{Hadley1992,lee1994wideangle} &
+Chen--Van Dyck (1997)
+\cite{ChenVanDyck1997} &
+Higher-order series expansion approximations to the square-root propagation operator. \\
+
+Wave Propagation Method &
+Brenner--Singer (1993); Schmidt et al. (2016)
+\cite{Brenner1993,Schmidt2016} &
+This work &
+Local homogeneous angular-spectrum kernels applied inside the medium. \\
+
+ODE &
+Banerjee--Sharma (1989)
+\cite{banerjee1989helmholtz,sharma1989totalfields} &
+Rother--Scheerschmidt (2009)\textsuperscript{*}; Wacker--Schr\"oder (2015)
+\cite{RotherScheerschmidt2009,WackerSchroeder2015} &
+Reciprocal-space and direct references for non-paraxial propagation. \\
+
+\midrule
+\multicolumn{4}{@{}L{0.90\textwidth}@{}}{\footnotesize
+\textsuperscript{*}Rother--Scheerschmidt used a forward-scattering
+approximation in Fourier space for a periodic crystal, rather than direct
+real-space integration of the full second-order ODE.} \\
+\bottomrule
+\end{tabular}
+\caption{Historical correspondence between the propagation methods used here and
+closely related developments in light and electron optics.}
+\label{tab:method_timeline}
+\end{table}
+
 The aim of this work is to adapt the WPM from the light optics community (which we call Wave Propagation Multislice, WP-MS) and assess it's benefits in the context of electron microscopy.
 We therefore compare F-MS, AS-MS, and the wave-propagation multislice method (WP-MS) against a
 forward ODE reference solution of the full second-order Klein--Gordon Helmholtz
@@ -221,22 +283,22 @@ momentum. We write the electrostatic potential in volts as $V(\mathbf r)$ and
 the corresponding electron potential energy as
 $E_{\mathrm{pot}}(\mathbf r)=-eV(\mathbf r)$, with $e>0$.
 
-Equation~\eqref{eq:relativistic_schrodinger_intro} can be written in
-Helmholtz form as~\cite{Reimer1989}
+Multiplying equation~\eqref{eq:relativistic_schrodinger_intro} by
+$-2\gamma m_0/\hbar^2$ gives a Helmholtz equation for the same wavefunction,
 \begin{equation}
 \label{eq:helmholtz_intro}
-\nabla^2\psi+(2\pi k_0)^2 n^2(\mathbf r)\psi=0.
+\nabla^2\psi+(2\pi k_0)^2 n_\mathrm{S}^2(\mathbf r)\psi=0,
 \end{equation}
-The corresponding refractive index is
+where the Schr\"odinger refractive index is
 \begin{equation}
 \label{eq:index_schrodinger_intro}
 n_\mathrm{S}^2(\mathbf r)
 =
 1-\frac{2\gamma m_0}{h^2k_0^2}E_{\mathrm{pot}}(\mathbf r)
 =
-1+\frac{\sigma}{\pi k_0}V(\mathbf r),
+1+\frac{\sigma}{\pi k_0}V(\mathbf r).
 \end{equation}
-where the conventional TEM interaction constant is
+and the conventional TEM interaction constant is
 \begin{equation}
 \label{eq:interaction_constant}
 \sigma
@@ -481,8 +543,8 @@ n_{\mathrm{min}}
 k=1,\ldots,N_{\mathrm{bins}},
 \end{equation}
 with $\gamma=2$ in the simulations below. Values $\gamma>1$ give denser
-binning near the vacuum refractive index. Figure~\ref{fig:wpm_binning_diagnostics}
-shows this binning step for a representative slice.
+binning near the vacuum refractive index. See Figure~\ref{fig:wpm_binning_diagnostics}
+for a visualisation of the binning algorithm.
 
 Next, for a propagation step $\Delta z$, we compute a bank of propagated fields
 $u_k(x,y)$. Each field $u_k$ corresponds to the diffraction of the input field
@@ -586,8 +648,8 @@ the slice error reaches the required tolerance.
     \centering
     \safeincludegraphics[width=\textwidth,keepaspectratio]{wpm_binning_diagnostics}
     \caption{Diagnostics of the differentiable WP-MS binning strategy for a representative
-    Au~[100] slice. (a) Lower-bin map $n_L$, showing which reference interval
-    contains each pixel. (b) Smooth interpolation weight $w$, where low values
+    Au~[100] slice. (a) Lower-bin map $n_L$, showing the lower refractive index interval
+    inside each pixel. (b) Smooth interpolation weight $w$, where low values
     favour the lower-bin propagated field $u_L$ and high values favour the
     upper-bin propagated field $u_R$. (c) Histogram of the true refractive-index
     distribution with the reference-bin positions superimposed. (d) Spatial
@@ -700,8 +762,8 @@ back onto the forward vacuum branch at each cell boundary. However, the
 calculation is still forward initialised at the entrance of the crystal and does
 not solve a global two-sided scattering problem in which reflections from later
 depths propagate back into earlier depths. Under the high-energy conditions
-considered here, we therefore use the ODE result as a non-paraxial forward
-reference, rather than as a quantitative backscattering calculation. Given the high-energy and weak-potential conditions, the backward-propagating
+considered here, we treat the ODE result as a non-paraxial
+reference, rather than as a global quantitative backscattering calculation. Given the high-energy and weak-potential conditions, the global backward-propagating
 component is expected to be small, and the ODE reference is an accurate benchmark for the forward-propagating multislice methods.
 
 With this reference defined, the three multislice methods and the ODE benchmark
@@ -716,67 +778,6 @@ By contrast, the ODE reference keeps the second-order Klein--Gordon Helmholtz
 equation after transverse discretisation and evolves the transverse Laplacian
 and specimen potential simultaneously, which is why it is used as the reference
 calculation in the first numerical experiment.
-See Table~\ref{tab:method_timeline} for a summary timeline of the methods
-presented in this work.
-
-\begin{table}[htbp]
-\centering
-\small
-\setlength{\tabcolsep}{5pt}
-\renewcommand{\arraystretch}{1.15}
-\begin{tabular}{@{}L{0.18\textwidth}L{0.25\textwidth}L{0.25\textwidth}L{0.22\textwidth}@{}}
-\toprule
-\textbf{Method family} &
-\textbf{Light-optics reference} &
-\textbf{Electron-optics reference} &
-\textbf{Description} \\
-\midrule
-
-Fresnel MS &
-Fresnel (1818); Fleck--Morris--Feit (1976)
-\cite{fresnel1818memoire,fleck1976atmosphere} &
-Cowley--Moodie (1957); Ishizuka--Uyeda (1977)
-\cite{cowley1957scattering,ishizuka1977practical} &
-Split-step propagation with the paraxial Fresnel kernel. \\
-
-Angular Spectrum MS &
-Booker--Clemmow (1950); Korpel et al. (1986)
-\cite{booker1950angular,korpel1986splitstep} &
-Ming--Chen (2013)
-\cite{ming2013pcms} &
-Same split-step structure, but with the exact free-space propagator. \\
-
-Pad\'e/Series Expansion (BPMs) &
-Hadley (1992); Lee--Voges (1994)
-\cite{Hadley1992,lee1994wideangle} &
-Chen--Van Dyck (1997)
-\cite{ChenVanDyck1997} &
-Higher-order series expansion approximations to the square-root propagation operator. \\
-
-Wave Propagation Method &
-Brenner--Singer (1993); Schmidt et al. (2016)
-\cite{Brenner1993,Schmidt2016} &
-This work &
-Local homogeneous angular-spectrum kernels applied inside the medium. \\
-
-ODE &
-Banerjee--Sharma (1989)
-\cite{banerjee1989helmholtz,sharma1989totalfields} &
-Rother--Scheerschmidt (2009)\textsuperscript{*}; Wacker--Schr\"oder (2015)
-\cite{RotherScheerschmidt2009,WackerSchroeder2015} &
-Reciprocal-space and direct references for non-paraxial propagation. \\
-
-\midrule
-\multicolumn{4}{@{}L{0.90\textwidth}@{}}{\footnotesize
-\textsuperscript{*}Rother--Scheerschmidt used a forward-scattering
-approximation in Fourier space for a periodic crystal, rather than direct
-real-space integration of the full second-order ODE.} \\
-\bottomrule
-\end{tabular}
-\caption{Historical timeline displaying correspondence between the propagation methods used here and
-closely related developments in light and electron optics}
-\label{tab:method_timeline}
-\end{table}
 
 \section{Benchmarks and Results}
 \label{sec:results}
@@ -1070,10 +1071,9 @@ index near the centre of a gold atom is approximately 1.07 in this simulation,
 large enough that the correction can accumulate over tens of nanometres. Under
 the high-energy conditions considered here, however, this effect is smaller
 than the improvement obtained by replacing the Fresnel propagator with the
-angular-spectrum propagator. WP-MS should therefore be seen as the more
-complete one-way reference model in these tests, while AS-MS provides most of
+angular-spectrum propagator. In the high-energy context tested here, the WP-MS provides
+little extra value for the expense in it's calculation, while AS-MS provides most of
 the practical correction at essentially the same per-slice cost as F-MS. 
-
 
 \subsection{Consequences and limits}
 
@@ -1128,7 +1128,7 @@ being used, AS-MS is therefore the most direct practical default.
 WP-MS is the more complete one-way split-step model and is closest to the ODE
 reference in the Au~[100] benchmark, but its additional accuracy over AS-MS is
 modest under the high-energy conditions tested here. Its main role in this work
-is to bridge the wave propagation method from scalar optics into electron
+is to bring the wave propagation method from scalar optics into electron
 optics and to provide a differentiable local-wavelength extension of
 angular-spectrum multislice. Future work should test the WP-MS methods performance at lower
 accelerating voltages, against the bidirectional FC-MS method and inside ptychographic reconstructions where

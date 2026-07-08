@@ -17,6 +17,7 @@ from wide_angle_propagation.propagation_methods import (
     simulate_wpm,
     fresnel_propagation_kernel,
     angular_spectrum_propagation_kernel,
+    transverse_frequency_squared,
 )
 from tests.conftest import beam_amplitude_normalized
 
@@ -43,6 +44,23 @@ def _make_constant_potential(V_volts=10.0):
 
 def _make_plane_wave():
     return jnp.ones(GPTS, dtype=jnp.complex128)
+
+
+def test_transverse_frequency_squared_uses_cycles_per_length():
+    """FFT-grid helper should not hide an angular 2*pi conversion."""
+    shape = (4, 6)
+    sampling = (0.5, 0.25)
+    fy = np.fft.fftfreq(shape[0], d=sampling[0])
+    fx = np.fft.fftfreq(shape[1], d=sampling[1])
+    fx_grid, fy_grid = np.meshgrid(fx, fy)
+    expected = fy_grid**2 + fx_grid**2
+
+    np.testing.assert_allclose(
+        np.asarray(transverse_frequency_squared(shape, sampling)),
+        expected,
+        rtol=1e-14,
+        atol=1e-14,
+    )
 
 
 # ---------------------------------------------------------------------------
