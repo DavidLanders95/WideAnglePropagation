@@ -92,10 +92,6 @@ A.~Korpel, K.~E. Lonngren, P.~P. Banerjee, H.~K. Sim, M.~R. Chatterjee, Split-st
 P.~C. Lee, E.~Voges, Three-dimensional semi-vectorial wide-angle beam propagation method, Journal of Lightwave Technology 12~(2) (1994) 215--225.
 \newblock \href {https://doi.org/10.1109/50.350601} {\path{doi:10.1109/50.350601}}.
 
-\bibitem{vandyck1979higherorder}
-D.~van Dyck, Improved methods for the high speed calculation of electron microscopic structure images, Physica Status Solidi A 52~(1) (1979) 283--292.
-\newblock \href {https://doi.org/10.1002/pssa.2210520131} {\path{doi:10.1002/pssa.2210520131}}.
-
 \bibitem{banerjee1989helmholtz}
 S.~Banerjee, A.~Sharma, Propagation characteristics of optical waveguiding structures by direct solution of the helmholtz equation for total fields, Journal of the Optical Society of America A 6~(12) (1989) 1884--1894.
 \newblock \href {https://doi.org/10.1364/JOSAA.6.001884} {\path{doi:10.1364/JOSAA.6.001884}}.
@@ -103,5 +99,17 @@ S.~Banerjee, A.~Sharma, Propagation characteristics of optical waveguiding struc
 \bibitem{sharma1989totalfields}
 A.~Sharma, S.~Banerjee, Method for propagation of total fields or beams through optical waveguides, Optics Letters 14~(1) (1989) 96--98.
 \newblock \href {https://doi.org/10.1364/OL.14.000096} {\path{doi:10.1364/OL.14.000096}}.
+
+\bibitem{FertigBrenner2010}
+M.~Fertig, K.-H. Brenner, Vector wave propagation method, Journal of the Optical Society of America A 27~(4) (2010) 709--717.
+\newblock \href {https://doi.org/10.1364/JOSAA.27.000709} {\path{doi:10.1364/JOSAA.27.000709}}.
+
+\bibitem{Fertig2011}
+M.~W. Fertig, \href{https://madoc.bib.uni-mannheim.de/29233/}{Vector wave propagation method: Ein beitrag zum elektromagnetischen optikrechnen}, Ph.D. thesis, Universit{\"a}t Mannheim (2011).
+\newline\urlprefix\url{https://madoc.bib.uni-mannheim.de/29233/}
+
+\bibitem{WendeDrozellaHerkommer2023}
+M.~Wende, J.~Drozella, A.~M. Herkommer, Fast bidirectional vector wave propagation method showcased on targeted noise reduction in imaging fiber bundles using 3d-printed micro optics, Optics Express 31~(18) (2023) 28874--28890.
+\newblock \href {https://doi.org/10.1364/OE.497244} {\path{doi:10.1364/OE.497244}}.
 
 \end{thebibliography}
