@@ -56,14 +56,14 @@ Conventional Fresnel multislice (F-MS) is the standard method for modeling
 electron--sample interactions in transmission electron microscopy (TEM). It is
 computationally efficient and can simulate both perfect and defective crystals,
 but its paraxial propagation kernel loses accuracy when large scattering angles
-contribute to the exit wave. Here we compare FFT-based alternatives that retain
-the practical split-step structure of multislice while improving wide-angle
+contribute to the exit wave. Here we compare slice-based FFT propagation methods
+that preserve the practical multislice workflow while improving wide-angle
 propagation. We introduce wave-propagation multislice (WP-MS), an adaptation of
 the wave propagation method from scalar optics, and compare it with F-MS and
 angular-spectrum multislice (AS-MS). The three methods are first benchmarked
 against a direct ordinary-differential-equation (ODE) solution of the
-second-order Klein--Gordon Helmholtz equation a represntative Au~[100] sample. We then compare 
-the F-MS, AS-MS, and WP-MS methods' predictions for
+second-order Klein--Gordon Helmholtz equation for a representative Au~[100]
+sample. We then compare their predictions for
 convergent-beam electron diffraction (CBED) in Si~[111] and Au~[100]. AS-MS
 removes most of the wide-angle error of F-MS at essentially the same per-slice
 computational cost. WP-MS is closest to the ODE reference, but its additional
@@ -435,9 +435,11 @@ function, while propagation between slices is still performed in vacuum.
     \label{fig:wpm_explainer}
 \end{figure}
 
-The Wave Propagation Method (WPM) addresses the remaining split-step
+The Wave Propagation Method (WPM) addresses the remaining vacuum-propagation
 approximation in AS-MS by allowing the propagation kernel itself to depend on
-the refractive index of the medium. Returning to the full second-order
+the refractive index of the medium. In this sense, the local interaction with
+the medium is incorporated into a single propagation update, rather than being
+applied as a separate transmission function. Returning to the full second-order
 Helmholtz equation \eqref{eq:helmholtz_intro}, it can be rearranged into an operator equation with a forward and backward branch \cite{Schmidt2016}. Ignoring the backward branch, the forward branch may be written as
 \begin{equation}
 \label{eq:one_way_square_root_intro}
@@ -767,13 +769,14 @@ reference, rather than as a global quantitative backscattering calculation. Give
 component is expected to be small, and the ODE reference is an accurate benchmark for the forward-propagating multislice methods.
 
 With this reference defined, the three multislice methods and the ODE benchmark
-can be seen asdifferent approximations within the same scalar Helmholtz wave equation framework, once
+can be seen as different approximations within the same scalar Helmholtz wave equation framework, once
 the refractive-index model is fixed. In the ODE benchmark below, all methods
-use the same slice-wise $n_\mathrm{KG}$ map.
+use the same per-slice $n_\mathrm{KG}$ map.
 F-MS uses a split-step specimen approximation together with the paraxial
-free-space propagator, AS-MS keeps the same split-step structure but restores
-the exact free-space spherical propagator, and WP-MS remains one-way but
-approximates propagation inside the medium by local homogeneous propagation.
+free-space propagator, and AS-MS keeps the same split-step structure but
+restores the exact free-space spherical propagator. WP-MS remains one-way, but
+it does not use a separate transmission step; instead, it incorporates the
+refractive-index dependence into a local-homogeneous medium propagation update.
 By contrast, the ODE reference keeps the second-order Klein--Gordon Helmholtz
 equation after transverse discretisation and evolves the transverse Laplacian
 and specimen potential simultaneously, which is why it is used as the reference
@@ -1060,9 +1063,9 @@ features of interest.
 
 WP-MS makes a further correction by allowing the propagation kernel to depend on
 the local electrostatic refractive index, so the wavelength changes inside each
-slice. In the electron-optics setting, this gives
-a differentiable one-way split-step method that retains FFT-based propagation
-while incorporating a potential-dependent wavelength.
+slice. In the electron-optics setting, this gives a differentiable one-way
+local-medium propagation update that retains FFT-based propagation while
+incorporating a potential-dependent wavelength.
 
 WP-MS is closest to the ODE reference in the Au~[100] benchmark, and the
 residual AS-MS--WP-MS difference in the thick Au~[100] CBED calculation is
@@ -1071,9 +1074,10 @@ index near the centre of a gold atom is approximately 1.07 in this simulation,
 large enough that the correction can accumulate over tens of nanometres. Under
 the high-energy conditions considered here, however, this effect is smaller
 than the improvement obtained by replacing the Fresnel propagator with the
-angular-spectrum propagator. In the high-energy context tested here, the WP-MS provides
-little extra value for the expense in it's calculation, while AS-MS provides most of
-the practical correction at essentially the same per-slice cost as F-MS. 
+angular-spectrum propagator. In the high-energy context tested here, WP-MS
+provides little extra accuracy for its additional computational cost, while
+AS-MS provides most of the practical correction at essentially the same
+per-slice cost as F-MS. 
 
 \subsection{Consequences and limits}
 
@@ -1113,7 +1117,8 @@ can be formulated into a form that can include bidirectional propagation
 We adapted the optimized wave propagation method developed in scalar optics to
 electron microscopy, giving a wave-propagation multislice (WP-MS) method that
 tracks high-angle propagation and local wavelength changes within a
-differentiable split-step framework. We then compared F-MS, AS-MS, and WP-MS in
+differentiable slice-based propagation framework. We then compared F-MS,
+AS-MS, and WP-MS in
 three complementary settings: an Au~[100] ODE benchmark, a lower-$Z$ Si~[111]
 CBED peak-position test, and a thick Au~[100] CBED amplitude test.
 
@@ -1125,12 +1130,13 @@ require substantially finer sampling once the high-angle features are already
 represented. For high-angle elastic forward simulations where F-MS is still
 being used, AS-MS is therefore the most direct practical default.
 
-WP-MS is the more complete one-way split-step model and is closest to the ODE
-reference in the Au~[100] benchmark, but its additional accuracy over AS-MS is
-modest under the high-energy conditions tested here. Its main role in this work
-is to bring the wave propagation method from scalar optics into electron
-optics and to provide a differentiable local-wavelength extension of
-angular-spectrum multislice. Future work should test the WP-MS methods performance at lower
+WP-MS is the more complete one-way local-medium propagation model and is
+closest to the ODE reference in the Au~[100] benchmark, but its additional
+accuracy over AS-MS is modest under the high-energy conditions tested here. Its
+main role in this work is to bring the wave propagation method from scalar
+optics into electron optics and to provide a differentiable local-wavelength
+extension of angular-spectrum multislice. Future work should test the
+performance of WP-MS at lower
 accelerating voltages, against the bidirectional FC-MS method and inside ptychographic reconstructions where
 systematic forward-model errors could bias the recovered potential.
 
