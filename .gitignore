@@ -47,7 +47,7 @@ Paper/*.out
 Paper/*.pdf
 Paper/*.spl
 Paper/*.synctex*
-Paper/figures/*.pdf
+Paper/figures/
 archive/delete_candidates_*/latex_build_artifacts/**/*
 
 # Executed notebook artifacts and temporary notebook files
