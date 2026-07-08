@@ -21,9 +21,10 @@ PYTHON_FILES = [
     ROOT / "wide_angle_propagation" / "notebook_utils.py",
 ]
 TARGET_NOTEBOOKS = [
-    ROOT / "notebooks" / "verification" / "01_axel_lubk_verification.ipynb",
-    ROOT / "notebooks" / "cbed" / "02_converge_probe_si.ipynb",
-    ROOT / "notebooks" / "cbed" / "03_convergent_probe_au.ipynb",
+    ROOT / "notebooks" / "figure_generation" / "01_axel_lubk_verification.ipynb",
+    ROOT / "notebooks" / "figure_generation" / "02_converge_probe_si.ipynb",
+    ROOT / "notebooks" / "figure_generation" / "03_convergent_probe_au.ipynb",
+    ROOT / "notebooks" / "figure_generation" / "04_wpm_binning_diagnostics.ipynb",
 ]
 
 

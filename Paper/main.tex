@@ -62,9 +62,9 @@ propagation. We introduce wave-propagation multislice (WP-MS), an adaptation of
 the wave propagation method from scalar optics, and compare it with F-MS and
 angular-spectrum multislice (AS-MS). The three methods are first benchmarked
 against a direct ordinary-differential-equation (ODE) solution of the
-second-order Klein--Gordon Helmholtz equation using the on-axis and high-angle
-beam amplitudes of Au~[100]. We then compare their predictions for
-convergent-beam electron diffraction (CBED) from Si~[111] and Au~[100]. AS-MS
+second-order Klein--Gordon Helmholtz equation a represntative Au~[100] sample. We then compare 
+the F-MS, AS-MS, and WP-MS methods' predictions for
+convergent-beam electron diffraction (CBED) in Si~[111] and Au~[100]. AS-MS
 removes most of the wide-angle error of F-MS at essentially the same per-slice
 computational cost. WP-MS is closest to the ODE reference, but its additional
 accuracy over AS-MS is modest under the high-energy conditions studied here.
@@ -170,10 +170,10 @@ The method is therefore a natural starting point for a practical wide-angle
 multislice algorithm in electron microscopy, but to our knowledge it has not
 yet been systematically assessed in this context.
 
-The aim of this work is to adapt the WPM from the light optics community (which wec call Wave Propagation Multislice, WP-MS) and assess it's benefits in the context of electron microscopy.
+The aim of this work is to adapt the WPM from the light optics community (which we call Wave Propagation Multislice, WP-MS) and assess it's benefits in the context of electron microscopy.
 We therefore compare F-MS, AS-MS, and the wave-propagation multislice method (WP-MS) against a
 forward ODE reference solution of the full second-order Klein--Gordon Helmholtz
-equation, and then test the FFT-based methods in representative Si~[111] and
+equation, and then test the multislice methods against each other in representative Si~[111] and
 Au~[100] CBED simulations. The comparison identifies when F-MS remains
 sufficient, when the simple AS-MS correction captures the dominant error, and
 if the local-wavelength correction in WP-MS becomes relevant.
