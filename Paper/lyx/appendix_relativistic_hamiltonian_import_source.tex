@@ -1,0 +1,298 @@
+% Included from main.tex after \appendix.
+% This file intentionally does not redefine the document class or packages.
+
+
+
+\subsection{A Note on the Energy Eigenvalue in the Corrected Schrödinger Equation}
+\label{app:corrected_schrodinger_eigenvalue}
+
+The relativistically corrected Schrödinger equation is commonly written as
+
+
+
+In particular, the physical time dependence of a stationary relativistic
+state remains
+\begin{equation}
+\Psi(\mathbf r,t)
+=
+\psi(\mathbf r)
+\exp\left(-\frac{iE_{\mathrm{tot}}t}{\hbar}\right).
+\end{equation}
+Thus, $E_{\mathrm{tot}}$ governs the temporal phase, whereas
+$p_0^2/(2\gamma m_0)$ is the eigenvalue of the equivalent stationary
+Schrödinger-like equation.
+
+
+
+\section{Relativistic Hamiltonian and Scalar Wave Equations}
+\label{app:relativistic_hamiltonian}
+
+This appendix gives the derivation underlying the two scalar refractive-index
+models used in Section~\ref{sec:schrodinger_helmholtz}. A complete relativistic
+description begins with the Dirac equation. When spin and magnetic interactions
+are not explicitly required, elastic electron diffraction can instead be
+described by the positive-energy, spin-independent relativistic Hamiltonian
+\cite{fujiwara1961relativistic,kirkland2010advanced}.
+
+\subsection{Minimal Coupling and the Stationary Equation}
+
+The time-dependent wave equation is
+\begin{equation}
+i\hbar\frac{\partial\Psi(\mathbf r,t)}{\partial t}
+=
+\hat H\Psi(\mathbf r,t),
+\label{eq:app_time_dependent_wave_equation}
+\end{equation}
+with the minimal-coupling Hamiltonian
+\begin{equation}
+\hat H
+=
+\sqrt{
+c^2\left(\hat{\mathbf p}-q_e\mathbf A/c\right)^2+m_0^2c^4
+}
++
+q_eV(\mathbf r),
+\label{eq:app_minimal_coupling_hamiltonian}
+\end{equation}
+where $\hat{\mathbf p}=-i\hbar\nabla$, $\mathbf A$ is the magnetic vector
+potential, and $V(\mathbf r)$ is the specimen electrostatic potential in
+volts. We use $e>0$ and $q_e=-e$, so the electron potential energy is
+\begin{equation}
+E_{\mathrm{pot}}(\mathbf r)
+=
+q_eV(\mathbf r)
+=
+-eV(\mathbf r).
+\label{eq:app_electron_potential_energy}
+\end{equation}
+
+
+This notation distinguishes the electrostatic potential $V$ from the energy
+$E_{\mathrm{pot}}$.
+
+Neglecting magnetic interactions and introducing the rest energy $ E_0 = m_0 c^2$ gives
+\begin{equation}
+\hat H
+=
+\sqrt{c^2\hat{\mathbf p}^{\,2}+m_0^2c^4}
++
+E_{\mathrm{pot}}(\mathbf r) = \sqrt{c^2\hat{\mathbf p}^{\,2}+E_0^2}
++
+E_{\mathrm{pot}}(\mathbf r)
+\label{eq:app_relativistic_hamiltonian}
+\end{equation}
+
+We then look for stationnary states $\Psi(\mathbf r,t)$ that separate the temporal and spatial contributions : 
+\begin{equation}
+\Psi(\mathbf r,t)
+=
+\psi(\mathbf r)
+\exp\left(-\frac{iE_{\mathrm{tot}}t}{\hbar}\right),
+\label{eq:app_stationary_ansatz}
+\end{equation}
+
+ The stationary equation is therefore
+\begin{equation}
+\hat H\psi=E_{\mathrm{tot}}\psi.
+\label{eq:app_stationary_equation}
+\end{equation}
+
+$E_{\mathrm{tot}}$ is the conserved total relativistic energy, including
+the rest energy. As we look for elastic interaction this energy is conserved. In particular, 
+in vacuum,
+\begin{equation}
+E_{\mathrm{tot}}
+=
+\gamma m_0c^2
+=
+\sqrt{c^2p_0^2+E_0^2},
+\qquad
+p_0=hk_0=\frac{h}{\lambda},
+\label{eq:app_vacuum_energy_momentum}
+\end{equation}. 
+If the beam has accelerated through a voltage magnitude $U_{\mathrm{acc}}>0$, the total energy is the sum of the rest and kinetic energies : 
+
+and $E_{\mathrm{kin}}=eU_{\mathrm{acc}}=E_{\mathrm{tot}}-E_0 = (\gamma - 1) E_0$. 
+
+Equation~\eqref{eq:app_vacuum_energy_momentum} can be used to compute the wave length : 
+$c^2 p_0^2 = h^2 c^2/\lambda^2 = E_{\mathrm{tot}}^2 - E_0^2 = (E_{\mathrm{kin}}+E_0)^2 - E_0^2$ 
+
+
+\subsection{Klein--Gordon and Corrected Schr\"odinger Forms}
+
+Rearranging Eq.~\eqref{eq:app_stationary_equation} and squaring gives
+\begin{equation}
+\left[c^2\hat{\mathbf p}^{\,2}+E_0^2\right]\psi
+=
+\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf r)\right]^2\psi .
+\label{eq:app_kg_before_linearisation}
+\end{equation}
+A local relattivistic momentum and a local wavelength can be defined : 
+\begin{equation}
+c^2\hat{\mathbf p}^{\,2}
+=
+\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf r)\right]^2 - E_0^2 = h^2 c^2 \mathbf k^2
+\label{eq:app_kg_before_linearisation2}
+\end{equation}
+
+Using $\hat{\mathbf p}^{\,2}=-\hbar^2\nabla^2$ and
+$p_0=h k_0$, equation ~\eqref{eq:app_vacuum_energy_momentum} becomes
+\begin{equation}
+\nabla^2\psi(\mathbf r)
++
+(2\pi k_0)^2n_{\mathrm{KG}}^2(\mathbf r)\psi(\mathbf r)
+=0,
+\label{eq:app_kg_helmholtz_form}
+\end{equation}
+where
+\begin{equation}
+n_{\mathrm{KG}}^2(\mathbf r)
+=
+\frac{
+\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf r)\right]^2-E_0^2
+} {
+E_{\mathrm{tot}}^2-E_0^2
+} = \frac{p(\mathbf r)}{p_0}=\frac{k(\mathbf r)}{k_0}
+.
+\label{eq:app_kg_refractive_index}
+\end{equation}
+So, $n_{\mathrm{KG}}$ is the ratio of the local relativistic 
+momentum $p(r)$  to the vacuum momentum $p_0$ . This connects the Klein--Gordon form to the
+electron-optical refractive-index concepts of Glaser and Ehrenberg--Siday
+\cite{Glaser1933,Ehrenberg-Siday1949}.
+
+For $|E_{\mathrm{pot}}|\ll E_{\mathrm{tot}}$, as it is the case for electron-beam interaction, 
+\begin{equation}
+\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf r)\right]^2
+\simeq
+E_{\mathrm{tot}}^2
+-
+2E_{\mathrm{tot}}E_{\mathrm{pot}}(\mathbf r).
+\label{eq:app_linearised_energy}
+\end{equation}
+Since $E_{\mathrm{tot}}/c^2=\gamma m_0$, Eq.~\eqref{eq:app_kg_before_linearisation}
+then reduces to
+\begin{equation}
+\nabla^2\psi(\mathbf r)
++
+\left[
+(2\pi k_0)^2
+-
+\frac{2\gamma m_0}{\hbar^2}E_{\mathrm{pot}}(\mathbf r)
+\right]\psi(\mathbf r)
+=0.
+\label{eq:app_corrected_schrodinger}
+\end{equation} or equivalently , 
+
+\begin{equation}
+\left[
+-\frac{\hbar^2}{2\gamma m_0}\nabla^2
++
+E_{\mathrm{pot}}(\mathbf r)
+\right]\psi(\mathbf r)
+=
+\frac{p_0^2}{2\gamma m_0}\psi(\mathbf r).
+\label{eq:app_schrodinger_energy_form}
+\end{equation}
+
+Equation~\eqref{eq:app_schrodinger_energy_form} is
+therefore a stationary Schrödinger-like reformulation of the relativistic
+wave equation, rather than the original relativistic energy-eigenvalue
+equation.
+This is the relativistically corrected
+Schr\"odinger form as deduced by Fujiwara. 
+The right-hand side resembles the nonrelativistic kinetic energy
+$p_0^2/(2m)$, with the rest mass replaced by the relativistic mass
+$\gamma m_0$. It should not, however, be identified with either the total
+relativistic energy $E_{\mathrm{tot}}$ or, in general, the kinetic energy
+$E_{\mathrm{kin}}=E_{\mathrm{tot}}-E_0$.
+
+Indeed, using
+\begin{equation}
+\gamma m_0=\frac{E_{\mathrm{tot}}}{c^2},
+\qquad
+p_0^2c^2=E_{\mathrm{tot}}^2-E_0^2,
+\end{equation}
+the eigenvalue in Eq.~\eqref{eq:app_schrodinger_energy_form} becomes
+\begin{equation}
+\frac{p_0^2}{2\gamma m_0}
+=
+\frac{E_{\mathrm{tot}}^2-E_0^2}{2E_{\mathrm{tot}}}
+=
+E_{\mathrm{kin}}\frac{E_{\mathrm{tot}}+E_0}{2E_{\mathrm{tot}}}.
+\label{eq:app_effective_schrodinger_eigenvalue}
+\end{equation}
+
+It approaches $E_{\mathrm{kin}}$ only in the nonrelativistic limit
+$E_{\mathrm{kin}}\ll E_0$, for which $E_{\mathrm{tot}}\simeq E_0$.
+
+Equation  xxxx-mettrelabonneREF indicates that the energy appearing in the temporal dependence of the wave function is not $E_{0\mathrm{kin}}$ but $E_{\mathrm{tot}}$. 
+The factor $1/2$ arises when the scalar relativistic wave equation is
+linearised in the specimen potential and divided by
+$2E_{\mathrm{tot}}$. 
+
+\subsection{Interaction Constant and Paraxial Limit}
+
+The conventional TEM interaction constant is
+\begin{equation}
+\sigma
+=
+\frac{2\pi\gamma m_0e}{h^2k_0}
+=
+\frac{2\pi\gamma m_0e\lambda}{h^2}= 2 \pi e  k_0 \frac{\gamma m_0 c^2}{h^2 k_0^2 c^2}=
+\frac{2\pi e E_{\mathrm{tot}}}
+{hc\sqrt{E_{\mathrm{tot}}^2-E_0^2}}.
+\label{eq:app_sigma_definition}
+\end{equation}
+
+The potential term in Eq.~\eqref{eq:app_corrected_schrodinger} can therefore be
+written as
+\begin{equation}
+\frac{2\gamma m_0e}{\hbar^2}V(\mathbf r)
+=
+4\pi k_0\sigma V(\mathbf r),
+\label{eq:app_potential_term_sigma}
+\end{equation}
+giving
+\begin{equation}
+\nabla^2\psi(\mathbf r)
++
+\left[
+(2\pi k_0)^2
++
+4\pi k_0\sigma V(\mathbf r)
+\right]\psi(\mathbf r)
+=0.
+\label{eq:app_corrected_schrodinger_sigma}
+\end{equation}
+Factoring out the carrier wave,
+\begin{equation}
+\psi(\mathbf r)
+=
+\exp(2\pi i k_0z)\tilde\psi(\mathbf r),
+\label{eq:app_carrier_wave}
+\end{equation}
+and neglecting $\partial^2\tilde\psi/\partial z^2$ gives
+\begin{equation}
+\frac{\partial\tilde\psi}{\partial z}
+=
+\frac{i}{4\pi k_0}\nabla_\perp^2\tilde\psi
++
+i\sigma V(\mathbf r)\tilde\psi.
+\label{eq:app_paraxial_sigma}
+\end{equation}
+For a slice with projected electrostatic potential
+\begin{equation}
+V_j(x,y)
+=
+\int_{z_j}^{z_j+\Delta z}V(x,y,z)\,dz,
+\label{eq:app_projected_potential}
+\end{equation}
+the phase-grating transmission function is
+\begin{equation}
+t_j(x,y)
+=
+\exp\left[i\sigma V_j(x,y)\right],
+\label{eq:app_transmission_function}
+\end{equation}
+which is the expression used in the main text.

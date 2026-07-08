@@ -1,0 +1,1341 @@
+%% LyX 2.5.1 created this file.  For more info, see https://www.lyx.org/.
+%% Do not edit unless you really know what you are doing.
+\documentclass[12pt,english,preprint,number]{elsarticle}
+\usepackage[utf8]{inputenc}
+\synctex=-1
+\usepackage{color}
+\usepackage{colortbl}
+\usepackage{babel}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[bookmarks=false,
+ breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=true]
+ {hyperref}
+\hypersetup{
+ allcolors=blue}
+
+\makeatletter
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% LyX specific LaTeX commands.
+\newcommand{\lyxmathsym}[1]{\ifmmode\begingroup\def\b@ld{bold}
+  \text{\ifx\math@version\b@ld\bfseries\fi#1}\endgroup\else#1\fi}
+
+%% Because html converters don't know tabularnewline
+\providecommand{\tabularnewline}{\\}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% User specified LaTeX commands.
+\PassOptionsToPackage{english}{babel}
+\usepackage{babel}
+
+
+% Useful packages
+\usepackage{array}
+\usepackage{url}
+\usepackage{graphicx}
+\graphicspath{{../figures/}{../../wpm/}{../../notebooks/cbed/results/}{../../notebooks/verification/figures/}}
+\DeclareGraphicsExtensions{.pdf,.png,.jpg}
+\newcommand{\safeincludegraphics}[2][]{%
+    \IfFileExists{../figures/#2.pdf}{\includegraphics[#1]{../figures/#2}}{%
+        \IfFileExists{../figures/#2.png}{\includegraphics[#1]{../figures/#2}}{%
+            \IfFileExists{../figures/#2.jpg}{\includegraphics[#1]{../figures/#2}}{%
+                \IfFileExists{../../notebooks/cbed/results/#2.pdf}{\includegraphics[#1]{../../notebooks/cbed/results/#2}}{%
+                    \IfFileExists{../../notebooks/cbed/results/#2.png}{\includegraphics[#1]{../../notebooks/cbed/results/#2}}{%
+                        \IfFileExists{../../notebooks/verification/figures/#2.pdf}{\includegraphics[#1]{../../notebooks/verification/figures/#2}}{%
+                            \IfFileExists{../../notebooks/verification/figures/#2.png}{\includegraphics[#1]{../../notebooks/verification/figures/#2}}{%
+                                \fbox{\parbox[c][0.25\textheight][c]{0.9\linewidth}{\centering Missing figure:\\ \texttt{\detokenize{#2}}}}%
+                            }%
+                        }%
+                    }%
+                }%
+            }%
+        }%
+    }%
+}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\journal{Ultramicroscopy}
+\biboptions{numbers,sort&compress}
+
+
+
+\makeatother
+
+\begin{document}
+\begin{frontmatter}
+\title{Wide-Angle Multislice Propagation for Electron Microscopy: Comparison
+of Fresnel, Angular-Spectrum, and Wave-Propagation Methods}
+\author[inst1]{David Landers}
+\ead{david.landers@cea.fr}
+\author[inst1]{Jean-Luc Rouviere}
+\ead{jean-luc.rouviere@cea.fr}
+
+\end{frontmatter}
+\
+\begin{abstract}
+Conventional Fresnel multislice (F-MS) is the standard method for
+modeling electron--sample interactions in transmission electron microscopy
+(TEM). It is computationally efficient and can simulate both perfect
+and defective crystals. However, F-MS loses accuracy at large scattering
+angles. Here, we investigate FFT-based alternatives that retain these
+practical advantages while improving wide-angle accuracy without the
+high computational cost of directly solving the wave equation. We
+introduce wave-propagation multislice (WP-MS), a minor adaptation
+of the wave propagation method (WPM) from scalar optics, and compare
+it with F-MS and angular-spectrum multislice (AS-MS). The three methods
+are first benchmarked against a direct ordinary-differential-equation
+(ODE) solution of the second-order Klein--Gordon Helmholtz equation
+using the on-axis and high-angle beam amplitudes of Au~{[}100{]}.
+We then compare their predictions for convergent-beam electron diffraction
+(CBED) from Si~{[}111{]} and Au~{[}100{]}. AS-MS removes most of
+the wide-angle error of F-MS at essentially the same per-slice computational
+cost. WP-MS is closest to the ODE reference, but its additional accuracy
+over AS-MS is modest under the conditions studied. We therefore identify
+the conditions under which F-MS remains adequate, recommend AS-MS
+as the practical wide-angle default, and reserve WP-MS for applications
+requiring the most complete one-way split-step model. 
+\end{abstract}
+\begin{keyword}
+electron microscopy \sep multislice \sep electron diffraction \sep
+TEM image simulation \sep Fresnel propagator \sep angular spectrum
+\sep wave propagation method 
+\end{keyword}
+
+\section{Introduction}
+
+\label{sec:introduction}
+
+Electron microscopy (EM) has recently entered a new era. For a long
+time, its central role was to produce images of matter, often interpretable
+only through comparison with image simulations. In this traditional
+workflow, simulations were used as a forward model: a structural hypothesis
+was proposed, an image was calculated from this structure, and the
+agreement with experiment was improved by trial and error. In this
+sense, image simulation has always been an indispensable tool for
+extracting reliable structural information from EM data.
+
+This situation is now changing. In modern approaches, especially ptychography
+and related phase-retrieval methods, the recorded data are no longer
+simply interpreted as images. Instead, they are used as input for
+numerical reconstruction algorithms that aim to recover the sample
+structure, projected potential, or phase shift. In these inverse methods,
+the electron--matter interaction model is not merely used after the
+experiment for comparison; it becomes part of the reconstruction itself.
+Consequently, the accuracy of the forward model is more critical than
+ever.
+
+A complete description of electron propagation through matter would
+require solving a many-body quantum-mechanical problem including elastic
+and inelastic scattering, multiple scattering, and, in principle,
+backscattering processes. Such a brute-force treatment is not feasible
+for realistic specimens of interest in transmission electron microscopy
+(TEM). Practical and accurate propagation models are therefore essential.
+In this work, we focus on multislice approaches, leaving aside Bloch-wave
+methods, which remain powerful for periodic crystals ~\citet{Bethe_theorie_1928,Hirsch1965}
+but are less general for defects, interfaces, amorphous regions, finite
+objects, and iterative reconstruction schemes.
+
+The multislice algorithm introduced by Cowley and Moodie ~\citet{cowley1957scattering,ishizuka1977practical}
+provides such a practical framework. It was originally motivated by
+a physical-optics picture in which the specimen is represented as
+a succession of thin phase objects, separated by free-space propagation.
+In modern terms, the electron wave is alternately multiplied by a
+transmission function associated with the projected potential of a
+slice and propagated to the next slice. This simple and efficient
+construction has become one of the standard tools for simulating electron
+scattering in TEM.
+
+The conventional implementation of multislice (F-MS) uses a Fresnel,
+or paraxial, propagator between slices. - - - - - - - - I insert back
+David's review here - - - -
+
+F-MS is usually adequate for conventional high-energy TEM and STEM
+simulations of thin, low-$Z$ specimens, where other uncertainties
+such as thermal diffuse scattering, detector response, or microscope
+aberration characterization often dominate the comparison with experiment.
+However, for low incident electron energies, thick specimens, or high-$Z$
+materials, F-MS can exhibit significant errors because of its paraxial
+approximation and omission of backscattering ~\citet{RotherScheerschmidt2009,hillier_role_2017,WackerSchroeder2015,ming2013pcms}.
+AS-MS is the minimal FFT-based correction to the paraxial propagation
+step, but it still treats the specimen as a sequence of thin transmission
+functions separated by vacuum propagation. More complete wide-angle
+methods therefore seek to improve the propagation inside the specimen,
+or to use the full second-order wave equation as a reference.
+
+Further improvements in accuracy, particularly the treatment of large-angle
+scattering and backward-propagating components, incur significant
+computational cost. A more accurate electron microscopy multislice
+algorithm is the Chen--Van Dyck method, also known as Fully Corrected
+Multislice (FC-MS) \citet{ming2013pcms,ChenVanDyck1997}. The complexity
+of FC-MS arises because the full second-order wave equation contains
+a square-root operator that mixes a transverse derivative term with
+the potential and cannot be evaluated as a single Fourier-space propagator.
+
+FC-MS addresses this problem by expanding the square-root operator
+in a Taylor series and retaining higher-order correction terms that
+couple the potential to transverse derivatives. In this way the method
+accounts more accurately for how the wave evolves within the potential
+of each slice, rather than treating the slice only as a projected
+phase grating followed by free-space propagation. This allows improved
+treatment of larger scattering angles, low-energy electrons, thicker
+specimens, and high-$Z$ materials and, in its more complete formulation,
+also gives access to backward-propagating components.
+
+5 years before the FC-MS was introduced in the field of scalar light
+optics, a solution to the identical mathematical problem of solving
+a Time Independent Wave Equation to higher accuracy than the F-MS
+or AS-MS method had already been proposed, known as the Padé Beam-Propagation
+Method (Padé BPM) ~\citet{Hadley1992}. In light optics, the time-independent
+Helmholtz equation also leads to a square-root propagation operator
+when it is factorized into forward- and backward-propagating branches.
+Padé beam-propagation methods approximate this square-root operator
+using rational functions rather than the Taylor polynomials proposed
+by Chen and Van Dyck. Because a Padé approximant is a ratio of polynomials,
+it can represent the square-root dispersion relation more accurately
+over a wider angular range than a truncated Taylor series of the same
+order. In practice, this often gives improved stability and accuracy
+for large-angle propagation, allowing lower-order Padé approximants
+to achieve accuracy that would otherwise require higher-order Taylor
+corrections. In either case, approximating the square-root operator
+remains computationally expensive and incurs significant overhead
+relative to F-MS or AS-MS.
+
+In electron optics, a still more accurate reference can be obtained
+by directly integrating the full second-order time-independent wave
+equation as an ordinary differential equation (ODE). Numerous authors
+have used such solutions as references for assessing the accuracy
+of F-MS and the FC-MS method. Wacker and Schröder provide a clear
+derivation of the ODE and operator-approximation methods and benchmark
+them against conventional F-MS and direct Runge--Kutta integration
+of the second-order Schrödinger equation. Their results again showed
+that the F-MS method can introduce substantial errors at low voltages,
+large specimen thicknesses, and high scattering angles. Rother and
+Scheerschmidt approached the problem from a relativistic perspective,
+using ODE solutions of the Dirac, Klein--Gordon, and relativistically
+corrected Schrödinger wave equations and comparing them with a paraxial
+multislice solution. Their work similarly indicates that the dominant
+high-angle error arises from the parabolic propagation step used in
+F-MS. Hillier et al.~\citet{hillier_role_2017} show also that the
+second order derivative term is important to track the positions of
+Laue Zone rings in low energy CBED patterns of Silicon at 20keV. However,
+out of all the methods discussed so far, it is only \citet{ming2013pcms}
+that attempted to account for high angle effects in a way that can
+exploit the Fourier transform, with their spherical propagation method.
+The other series expansion and ODE methods cannot exploit the FFT
+as directly as split-step multislice, limiting their practical use
+as a forward model within inverse reconstruction algorithms.
+
+The light-optics community has sought alternatives that retain the
+computational efficiency of the FFT while avoiding the numerical difficulties
+of evaluating Padé BPM approximants and still providing a nonparaxial
+solution to the time-independent wave equation. One such solution
+to this problem is the Wave Propagation Method (WPM), introduced by
+Brenner in 1993~\citet{Brenner1993}. In the WPM, the potential or
+refractive index medium is treated as locally homogeneous over small
+transverse regions, and a corresponding homogeneous one-way propagator
+is applied for each representative refractive index (see \ref{fig:wpm_explainer}
+for a visual explanation of the method). The resulting fields are
+then recombined according to the local refractive-index distribution.
+This retains the potential-dependent wavelength within the propagation
+step without explicitly forming the full dense square-root operator.
+Efficient variants of the WPM, including a recent differentiable formulation,
+have been developed by ~\citet{Schmidt2016,BarreBrunel2025}. These
+methods approximate the nonparaxial wave equation in Fourier space,
+enabling the use of the FFT while avoiding the need to choose a Taylor-series
+cutoff, a noted drawback of the FC-MS method ~\citet{2025ChenDyckPaper}.
+The WPM is therefore a promising starting point for a practical and
+more efficient wide-angle multislice method, but to our knowledge
+this adaptation has not yet been systematically assessed in the electron
+microscopy context.
+
+This overview motivates the aim of this work: to re-evaluate high-angle
+propagation methods looking for alternative methods that would be
+more accurate than the F-MS without being to computer demanding and
+that thus could be efficiently used in modern inverse EM methods.
+
+- - - - - - sentence that can be used for improving somewhere the
+text ? JLR (to improve) using representative thick specimens at high
+electron energies, and demonstrate an alternative high-angle propagator
+to the FC-MS method (ignoring backscattering). In particular, we compare
+AS-MS and WPM against both the traditional F-MS method and a forward-ODE
+reference solution of the full second-order time-independent wave
+equation. We quantify accuracy and computational cost and determine
+whether either method can provide an efficient correction to paraxial
+multislice for representative crystalline TEM and STEM simulations.
+
+- - - - - - - - - - - - - sentences forming the end of the short JLR
+version without David's good historical review - - - - -
+
+This approximation is highly efficient and accurate for small scattering
+angles, but its limitations become increasingly important when high-angle
+components contribute significantly to the exit wave, for example
+in thick specimens, high-Z materials, or strongly scattering objects
+or low energy EM ~\citet{RotherScheerschmidt2009,hillier_role_2017,WackerSchroeder2015,ming2013pcms}.
+
+Since modern quantitative and inverse EM methods rely directly on
+the fidelity of the propagation model, it is timely to revisit this
+propagation step and assess whether a more accurate yet still efficient
+alternative can improve the standard Fresnel multislice framework.
+- -- - - - - - - - - - - end of sentences, kept just for thinking
+
+In this work, we compare three multislice (MS) propagators: F-MS,
+AS-MS, and WP-MS. Section~\ref{sec:algorithms_electron_matter} first
+reviews the wave equation and the main propagation algorithms used
+to model electron--matter interactions. Section~\ref{sec:results}
+then benchmarks the methods and presents their behaviour in representative
+CBED simulations. Finally, Section~\ref{sec:discussion} discusses
+when each propagator method is expected to be adequate.
+
+\section{Wave-Equation Models and Propagation Algorithms}
+
+\label{sec:algorithms_electron_matter}
+
+This section introduces the scalar wave-equation models and numerical
+propagation algorithms considered in this work. We first define the
+Klein--Gordon and relativistically corrected Schrödinger models (Subsection~\ref{sec:schrodinger_helmholtz}).
+We then introduce F-MS and AS-MS, which differ only in their free-space
+propagation kernel (Subsection~\ref{sec:fresnel_angular_spectrum}).
+Finally, we discuss wide-angle and reference propagation methods,
+including WP-MS and the ODE calculation used for benchmarking (Subsection~\ref{sec:advanced_propagation_methods}).
+
+Throughout this work we use the convention now commonly adopted in
+the electron microscopy literature, as used for example by Kirkland
+and Chen--Van Dyck \citet{kirkland2010advanced,ChenVanDyck1997}.
+$e$ will design the absolute value of the negative electron charge
+as it is done in kirkland and Reimer; so $e$ is positive. But more
+importantly, spatial frequencies are measured in cycles per unit length
+rather than radians per unit length. This convention differs from
+that used in some older electron microscopy papers, including the
+original multislice formulation of Cowley and Moodie~\citet{cowley1957scattering},
+in Wacker and Schröder \citet{WackerSchroeder2015}, and in much of
+the optics literature \citet{goodman}. The vacuum spatial frequency
+$p_{0}$ is therefore 
+\begin{equation}
+k_{0}=\frac{1}{\lambda},
+\end{equation}
+where $\lambda$ is the relativistic electron wavelength. This differs
+from the optics convention $K_{0}=2\pi/\lambda$, so that $K_{0}=2\pi k_{0}$.
+
+The consequence of this convention is twofold. First, we define the
+Fourier transform with the phase factor 
+\begin{equation}
+\mathcal{F}\{f(x,y)\}(q_{x},q_{y})=\int f(x,y)\exp\left[-2\pi i(q_{x}x+q_{y}y)\right]\,dx\,dy,\label{eq:fourier_convention}
+\end{equation}
+where $(q_{x},q_{y})$ are transverse spatial frequencies in cycles
+per unit length. Second, a plane wave propagating in the direction
+$\mathbf{k}=(k_{x},k_{y},k_{z})$, with $|\mathbf{k}|=k_{0}=1/\lambda$,
+is written as
+
+\begin{equation}
+\psi(\mathbf{r})=\exp\!\left(2\pi i\,\mathbf{k}\cdot\mathbf{r}\right)=\exp\!\left[2\pi i\left(k_{x}x+k_{y}y+k_{z}z\right)\right].\label{eq:plane_wave_convention}
+\end{equation}
+
+
+\subsection{Scalar Relativistic Wave Equations}
+
+\label{sec:schrodinger_helmholtz}
+
+As demonstrated by Fujiwara~\citet{fujiwara1961relativistic} and
+detailed in Appendix~\ref{app:relativistic_hamiltonian}, the propagation
+of high-energy electrons in matter can be described by the time-independent,
+relativistically corrected Schrödinger equation 
+\begin{equation}
+\left[-\frac{\hbar^{2}}{2\gamma m_{0}}\nabla^{2}+E_{\mathrm{pot}}(\mathbf{r})\right]\psi(\mathbf{r})=\frac{p^{2}_{0}}{2\gamma m_{0}}\psi(\mathbf{r}),\label{eq:corrected_schrodinger_main}
+\end{equation}
+
+where $\psi(\mathbf{r})$ is the spatial part of the electron wave
+function, $\hbar$ is the reduced Planck constant, $m_{0}$ is the
+electron rest mass, $\gamma$ is the Lorentz factor, $p_{0}$ is the
+electron momentum in vacuum, and $E_{\mathrm{pot}}$ is the potential
+energy associated with the electrostatic potential $V$, expressed
+in volts. With $e>0$ denoting the elementary charge,
+
+\begin{equation}
+E_{\mathrm{pot}}(\mathbf{r})=-eV(\mathbf{r}).\label{eq:potential_energy_main}
+\end{equation}
+Compared with the non-relativistic Schrödinger equation, the two relevant
+changes are that the mass in the kinetic operator is the relativistic
+mass $\gamma m_{0}$, and that the vacuum carrier wave is fixed by
+relativistic energy and momentum relations: 
+\begin{equation}
+\begin{aligned}E_{0} & =m_{0}c^{2}, & E_{\mathrm{tot}} & =\gamma E_{0},\\
+E_{\mathrm{kin}} & =E_{\mathrm{tot}}-E_{0}=(\gamma-1)E_{0}, & \gamma & =\frac{1}{\sqrt{1-v^{2}/c^{2}}},
+\end{aligned}
+\label{eq:relativistic_energy_relations}
+\end{equation}
+\begin{equation}
+\begin{aligned}p_{0} & =\gamma m_{0}v=\frac{1}{c}\sqrt{E^{2}_{\mathrm{tot}}-E^{2}_{0}}=\frac{h}{\lambda}=hk_{0},\\
+k_{0} & =\lambda^{-1}.
+\end{aligned}
+\label{eq:relativistic_momentum_relations}
+\end{equation}
+
+The right-hand side of Eq.~\eqref{eq:corrected_schrodinger_main},
+$p^{2}_{0}/(2\gamma m_{0})$, is therefore the eigenvalue of the Schrödinger-like
+stationary equation; it should not be confused with the total relativistic
+energy $E_{\mathrm{tot}}$, which appears in the time factor $\exp(-iE_{\mathrm{tot}}t/\hbar)$.
+
+Equation~\eqref{eq:corrected_schrodinger_main} can be rewritten
+in Helmholtz form, 
+\begin{equation}
+\nabla^{2}\psi(\mathbf{r})+(2\pi k_{0})^{2}n^{2}(\mathbf{r})\psi(\mathbf{r})=0.\label{eq:helmholtz_form}
+\end{equation}
+This representation provides a direct link between electron microscopy
+and the broader optics community, where propagation algorithms are
+commonly formulated for Helmholtz equations. As explained in Appendix~\ref{app:relativistic_hamiltonian},
+Eq.~\eqref{eq:helmholtz_form} may be used either with the more general
+Klein--Gordon refractive index $n_{\mathrm{KG}}$ or with its linearised-potential
+approximation $n_{\mathrm{S}}$. The latter accurately describes the
+usual electron-microscopy regime, for which $|E_{\mathrm{pot}}(\mathbf{r})|\ll E_{\mathrm{tot}}$.
+
+Introducing the conventional TEM interaction constant \citet{ChenVanDyck1997,kirkland2010advanced}
+\begin{equation}
+\sigma=\frac{2\pi\gamma m_{0}e}{h^{2}k_{0}}=\frac{2\pi\gamma m_{0}e\lambda}{h^{2}},\label{eq:interaction_constant}
+\end{equation}
+the refractive index used in the corrected Schrödinger regime is 
+\begin{equation}
+n^{2}_{\mathrm{S}}(\mathbf{r})=1-\frac{2\gamma m_{0}}{h^{2}k^{2}_{0}}E_{\mathrm{pot}}(\mathbf{r})=1+\frac{\sigma}{\pi k_{0}}V(\mathbf{r}).\label{eq:schrodinger_refractive_index}
+\end{equation}
+Equivalently, to first order in the potential, $n_{\mathrm{S}}(\mathbf{r})\simeq1+\sigma V(\mathbf{r})/(2\pi k_{0})$.
+
+\subsection{Multislice Propagators}
+
+\label{sec:fresnel_angular_spectrum}
+
+To obtain conventional multislice from Eq.~\eqref{eq:helmholtz_form},
+the wavefunction is written as a rapidly oscillating carrier multiplied
+by a slowly varying envelope, 
+\begin{equation}
+\psi(x,y,z)=\exp(2\pi ik_{0}z)\tilde{\psi}(x,y,z).\label{eq:carrier_envelope}
+\end{equation}
+Neglecting $\partial^{2}\tilde{\psi}/\partial z^{2}$ gives the paraxial
+equation 
+\begin{equation}
+\frac{\partial\tilde{\psi}}{\partial z}=\frac{i}{4\pi k_{0}}\nabla^{2}_{\perp}\tilde{\psi}+i\pi k_{0}\left[n^{2}(x,y,z)-1\right]\tilde{\psi}=\frac{i}{4\pi k_{0}}\nabla^{2}_{\perp}\tilde{\psi}+i\sigma\tilde{\psi}.\label{eq:paraxial_helmholtz_intro}
+\end{equation}
+For the corrected Schrödinger model, Eq.~\eqref{eq:schrodinger_refractive_index}
+reduces the interaction term to $i\sigma V\tilde{\psi}$. For slice
+$j$, define the projected electrostatic potential and transmission
+function by 
+\begin{equation}
+V_{j}(x,y)=\int^{z_{j}+\Delta z}_{z_{j}}V(x,y,z)\,dz,\qquad t_{j}(x,y)=\exp\left[i\sigma V_{j}(x,y)\right].\label{eq:multislice_transmission}
+\end{equation}
+
+Fresnel multislice (F-MS) applies this transmission function and then
+propagates the wave through vacuum with the paraxial Fresnel kernel.
+Dropping the tilde, one slice is 
+\begin{equation}
+\psi_{j+1}(x,y)\approx\mathcal{F}^{-1}\left[\exp\left(-i\pi\frac{k^{2}_{\perp}}{k_{0}}\Delta z\right)\mathcal{F}\{t_{j}(x,y)\psi_{j}(x,y)\}\right].\label{eq:fresnel_step}
+\end{equation}
+Each slice requires one FFT pair. The paraxial approximation enters
+through 
+\[
+k_{z}=\sqrt{k^{2}_{0}-k^{2}_{\perp}}\simeq k_{0}-\frac{k^{2}_{\perp}}{2k_{0}}.
+\]
+After removal of the carrier phase, this expansion gives the kernel
+in Eq.~\eqref{eq:fresnel_step}. F-MS therefore combines a split-step
+representation of the specimen with a small-angle approximation to
+free-space propagation.
+
+Angular-spectrum multislice (AS-MS) keeps the same transmission function
+and split-step structure, but replaces the Fresnel kernel by the exact
+free-space dispersion relation~\citet{goodman,ming2013pcms}: 
+\begin{equation}
+\psi_{j+1}(x,y)\approx\mathcal{F}^{-1}\left[\exp\left(2\pi i\left[\sqrt{k^{2}_{0}-k^{2}_{\perp}}-k_{0}\right]\Delta z\right)\mathcal{F}\{t_{j}(x,y)\psi_{j}(x,y)\}\right].\label{eq:asm_step}
+\end{equation}
+Apart from this Fourier-space phase, AS-MS is identical to F-MS and
+retains the same $\mathcal{O}(P\log P)$ per-slice cost for $P$ transverse
+pixels. It removes the paraxial free-space approximation, while retaining
+the thin-slice split-step treatment of the specimen.
+
+\subsection{Wide-Angle and Reference Propagation Methods}
+
+\label{sec:advanced_propagation_methods} - - - - - - - - - - - -
+to keep here or put in intro ??
+
+F-MS is usually adequate for conventional high-energy TEM and STEM
+simulations of thin, low-$Z$ specimens, where other uncertainties
+such as thermal diffuse scattering, detector response, or microscope
+aberration characterization often dominate the comparison with experiment.
+However, for low incident electron energies, thick specimens, or high-$Z$
+materials, F-MS can exhibit significant errors because of its paraxial
+approximation and omission of backscattering ~\citet{RotherScheerschmidt2009,hillier_role_2017,WackerSchroeder2015,ming2013pcms}.
+AS-MS is the minimal FFT-based correction to the paraxial propagation
+step, but it still treats the specimen as a sequence of thin transmission
+functions separated by vacuum propagation. More complete wide-angle
+methods therefore seek to improve the propagation inside the specimen,
+or to use the full second-order wave equation as a reference.
+
+Further improvements in accuracy, particularly the treatment of large-angle
+scattering and backward-propagating components, incur significant
+computational cost. A more accurate electron microscopy multislice
+algorithm is the Chen--Van Dyck method, also known as Fully Corrected
+Multislice (FC-MS) \citet{ming2013pcms,ChenVanDyck1997}. The complexity
+of FC-MS arises because the full second-order wave equation contains
+a square-root operator that mixes a transverse derivative term with
+the potential and cannot be evaluated as a single Fourier-space propagator.
+
+FC-MS addresses this problem by expanding the square-root operator
+in a Taylor series and retaining higher-order correction terms that
+couple the potential to transverse derivatives. In this way the method
+accounts more accurately for how the wave evolves within the potential
+of each slice, rather than treating the slice only as a projected
+phase grating followed by free-space propagation. This allows improved
+treatment of larger scattering angles, low-energy electrons, thicker
+specimens, and high-$Z$ materials and, in its more complete formulation,
+also gives access to backward-propagating components.
+
+5 years before the FC-MS was introduced in the field of scalar light
+optics, a solution to the identical mathematical problem of solving
+a Time Independent Wave Equation to higher accuracy than the F-MS
+or AS-MS method had already been proposed, known as the Padé Beam-Propagation
+Method (Padé BPM) ~\citet{Hadley1992}. In light optics, the time-independent
+Helmholtz equation also leads to a square-root propagation operator
+when it is factorized into forward- and backward-propagating branches.
+Padé beam-propagation methods approximate this square-root operator
+using rational functions rather than the Taylor polynomials proposed
+by Chen and Van Dyck. Because a Padé approximant is a ratio of polynomials,
+it can represent the square-root dispersion relation more accurately
+over a wider angular range than a truncated Taylor series of the same
+order. In practice, this often gives improved stability and accuracy
+for large-angle propagation, allowing lower-order Padé approximants
+to achieve accuracy that would otherwise require higher-order Taylor
+corrections. In either case, approximating the square-root operator
+remains computationally expensive and incurs significant overhead
+relative to F-MS or AS-MS.
+
+In electron optics, a still more accurate reference can be obtained
+by directly integrating the full second-order time-independent wave
+equation as an ordinary differential equation (ODE). Numerous authors
+have used such solutions as references for assessing the accuracy
+of F-MS and the FC-MS method. Wacker and Schröder provide a clear
+derivation of the ODE and operator-approximation methods and benchmark
+them against conventional F-MS and direct Runge--Kutta integration
+of the second-order Schrödinger equation. Their results again showed
+that the F-MS method can introduce substantial errors at low voltages,
+large specimen thicknesses, and high scattering angles. Rother and
+Scheerschmidt approached the problem from a relativistic perspective,
+using ODE solutions of the Dirac, Klein--Gordon, and relativistically
+corrected Schrödinger wave equations and comparing them with a paraxial
+multislice solution. Their work similarly indicates that the dominant
+high-angle error arises from the parabolic propagation step used in
+F-MS. Hillier et al.~\citet{hillier_role_2017} show also that the
+second order derivative term is important to track the positions of
+Laue Zone rings in low energy CBED patterns of Silicon at 20keV. However,
+out of all the methods discussed so far, it is only \citet{ming2013pcms}
+that attempted to account for high angle effects in a way that can
+exploit the Fourier transform, with their spherical propagation method.
+The other series expansion and ODE methods cannot exploit the FFT
+as directly as split-step multislice, limiting their practical use
+as a forward model within inverse reconstruction algorithms.
+
+The light-optics community has sought alternatives that retain the
+computational efficiency of the FFT while avoiding the numerical difficulties
+of evaluating Padé BPM approximants and still providing a nonparaxial
+solution to the time-independent wave equation. One such solution
+to this problem is the Wave Propagation Method (WPM), introduced by
+Brenner in 1993~\citet{Brenner1993}. In the WPM, the potential or
+refractive index medium is treated as locally homogeneous over small
+transverse regions, and a corresponding homogeneous one-way propagator
+is applied for each representative refractive index (see \ref{fig:wpm_explainer}
+for a visual explanation of the method). The resulting fields are
+then recombined according to the local refractive-index distribution.
+This retains the potential-dependent wavelength within the propagation
+step without explicitly forming the full dense square-root operator.
+Efficient variants of the WPM, including a recent differentiable formulation,
+have been developed by ~\citet{Schmidt2016,BarreBrunel2025}. These
+methods approximate the nonparaxial wave equation in Fourier space,
+enabling the use of the FFT while avoiding the need to choose a Taylor-series
+cutoff, a noted drawback of the FC-MS method ~\citet{2025ChenDyckPaper}.
+The WPM is therefore a promising starting point for a practical and
+more efficient wide-angle multislice method, but to our knowledge
+this adaptation has not yet been systematically assessed in the electron
+microscopy context.
+
+- - - - - -- -- - -- -
+
+\subsubsection{Classical Wave Propagation Method in Scalar Optics}
+
+\label{sec:wpm_optics}
+
+\begin{figure}[H]
+\centering \safeincludegraphics[width=0.95\textwidth,keepaspectratio]{method_explainer_generations/wpm}
+\caption{Schematic of the Wave Propagation Method (WPM) as presented by \citet{Schmidt2016}.
+The input wave is propagated using a bank of homogeneous angular-spectrum
+kernels, each evaluated at a different representative refractive index
+$n_{m}$. At each output pixel, the propagated field corresponding
+to the local refractive index is selected via mask and recombined.
+Our improvement to this algorithm (not described in this figure for
+simplicity) includes a soft binning step which makes this method suitable
+for a continuous refractive index distribution - see Figure \ref{fig:wpm_binning_diagnostics}
+below.}
+\label{fig:wpm_explainer} 
+\end{figure}
+
+The Wave Propagation Method (WPM) gathers the split-step approximations
+in F-MS AS-MS in a one-step propagation, by including the phase shift
+of the potential in the propagation kernel itself. Indeed, as it is
+explained below, starting from the local refractive index of the medium,
+new local wave vectors $\mathbf{k}(x,y)$ are defined and use in the
+propagation step.
+
+Returning to the full second-order Helmholtz equation \eqref{eq:helmholtz_form},
+it can be rearranged into an operator equation with a forward and
+backward branch \citet{Schmidt2016}. Ignoring the backward branch,
+the forward branch may be written as 
+\begin{equation}
+\partial_{z}\psi=2\pi i\left[\sqrt{k^{2}_{0}n^{2}(x,y,z)+\frac{1}{4\pi^{2}}\nabla^{2}_{\perp}}-k_{0}\right]\psi.\label{eq:one_way_square_root_intro}
+\end{equation}
+The central concern is that the square-root operator inside the wave
+equation mixes the potential and the transverse derivative, and cannot
+be evaluated as a single Fourier-space propagator. Padé BPM and FC-MS
+methods solve for this operator using rational or series approximations
+to the square-root term, which are expensive and cannot usually directly
+use the FFT.
+
+Looking again at the AS-MS propagation kernel of equation \eqref{eq:asm_step},
+\[
+\left[\sqrt{k^{2}_{0}-k^{2}_{\perp}}-k_{0}\right]
+\]
+what is primarily missing is a refractive-index term. We can reintroduce
+this term locally by replacing $k_{0}$ with $k_{0}n(x,y)$, giving
+
+\[
+\left[\sqrt{k^{2}_{0}n^{2}(x,y)-k^{2}_{\perp}}-k_{0}\right].
+\]
+
+For a single refractive-index value, this kernel can be evaluated
+straightforwardly with the angular spectrum method. The WPM simply
+extends the angular spectrum method by evaluating a bank of homogeneous
+angular-spectrum propagators for each refractive index in the slice,
+and then retaining the propagated field corresponding to the local
+refractive index at each output pixel.
+
+This operation is obviously simplistic, because output pixels can
+receive a propagated field that travelled from some pixels with the
+incorrect refractive index. However, the approximation lives in the
+fact that those different refractive indices are further away from
+the local refractive-index value of that pixel, and therefore contribute
+less to the final result. In this manner, the propagation step accounts
+for the local wavelength inside the specimen without explicitly evaluating
+the full square-root operator. Schmidt et al.~\citet{Schmidt2016}
+showed that the leading error from neglecting coupling between neighbouring
+refractive-index regions affects amplitude rather than phase; consequently,
+the WPM phase propagation is correct up to second order.
+
+Figure~\ref{fig:wpm_explainer} shows the same local-homogeneous
+idea in the form used by our electron-microscopy adaptation below.
+In the classical WPM as implemented by Schmidt, a mask is created
+to separate out each unique refractive index in a slice, the angular
+spectrum kernel is calculated for each refractive index, and then
+the mask is used to choose the correct angular spectrum solution from
+the bank of all computed propagations.
+
+In Brenner's original formulation~\citet{Brenner1993}, evaluating
+a different propagation kernel at every output pixel is prohibitively
+expensive. For a transverse grid with $P$ pixels, the direct mixed
+real/Fourier-space calculation scales as $\mathcal{O}(P^{2})$. Schmidt
+et al.~\citet{Schmidt2016} made the method practical for many optical
+simulations by grouping pixels with the same refractive index. Only
+one homogeneous angular-spectrum propagation is then required for
+each distinct index value. If a slice contains $M$ such values, the
+cost is reduced to approximately 
+\[
+\mathcal{O}(MP\log P),
+\]
+instead of a direct all-to-all evaluation.
+
+This saving is large in light-optical simulations where a slice may
+contain only a small number of unique refractive indices. It is less
+immediate in electron microscopy, where the electrostatic potential
+varies continuously and almost every pixel may have a different refractive
+index. Exact grouping therefore gives little benefit unless the refractive-index
+field is deliberately discretised. A second issue is that hard grouping
+introduces sharp masks, which are inconvenient for gradient-based
+optimisation because the assignment of pixels to refractive-index
+groups is not smoothly differentiable.
+
+\subsubsection{Wave Propagation Multislice}
+
+\label{sec:wp_ms}
+
+We refer to our adaptation of the WPM suitable for electron microscopy
+as wave propagation multislice (WP-MS), to distinguish it from the
+classical WPM used in scalar light optics. To make the computation
+of WP-MS tractable in the context of electron microscopy, and to avoid
+the naive $O(N^{2D})$ calculation for a $D$-dimensional transverse
+grid, we adapt partially the WPM algorithm presented in~\citet{BarreBrunel2025}.
+Their method makes use of a soft-partition mask between a slice with
+two unique refractive index values to maintain differentiability of
+the WPM algorithm. However, they note that they can only use this
+mask because they have chosen an object with two refractive index
+values, and an extension to a more general case would be more challenging.
+
+To adapt this method to a slice with more refractive index values,
+we first discretise the refractive-index range $[n_{\mathrm{min}},n_{\mathrm{max}}]$
+of the current slice into $N_{\mathrm{bins}}$ discrete reference
+values, denoted as $\{n^{(k)}_{\mathrm{ref}}\}^{N_{\mathrm{bins}}}_{k=1}$.
+
+In a typical multislice potential, many of the refractive-index values
+will be very close to $1$ in the vacuum region, while the refractive-index
+values inside an atom will concentrate in a narrow range slightly
+above $1$. Since there are likely to be many more refractive-index
+values near the vacuum region, and the high refractive index values
+of the atoms are likely to be more sparsely distributed (as the atoms
+take up comparatively less space in a slice), we employ a quadratic
+distribution for the reference indices rather than using linearly
+spaced bins, in order to allocate more bins near $n=1$. The reference
+indices are distributed according to a quadratic function determined
+by the parameter $\gamma$, with $\gamma=2.0$ for quadratic spacing:
+
+\begin{equation}
+n^{(k)}_{\mathrm{ref}}=n_{\mathrm{min}}+(n_{\mathrm{max}}-n_{\mathrm{min}})\left(\frac{k-1}{N_{\mathrm{bins}}-1}\right)^{\gamma},\quad k=1,\ldots,N_{\mathrm{bins}},\label{eq:wpm_bin_spacing}
+\end{equation}
+
+which allows for denser binning near the vacuum refractive index when
+$\gamma>1$ See \ref{fig:wpm_binning_diagnostics} for a visual diagram
+showing graphically the binning step of a slice.
+
+Next, for a propagation step $\Delta z$, we compute a bank of propagated
+fields $u_{k}(x,y)$. Each field $u_{k}$ corresponds to the diffraction
+of the input field $u_{\mathrm{in}}(x,y)$ assuming a homogeneous
+medium with refractive index $n^{(k)}_{\mathrm{ref}}$. This is performed
+efficiently using batch FFT operations with the angular spectrum kernel:
+
+\begin{equation}
+u_{k}(x,y)=\mathcal{F}^{-1}\left[\mathcal{F}\{u_{\mathrm{in}}\}\exp\left(2\pi i\Delta z\left[\sqrt{(k_{0}n^{(k)}_{\mathrm{ref}})^{2}-k^{2}_{x}-k^{2}_{y}}-k_{0}\right]\right)\right].\label{eq:wpm_binned_fields}
+\end{equation}
+
+To evaluate the field at a specific spatial coordinate $(x,y)$ where
+the local refractive index is $n(x,y)$, we identify the two bounding
+reference bins such that $n_{L}\le n(x,y)<n_{R}$, where $n_{L},n_{R}\in\{n^{(k)}_{\mathrm{ref}}\}$.
+We adopt a differentiable interpolation scheme by defining a local
+interpolation weight
+
+\begin{equation}
+w_{\mathrm{raw}}=\frac{n(x,y)-n_{L}}{n_{R}-n_{L}},\quad w_{\mathrm{raw}}\in[0,1]\label{eq:wpm_raw_weight}
+\end{equation}
+
+To ensure smooth gradients and minimise discretisation artifacts,
+we map this linear weight through a smoothstep activation function
+$S(w)$, akin to the spatial partitioning technique demonstrated by~\citet{BarreBrunel2025}
+via a cubic Hermite interpolation function:
+
+\begin{equation}
+w=S(w_{\mathrm{raw}})=3w^{2}_{\mathrm{raw}}-2w^{3}_{\mathrm{raw}}\label{eq:wpm_smoothstep}
+\end{equation}
+
+While linear interpolation would satisfy the requirement for differentiability,
+it could result in discontinuities in the gradient at the bin boundaries
+in a gradient-based optimisation scheme.
+
+The final field at the next step $u(x,y,z+\Delta z)$ is computed
+as the weighted superposition of the fields propagated at the bounding
+indices:
+
+\begin{equation}
+u(x,y)=(1-w)\cdot u_{L}(x,y)+w\cdot u_{R}(x,y)\label{eq:wpm_two_bin_interpolation}
+\end{equation}
+
+Equivalently, the WP-MS update can be written as 
+\begin{equation}
+\psi(x,y,z+\Delta z)\approx\sum^{N_{\mathrm{bins}}}_{m=1}w_{m}(x,y)\mathcal{F}^{-1}\left[\exp\left(2\pi i\left[\sqrt{k^{2}_{0}\left(n^{(m)}_{\mathrm{ref}}\right)^{2}-k^{2}_{\perp}}-k_{0}\right]\Delta z\right)\mathcal{F}\{\psi(x,y,z)\}\right].\label{eq:wpm_bank}
+\end{equation}
+This gives a differentiable approximation to the one-way medium propagator
+in equation~\eqref{eq:one_way_square_root_intro}. When the slice
+is homogeneous, only one refractive-index bin is needed and WP-MS
+reduces to the angular spectrum method. For an inhomogeneous specimen,
+the method is more expensive than AS-MS because many FFT-based propagations
+are required per slice, but it accounts for the local wavelength inside
+the specimen rather than propagating every slice with the vacuum wavelength.
+
+This formulation ensures that the propagation model is fully differentiable
+with respect to the refractive-index map $n(x,y)$, enabling inverse
+reconstruction of potentials via automatic differentiation. It also
+means that only a limited number of FFTs, equal to $N_{\mathrm{bins}}$,
+are required per propagation step, significantly reducing the computational
+cost compared to a naive WPM implementation. The accuracy of WP-MS
+depends on the number of bins $N_{\mathrm{bins}}$ chosen, and will
+change on a case-by-case basis depending on the refractive-index distribution
+of the sample. Figure~\ref{fig:wpm_binning_diagnostics} shows a
+representative diagnostic of the binning procedure. A practical way
+to mitigate this potential source of error is to perform a test simulation
+and double the number of bins until the required tolerance is achieved
+in the slice error.
+
+\begin{figure}[H]
+\centering \safeincludegraphics[width=\textwidth,keepaspectratio]{wpm_binning_diagnostics}
+\caption{Diagnostics of the differentiable WP-MS binning strategy for a representative
+MoS$_{2}$ slice. Top row: discretized refractive-index map (bin lower
+bound $n_{L}$), smooth interpolation weights $w$, and histogram
+of the true refractive-index distribution with superimposed bin centers.
+Bottom row: spatial approximation error $n_{\mathrm{true}}-n_{\mathrm{fit}}$,
+error histogram on a log scale, and a 1D cross-section comparing the
+original and fitted refractive-index profiles.}
+\label{fig:wpm_binning_diagnostics} 
+\end{figure}
+
+In general, WP-MS will need a GPU for efficient computation, and we
+have found that $N_{\mathrm{bins}}$ between 16 and 128 are sufficient
+for the simulations presented in this work. This is a marked improvement
+over the naive case, as it enables WP-MS to simulate many slices with
+larger grid sizes ($512\times512$ or $1024\times1024$ pixels) in
+a reasonable time frame (seconds to minutes), provided the refractive-index
+binning strategy is capable of correctly capturing the refractive-index
+distribution of the sample.
+
+\subsubsection{Forward ODE Reference}
+
+\label{sec:forward_ode_reference}
+
+We use a direct Ordinary Differential Equation (ODE) solution of the
+second-order Klein--Gordon Helmholtz equation as the reference calculation.
+The ODE solution is a standard way to solve a wave equation numerically,
+whereby the transverse coordinates are discretised, the second-order
+equation is rewritten as a first-order system, and the resulting large
+system of ordinary differential equations is integrated along $z$.
+Substituting $n_{\mathrm{KG}}$ into the Helmholtz equation gives
+\begin{equation}
+\partial^{2}_{z}\psi=-\left[\nabla^{2}_{\perp}+(2\pi k_{0})^{2}n^{2}_{\mathrm{KG}}(x,y,z)\right]\psi.\label{eq:kg_second_order}
+\end{equation}
+Introducing $\phi=\partial_{z}\psi$ gives the equivalent first-order
+system 
+\begin{equation}
+\frac{d}{dz}\begin{pmatrix}\psi\\
+\phi
+\end{pmatrix}=\begin{pmatrix}\phi\\
+-\left[\nabla^{2}_{\perp}+(2\pi k_{0})^{2}n^{2}_{\mathrm{KG}}(x,y,z)\right]\psi
+\end{pmatrix}.\label{eq:kg_state}
+\end{equation}
+We integrate this system with an adaptive high-order Runge--Kutta
+method. The transverse Laplacian is evaluated spectrally using FFTs,
+while the potential term is applied by pointwise multiplication in
+real space.
+
+The calculation is initialised on the forward-propagating vacuum branch.
+The entrance wave $\psi(z=0)$ is supplemented by the longitudinal
+derivative 
+\begin{equation}
+\phi(z=0)=\mathcal{F}^{-1}\left[2\pi i\sqrt{k^{2}_{0}-k^{2}_{\perp}}\,\mathcal{F}\{\psi(z=0)\}\right],\label{eq:kg_phi0}
+\end{equation}
+which selects the positive-$k_{z}$ branch of the incident field in
+vacuum. We therefore refer to this as the ODE reference. The method
+is much more expensive than the split-step propagation methods, although
+it does include back-scattered effects that occur throughout the interaction
+process.
+
+The four methods we have presented thus far can be read as successive
+changes to the same underlying Helmholtz problem, with a chosen refractive
+index representing either the Klein--Gordon or the relativistically
+corrected version of the time-independent wave equation, and then
+an appropriate approximation to the solution of the wave equation
+F-MS uses a split-step specimen approximation together with the paraxial
+free-space propagator. AS-MS keeps the split-step approximation but
+restores the exact free-space spherical propagator. WP-MS approximates
+the one-way propagation operator inside the medium by local homogeneous
+propagation. The ODE solution keeps the second-order Klein--Gordon
+Helmholtz equation and evolves the transverse Laplacian and specimen
+potential together, and it is used as the reference calculation in
+the first numerical experiment. See Table \ref{tab:method_timeline}
+below for a summary timeline of the methods presented in this work.
+
+\begin{table}[htbp]
+\centering {\small\setlength{\tabcolsep}{5pt} 
+\global\long\def\arraystretch{1.15}%
+ }{\small{}%
+\begin{tabular}{@{}L{0.18\textwidth}L{0.25\textwidth}L{0.25\textwidth}L{0.22\textwidth}@{}}
+\toprule 
+{\small\textbf{Method family}}{\small{} } & {\small\textbf{Light-optics reference}}{\small{} } & {\small\textbf{Electron-optics reference}}{\small{} } & {\small\textbf{Description}}{\small{} }\tabularnewline
+\midrule 
+{\small Fresnel MS } & {\small Fresnel; Fleck--Morris--Feit \citet{fresnel1818memoire,fleck1976atmosphere} } & {\small Cowley--Moodie; Ishizuka--Uyeda \citet{cowley1957scattering,ishizuka1977practical} } & {\small Split-step propagation with the paraxial Fresnel kernel. }\tabularnewline
+{\small Angular Spectrum MS } & {\small Booker--Clemmow; Korpel et al. \citet{booker1950angular,korpel1986splitstep} } & {\small Ming--Chen \citet{ming2013pcms} } & {\small Same split-step structure, but with the exact free-space propagator. }\tabularnewline
+{\small Padé/Series Expansion (BPMs) } & {\small Hadley; Lee--Voges \citet{Hadley1992,lee1994wideangle} } & {\small van Dyck; Chen--Van Dyck \citet{vandyck1979higherorder,ChenVanDyck1997} } & {\small Higher-order approximations to the square-root propagation
+operator. }\tabularnewline
+{\small Wave Propagation Method } & {\small Brenner--Singer; Schmidt et al. \citet{Brenner1993,Schmidt2016} } & {\small This work } & {\small Local homogeneous angular-spectrum kernels applied inside the
+medium. }\tabularnewline
+{\small ODE } & {\small Banerjee--Sharma \citet{banerjee1989helmholtz,sharma1989totalfields} } & {\small Wacker--Schröder; Rother--Scheerschmidt\textsuperscript{{*}}
+\citet{WackerSchroeder2015,RotherScheerschmidt2009} } & {\small Direct and reciprocal-space references for non-paraxial propagation. }\tabularnewline
+\midrule 
+\multicolumn{4}{@{}L{0.90\textwidth}@{}}{{\footnotesize\textsuperscript{{*}}Rother--Scheerschmidt used a
+forward-scattering approximation in Fourier space for a periodic crystal,
+rather than direct real-space integration of the full second-order
+ODE.}}\tabularnewline
+\bottomrule
+\end{tabular}}{\small\caption{Historical timeline displaying correspondence between the propagation
+methods used here and closely related developments in light and electron
+optics}
+\label{tab:method_timeline} }
+\end{table}
+
+
+\section{Benchmarks and Results}
+
+\label{sec:results}
+
+We present three numerical experiments designed to identify when each
+propagation method is useful. The first reproduces the Au~{[}100{]}
+beam-amplitude benchmark of Rother and Scheerschmidt~\citet{RotherScheerschmidt2009},
+where F-MS, AS-MS, and WP-MS can be compared with an ODE solution
+of the full second-order Klein--Gordon equation. After this validation,
+the ODE reference is not used in the remaining tests because of its
+high computational cost. The second experiment compares the FFT-based
+methods for a lower-$Z$ Si~{[}111{]} CBED calculation at high energy
+and large thickness. The third experiment considers a thicker Au~{[}100{]}
+convergent-probe calculation, using WP-MS as the practical high-angle
+reference.
+
+\subsection{Au~{[}100{]} ODE Benchmark}
+
+\label{sec:verification}
+
+\begin{figure}[H]
+\centering \safeincludegraphics[width=\textwidth,keepaspectratio]{Au_exit_wave_amplitudes}
+\caption{The left columns show the real-space exit-wave intensity and phase
+for the Au~{[}100{]} verification case. The rightmost column shows
+the HRTEM image intensity after applying a representative aberration-corrected
+300~keV transfer function with residual $C_{s}=10~\mu\mathrm{m}$,
+defocus of $+6.0$~nm, a 12~mrad objective aperture. Color scales
+are shared across methods within each column, and image-plane NRMSE
+values are relative to the Klein--Gordon ODE reference.}
+\label{fig:au_exit_wave_amplitudes} 
+\end{figure}
+
+To verify our implementation, and to assess which propagation methods
+retain accuracy at high angles in a thick high-$Z$ specimen, we recreated
+the simulation presented in figure~3 of \citet{RotherScheerschmidt2009}.
+This benchmark propagates a plane wave through an Au~{[}100{]} crystal
+at 300~keV and compares against a converged ODE solution of the full
+second-order Klein--Gordon equation. Periodic lateral boundary conditions
+are implicit because each method uses Fourier propagation, so the
+crystal is repeated in the transverse directions. To test thicker
+objects, we extended the Rother--Scheerschmidt simulation from 25
+unit cells ($\sim$10~nm) to 100 unit cells ($\sim$40~nm).
+
+Figure~\ref{fig:au_exit_wave_amplitudes} shows the exit-wave intensity,
+phase, and transfer-function image intensity after propagation through
+100 unit cells of Au~{[}100{]}. The F-MS exit-wave amplitude and
+phase are qualitatively different from the other three solutions,
+whereas AS-MS, WP-MS, and the Klein--Gordon ODE reference remain
+visually similar. After a representative microscope contrast transfer
+function is applied, however, the differences between methods are
+much less obvious. This explains why conventional F-MS can still be
+adequate for qualitative comparison of atomic-column images, even
+when the unfiltered exit wave contains appreciable high-angle error.
+To make the comparison more quantitative, Figure~\ref{fig:au_pixel_amplitudes}
+plots the normalised Fourier amplitude after each slice for the central
+{[}0, 0{]} component and for the high-angle {[}0, 28{]} component
+at approximately 135~mrad as was demonstrated in the work of \citet{RotherScheerschmidt2009}.
+
+\begin{figure}[H]
+\centering \safeincludegraphics[width=\textwidth,keepaspectratio]{Au_beam_amplitudes_full}
+\caption{Pixel-amplitude comparison for the Au~{[}100{]} verification case.
+The central and high-angle pixels are compared across F-MS, angular
+spectrum multislice, wave propagation multislice, and the Klein--Gordon
+ODE reference.}
+\label{fig:au_pixel_amplitudes} 
+\end{figure}
+
+For the central {[}0, 0{]} component, all methods agree closely up
+to approximately 10~nm, or 25 unit cells. Beyond this thickness,
+the F-MS result begins to deviate from the other methods even on the
+on-axis pixel. By about 15~nm, high-angle diffracted beams have propagated
+far enough through the crystal to now interfere back into the central
+beam, so an error in their accumulated phase can also modify the on-axis
+amplitude. For the high-angle {[}0, 28{]} component at 135~mrad,
+the F-MS solution diverges from the ODE reference after approximately
+10 unit cells, or 4~nm, consistent with the findings of \citet{RotherScheerschmidt2009},
+who attributed the discrepancy to the linearisation of the square-root
+operator. AS-MS tracks the ODE reference much more closely than F-MS
+and remains comparable to WP-MS. The WP-MS solution is slightly closer
+to the reference, but the difference from AS-MS only becomes clear
+at the largest thicknesses considered here. These results verify that
+both the AS-MS method and WP-MS method can adequately track a complete
+ODE solution to the wave equation, and provide an appreciable improvement
+over the F-MS method, without the need to solve a higher order taylor
+expanded method like the FC-MS solution presented by \citet{ChenVanDyck1997}.
+
+\subsection{Si~{[}111{]} and Au~{[}100{]} CBED Simulations}
+
+\label{sec:silicon_cbed}
+
+After verifying AS-MS and WP-MS against the ODE solution, we focus
+on the three FFT-based multislice methods: F-MS, AS-MS, and WP-MS.
+The aim is to compare how their predictions differ in CBED patterns
+for representative low-$Z$ and high-$Z$ specimens. We first simulate
+Si~{[}111{]} at 100~keV with an 8~mrad probe and a specimen thickness
+near 1000~\AA, following the spirit of the low-energy CBED comparison
+of Hillier et al.~\citet{hillier_role_2017} but at a higher accelerating
+voltage. The maximum scattering angle was set to 300~mrad.
+
+\begin{figure}[H]
+\centering \safeincludegraphics[width=\textwidth,keepaspectratio]{cbed_kirkland_si111_combined_300mrad_999A}
+\caption{Si~{[}111{]} CBED comparison at 100~keV, 8~mrad probe, and approximately
+1000~\AA{} thickness. (a) WP-MS CBED pattern cropped to 300~mrad.
+(b) Radially integrated annular intensity for all three methods, with
+detected diffraction peaks marked. (c) Peak displacement relative
+to WP-MS, with a scaled parabolic-versus-exact dispersion error curve
+overlaid. The F-MS---WP-MS shift (blue) follows the dispersion-error
+curve closely, while the AS-MS---WP-MS shift (orange) remains near
+zero, consistent with the Au~{[}100{]} results.}
+\label{fig:si111_cbed_combined} 
+\end{figure}
+
+Figure~\ref{fig:si111_cbed_combined} shows the WP-MS CBED pattern,
+the radial profiles with detected peaks, and the peak displacements.
+The F-MS peaks shift progressively with scattering angle, but the
+AS-MS tracks WP-MS closely, with peak displacements near zero across
+the full 300~mrad range. This suggests that the dominant error in
+F-MS is the free-space dispersion approximation rather than the split-step
+treatment of the specimen, even for a lower-$Z$ material at a moderate
+thickness. \citet{hillier_role_2017} have already identified the
+need to include the second order derivative of the wave equation to
+track the Laue zone positions to high angles, and explained using
+the ewald sphere why there is a difference between traditional F-MS
+and a second order ODE solution. Our results in part b demonstrate
+the same effect, but without the need to solve an expensive and slow
+second order ODE. In part c of \ref{fig:si111_cbed_combined}, we
+show the x shift of each detected Laue zone peak, overlayed with a
+rescaled dispersion relation phase error - i.e the difference between
+a parabola and a sphere. The difference in peaks is proportional to
+this phase error. The dispersion phase error is computed as $|\Delta\phi|=(2\pi/\lambda)\,\bigl|\sqrt{1-\lambda^{2}q^{2}}-1+\tfrac{1}{2}\lambda^{2}q^{2}\bigr|$,
+where $q=\sin\theta/\lambda$ is the transverse spatial frequency:
+the first term is the exact spherical dispersion $\sqrt{1-x}$ with
+$x=\lambda^{2}q^{2}$, and the remaining terms are its first-order
+Taylor expansion $1-x/2$, i.e.\ the Fresnel kernel. The curve in
+panel~(c) is this expression fitted to the F-MS $-$ WP-MS peak shifts.
+The shifted peaks and the fitted curve overlap well, indicating that
+the error in the output is due to not tracking the spherical propagation
+between slices in free space. The extra accuracy the WP-MS method
+provides by tracking the change in wavelength through the potential
+is not noticeable, and simply swapping the F-MS propagator to the
+AS-MS propagator already reclaims much of the lost accuracy. It is
+important to note that in general, thermal diffuse scattering will
+significantly dampen the presence of peaks beyond 200 mrad, and therefore
+the application of these methods will be limited for now in traditional
+TEM, unless perhaps the sample is cooled.
+
+Next, in order to test if a sample with a higher atomic number would
+highlight more differences between each of the three methods that
+can use the Fourier Transform, we simulated convergent-beam electron
+diffraction from an Au~{[}100{]} supercell at 200~keV using a 5~mrad
+aberration-free probe. The probe was propagated to a specimen thicknesses
+of approximately 100~nm again. To sample the high-angle components
+of the convergent beam accurately, the enlarged $9\times9$ gold cell
+was discretized on a $2048\times2048$ grid. We then propagated the
+wave using F-MS, AS-MS, and WP-MS, and compared the exit-surface CBED
+patterns obtained from the Fourier transform of each exit wave.
+
+\begin{figure}[H]
+\centering \safeincludegraphics[width=\textwidth,keepaspectratio]{cbed_combined_amplitude_log_error_maps}
+\caption{CBED exit-wave amplitude comparison for the Au~{[}100{]} convergence-angle
+experiment. The maps show the final diffraction patterns produced
+by F-MS, AS-MS, and WP-MS, together with log-scale amplitude errors
+relative to WP-MS.}
+\label{fig:cbed_combined_amplitude_log_error_maps} 
+\end{figure}
+
+Figure~\ref{fig:cbed_combined_amplitude_log_error_maps} shows the
+same pattern in the recorded diffraction plane. The F-MS CBED amplitude
+differs visibly from WP-MS, especially in the higher-angle features
+of the CBED pattern. AS-MS remains much closer to WP-MS, and the remaining
+difference in amplitude between AS-MS and WP-MS is small compared
+with the discrepancy introduced by the Fresnel propagator.
+
+\begin{figure}[H]
+\centering \safeincludegraphics[width=\textwidth,keepaspectratio]{cbed_error_vs_thickness_au100}
+\caption{Relative CBED amplitude error as a function of specimen thickness
+for the Au~{[}100{]} convergence-angle study. The error is reported
+against the WP-MS reference at the end of each unit cell.}
+\label{fig:cbed_error_vs_thickness} 
+\end{figure}
+
+In Figure~\ref{fig:cbed_error_vs_thickness} we visualise the root
+mean square (RMSE) error of the CBED amplitude against the WP-MS reference
+as a function of thickness. After a thickness of approximately 10~nm,
+there is an order-of-magnitude error difference between the F-MS and
+AS-MS solutions. The AS-MS method does become less accurate as the
+thickness increases, but remains much closer to WP-MS than to F-MS
+throughout the calculation. The residual amplitude difference between
+AS-MS and WP-MS can be explained as the WP-MS propagation kernel uses
+the local refractive index, and therefore tracks the potential-dependent
+wavelength through each slice, decreasing the final error in amplitude.
+The refractive index of the gold atom near the centre is approximately
+1.07, large enough such that over a sample of this thickness, tracking
+this change can start to materially effect the output CBED image.
+A similar residual difference in amplitudes between the WP-MS and
+AS-MS is visible in the exit-wave comparison of Figure~\ref{fig:au_exit_wave_amplitudes}
+from the first numerical experiment, even at 40nm.
+
+Although ptychographic reconstruction for specimens as thick as this
+is not yet feasible, our results show that the choice of propagator
+can change the diffraction-plane amplitudes. Because ptychographic
+reconstructions are sensitive to systematic amplitude errors, such
+errors could be absorbed as artifacts or bias the recovered potential.
+Therefore the choice of propagator may become more consequential as
+ptychography is pushed toward thicker specimens and higher scattering
+angles. Given that there is almost no cost associated with the AS-MS
+method, we at least recommend that it become the default propagator
+in almost all multislice use cases going forward to minimise another
+possible source of error in the forward model.
+
+The practical advantage of AS-MS is only immediately useful if it
+does not require a much finer grid than conventional F-MS. The additional
+sampling concern comes from the angular-spectrum propagation phase,
+which is steeper than the Fresnel phase at large transverse wavevector.
+For one propagation step,
+
+\[
+\phi_{\mathrm{F}}(k_{\perp})=-\pi\frac{\Delta z}{k_{0}}k^{2}_{\perp},\qquad\phi_{\mathrm{ASM}}(k_{\perp})=2\pi\Delta z\left[\sqrt{k^{2}_{0}-k^{2}_{\perp}}-k_{0}\right].
+\]
+
+Comparing the phase gradients gives the relative axial sampling penalty
+
+\[
+\frac{\left|d\phi_{\mathrm{ASM}}/dk_{\perp}\right|}{\left|d\phi_{\mathrm{F}}/dk_{\perp}\right|}=\frac{k_{0}}{\sqrt{k^{2}_{0}-k^{2}_{\perp}}}.
+\]
+
+This factor is only large when $k_{\perp}$ approaches $k_{0}$, where
+the propagating spectrum approaches the evanescent boundary. It can
+be written directly in terms of scattering angle because $k_{\perp}/k_{0}=\sin\theta$:
+
+\[
+\frac{k_{0}}{\sqrt{k^{2}_{0}-k^{2}_{\perp}}}=\frac{1}{\sqrt{1-\sin^{2}\theta}}=\frac{1}{\cos\theta}.
+\]
+
+Under the TEM conditions used here this remains close to unity. For
+a 200~mrad probe, the largest correction to the Fresnel slice-thickness
+condition is
+
+\[
+\frac{1}{\cos(200~\mathrm{mrad})}\approx1.02,
+\]
+
+so the axial sampling bound is tightened by only about 2\%. The transverse
+grid sets a separate limit as it determines the largest scattering
+angle that can be represented without aliasing. A real-space pixel
+size $\Delta x$ gives a maximum transverse spatial frequency $k_{\perp,\mathrm{Nyq}}=1/(2\Delta x)$.
+Since $k_{\perp}=k_{0}\sin\theta$ and $k_{0}=1/\lambda$, the corresponding
+Nyquist angle is
+
+\[
+\theta_{\mathrm{Nyq}}=\arcsin\!\left(\frac{\lambda}{2\Delta x}\right)\approx320~\mathrm{mrad}.
+\]
+
+Here we used $\lambda\approx0.025\,\text{\AA}$ at 200~keV and $\Delta x=0.04\,\text{\AA}$.
+This angle is still far from the evanescent boundary at $\theta=90^{\circ}$,
+where the square root in the ASM kernel becomes singular. (Jean Luc
+needs to add a section here about sampling)
+
+\section{Discussion}
+
+\label{sec:discussion}
+
+The discussion part will adress several points. Firstly the interest
+of the ODE will be discussed. Secondly, the surprising accuracy of
+WP-MS will be analysed. Thirdly, the comparaison between F-MS and
+AS-MS will be detailed. The conclusion part will summarize of the
+important consequences of these discussions and results.
+
+\subsection{ODE Discussion}
+
+\label{sec:ODEdiscussion}
+
+ODE is the best numerical solution to the generalized static Helmoz
+equation, but in fact there exists many ways to solve an ODE equations.
+This is a central problem physics and engineering and powerful mathemiatical
+and numerical tools have been developp to solve them. In engineering,
+finite element calculations is certainly the better instrument to
+solve these kind of ODE. For instance ODE equations are at the core
+the comsol project and language paradism like python or matlab have
+develop similar FE solutions. One issue of this approach it is that
+they are very technical and many physicists and electron microscopists
+are not specialist of these fields. PROS : black boxes (COMSOL) are
+available to solve this type of problem (pourquoi ne pas le faire
+justement avec les licenses du LETI et via Matthieu pour un autre
+papier ???? ) CONS : c1) mesh size have to be small to retain all
+the accuracy c2) consequently if one wants to have a resolution approaching
+$\lambda$, which will be designated as $\lambda$-simulations, hudge
+meshed have to be used and computation time is enormous. c3) it seems
+difficult to use these approaches even in simple standard $\lambda$-simulations
+of perfect crystals. So using this kind of simulations in phase-retrieval
+algorithms with a resolution approaching $\lambda$, like ptychography
+is presently unpracticable. This is why more numerical efficient algorithm
+like F-MS have to be developped. (6h54 est-ce que je continue d'écrire
+les idées sur cette partie ODE ? non je crois que j'ai l'essentiel
+pour l'instant donc je poursuis à la parite suivante NON j'oubliais
+l'autre idée ) c4) Another annoying point is that most of the publications
+citing ODE resolution of the Helmoz equation does not detail in length
+the ODE solver that have and it is then difficult to reproduce their
+result. This is why in this paper we have choosen to give all the
+details of our ODE solver in the supplementary github site c5) In
+this paper the ODE solver was used only to validate the 3 other methods
+on a very simple gold crystal and see the main approximations of the
+3 other methods. As ODE results is very close, to other methods even
+for this high-Z we think it does not need to repeat the ODE for the
+other systems that are study in this paper.
+
+\subsection{WP-MS approach}
+
+\label{sec:WP-MSapproach}
+
+- surprising how it works well in spite of it crude approach ... -
+explanations could be that (i) it can work well in EM because the
+index n in matter is rather constant every except at the core the
+atoms and (ii) it turns out that this approximation is not worse,
+but even apparently better, that the traditionnal MS. Supposing the
+wave length in matter is constant is also a very crude and simplistic
+supposition, but it turns to be working quite well in many situations
+of EM (see next sub-chapter) - the core of physics is to develop model
+that mimic the results of experiments. Most of the time, these models
+are a simplification of what really happen in matter but the interest
+of the model is not the representation of matter but their habiities
+to reproduce matter behavior for a given experiment. Models approach
+the behavior of matter in certain conditions but are not a perfect
+complete description of matter. A model becomes interesting when it
+is efficient and simple. - a point interesting to discuss is the change
+of wavelength that happen in the WP-MS as it also happen in Bloch
+wave methods. Is that in change in wavelength physical ? Does it really
+happen in matter ? If yes, how coherent, a key point in ptychography,
+can be preserved ? This paper will not give an exhausting answer to
+this question. We will just give the starting following analysis :
+the change of a wavelength in WP-MS is the just a technical and simple
+representation of what happens in the experiment and it can be said
+that in this static representaiton of beam propagation there is indeed
+a change of wavelength in the piece of sample. But this wave length
+is not really the wavelength that is linked to coherence : coherence
+and interference effect does happen in spite of this wave length changes.
+Cohenrence is a dynamic effect (?) and what is important in coherence
+is the pulsation part that varies with time; this part is linked to
+the energy of the electron and this part is not consider in the present
+WP-MS static approach.
+
+\subsection{F-MS versus AS-MS }
+
+\label{sec:F-MSversusAS-MS } - x1 is the key parameter: AS-MS is
+important only for simulations where x1 approaches $\lambda$, which
+we have designated as $\lambda$-simulations - develop x1, g1, angles-wave
+link, evanescent waves ?? - discussion of the singular point at k0
+- but in MS the difference can more important than in free space propagator
+(demander à AI pourquoi ? parce qu’il y a en plus de la doiffraction
+à grand angle par les atomes !!! tout simplement)
+
+- up to now, only few papers have performed $\lambda$-simulations
+because it was not needed in TEM to reproduce the experimental images.
+As resolution in TEM is approaching $\lambda$, do we need to need
+to have more accuration simulation models, especially if someone is
+not only interested in reproducing visually the experience but want
+to use this model to reconstruct a 3D-model of the sample. - - in
+experimental simulations, the wave-propagation model is not the only
+limiting factors. Energy spread of the incident beam, atom vibrations,
+sample and electronic drifts, lense and detector imperfections will
+have their own contribution to the what is called the stobb-factors
+in EM. - the purpose of these papers was not analysed all these effects
+but give (i) a short picture of the different efficient numerical
+approach that can be use to model the electron propagation in matter
+(ii) focus on the 3 most simple and efficient ones (iii) introduce
+the WP- , well known in optics but was never consider in EM, it could
+be an efficient way to introduce back-propagation (that was no)
+
+- the aim of this paper was to introduce and use efficient models
+that could be useful in the on-going present development, especially
+ptychography and phase reconstruction. Much more work will be neede
+to see the impact the new models in phase reconstruction. (7h41)
+
+The results point to the Fresnel free-space propagator as the main
+limitation of F-MS in the high-angle and thick-specimen regimes tested
+here. In the Au~{[}100{]} ODE benchmark, the discrepancy appears
+first in the 135~mrad beam and only later in the central beam, after
+the incorrectly propagated diffracted components have had enough thickness
+to interfere back into it. In the Si~{[}111{]} CBED calculation,
+the F-MS peak displacements follow the parabolic-versus-exact dispersion
+error, while AS-MS remains close to WP-MS over the measured angular
+range. In the thick Au~{[}100{]} CBED calculation, the F-MS amplitude
+error becomes roughly an order of magnitude larger than the AS-MS
+error beyond about 10~nm. These observations indicate that the principal
+F-MS error is the accumulated longitudinal phase error from the parabolic
+Fresnel propagator.
+
+AS-MS removes most of the error in the F-MS method by changing only
+the propagator in the propagation step. The Fresnel kernel is replaced
+by the exact one-way angular-spectrum kernel, while the transmission
+step and FFT structure are unchanged. WP-MS makes a further correction
+by allowing the propagation kernel to depend on the local electrostatic
+refractive index, so the wavelength can change with the projected
+potential inside each slice. This makes WP-MS the more complete one-way
+split-step model, and it is closest to the ODE reference in the Au~{[}100{]}
+benchmark. Under the high-energy conditions considered here, however,
+this extra local-wavelength correction is smaller than the correction
+obtained by removing the Fresnel approximation. For these specimens
+and energies, the main source of error is the paraxial free-space
+dispersion relation rather than the absence of a potential-dependent
+wavelength in the propagation step.
+
+The silicon calculation shows that the same propagator error is not
+limited to the most severe high-$Z$ case. Silicon scatters more weakly
+than gold, so the CBED amplitude difference is smaller than in the
+thick Au~{[}100{]} calculation. However, the F-MS peak shifts still
+follow the angular dispersion error, while AS-MS remains close to
+WP-MS across the measured range. A conventional image simulation can
+hide part of this error if the transfer function or objective aperture
+suppresses the affected Fourier components, whereas CBED and ptychographic
+forward models will use the diffraction-plane intensities directly
+and the error between methods will be more prominent.
+
+In particular in a ptychographic reconstruction, the forward model
+predicts detector intensities for each probe position. If the propagator
+gives the wrong high-angle amplitudes, peak positions, or accumulated
+phase through a thick specimen, the optimization can compensate through
+the recovered potential. The thick Au~{[}100{]} CBED calculation
+shows that this modeling error is much larger for F-MS than for AS-MS
+after approximately 10~nm. For forward models that already use F-MS,
+most of the wide-angle correction can be recovered by replacing $\exp(-i\pi k^{2}_{\perp}\Delta z/k_{0})$
+with $\exp(2\pi i\Delta z[\sqrt{k^{2}_{0}-k^{2}_{\perp}}-k_{0}])$,
+while keeping the same FFT structure, transmission step, and per-slice
+computational complexity. The sampling estimate above shows that the
+corresponding sampling penalty is only a few percent under the TEM
+conditions considered here.
+
+The comparison here is limited to high-energy, forward-scattering
+calculations where the free-space dispersion error is larger than
+the local wavelength correction. WP-MS should be tested separately
+at lower accelerating voltages, for thicker high-$Z$ specimens, and
+for slice thicknesses where the potential-dependent wavelength change
+becomes a comparable source of phase error. Its main advantage in
+those tests is that it provides a differentiable one-way method with
+a propagation kernel that depends on the local electrostatic refractive
+index, that can make use of the computational efficiency of the Fourier
+transform
+
+\section{Conclusion}
+
+We adapted the optimised Wave Propagation Method developed in light
+optics to electron microscopy, giving a wave propagation multislice
+(WP-MS) method that tracks high-angle propagation and local wavelength
+changes within a differentiable split-step framework, that can make
+efficient use of the Fourier transform. We then compared F-MS, AS-MS,
+and WP-MS in three complementary settings: an Au~{[}100{]} ODE benchmark,
+a lower-$Z$ Si~{[}111{]} CBED calculation, and a thick Au~{[}100{]}
+CBED calculation.
+
+Across these tests, replacing the Fresnel kernel with the exact angular-spectrum
+kernel accounts for most of the improvement over conventional multislice.
+WP-MS is consistently the most complete one-way model and is closest
+to the ODE reference in the Au~{[}100{]} benchmark, but its additional
+accuracy over AS-MS is small under the high-energy conditions tested
+here. The main practical recommendation is that for high-angle elastic
+forward simulations where F-MS is still being used, AS-MS should be
+the default standard, because it removes the dominant paraxial dispersion
+error without changing the basic FFT-based multislice workflow.
+
+Future work could extend the WP-MS toward a bidirectional formulation
+that can include backscattering, and then benchmark it against FC-MS
+in lower-energy simulations, and measure how F-MS, AS-MS, and WP-MS
+affect ptychographic reconstructions across specimen thickness, accelerating
+voltage, and atomic number.
+
+\bibliographystyle{elsarticle-num}\bibliography{../sample}
+
+\end{document}

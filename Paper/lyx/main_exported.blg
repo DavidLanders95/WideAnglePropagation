@@ -1,0 +1,52 @@
+This is BibTeX, Version 0.99e
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main_exported.aux
+Reallocating 'name_of_file' (item size: 1) to 15 items.
+The style file: elsarticle-num.bst
+Reallocating 'name_of_file' (item size: 1) to 10 items.
+Database file #1: ../sample.bib
+Warning--empty journal in Bethe_theorie_1928
+Warning--empty year in Bethe_theorie_1928
+Warning--empty year in Hirsch1965
+You've used 25 entries,
+            2952 wiz_defined-function locations,
+            862 strings with 10314 characters,
+and the built_in function-call counts, 8123 in all, are:
+= -- 847
+> -- 216
+< -- 2
++ -- 88
+- -- 63
+* -- 689
+:= -- 1091
+add.period$ -- 47
+call.type$ -- 25
+change.case$ -- 27
+chr.to.int$ -- 6
+cite$ -- 28
+duplicate$ -- 207
+empty$ -- 886
+format.name$ -- 81
+if$ -- 2054
+int.to.chr$ -- 0
+int.to.str$ -- 25
+missing$ -- 27
+newline$ -- 109
+num.names$ -- 25
+pop$ -- 131
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 0
+skip$ -- 485
+stack$ -- 0
+substring$ -- 539
+swap$ -- 73
+text.length$ -- 0
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 0
+warning$ -- 3
+while$ -- 68
+width$ -- 27
+write$ -- 253
+(There were 3 warnings)
