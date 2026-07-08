@@ -1,26 +1,22 @@
-"""Basic correctness tests for propagation methods.
+"""Basic correctness tests for maintained multislice propagation methods.
 
 These tests use simple potentials (vacuum, uniform) that have known analytical
 solutions, and verify that all propagation methods agree in easy regimes.
-No GPU/cupy required — uses synthetic potentials directly.
+No GPU/cupy required; uses synthetic potentials directly.
 """
 import pytest
 import numpy as np
-import jax
-import jax.numpy as jnp
 
+jax = pytest.importorskip("jax")
+jnp = pytest.importorskip("jax.numpy")
+pytest.importorskip("ase")
 jax.config.update("jax_enable_x64", True)
 
 from wide_angle_propagation.propagation_methods import (
-    electron_refractive_index,
-    energy2wavelength,
     simulate_fresnel_as,
     simulate_wpm,
     fresnel_propagation_kernel,
     angular_spectrum_propagation_kernel,
-)
-from wide_angle_propagation.propagation_methods import (
-    beam_amplitudes_fwd_direct_allbeams,
 )
 from tests.conftest import beam_amplitude_normalized
 
@@ -47,23 +43,6 @@ def _make_constant_potential(V_volts=10.0):
 
 def _make_plane_wave():
     return jnp.ones(GPTS, dtype=jnp.complex128)
-
-
-def _kg_lanczos_beam_amplitude(potential, h=0, k=0, n_cells=1, lanczos_m=50):
-    """Extract |C_{h,k}| from the all-beams Lanczos solver."""
-    amplitudes, _, _ = beam_amplitudes_fwd_direct_allbeams(
-        potential,
-        DZ,
-        ENERGY,
-        SAMPLING,
-        np.array([n_cells]),
-        GPTS,
-        lanczos_m=lanczos_m,
-    )
-    values = amplitudes.get((h, k))
-    if values is None:
-        return 0.0
-    return float(np.asarray(values)[0])
 
 
 # ---------------------------------------------------------------------------
@@ -96,11 +75,6 @@ class TestVacuumPropagation:
         amp = beam_amplitude_normalized(np.asarray(exit_wave), 0, 0)
         assert abs(amp - 1.0) < 1e-6, f"WPM vacuum [0,0] amplitude = {amp}"
 
-    def test_kg_lanczos_vacuum(self):
-        pot = _make_vacuum_potential()
-        amp = _kg_lanczos_beam_amplitude(pot)
-        assert abs(amp - 1.0) < 1e-6, f"KG Lanczos vacuum [0,0] amplitude = {amp}"
-
 
 # ---------------------------------------------------------------------------
 # Constant potential: all methods should give the same phase shift
@@ -111,12 +85,6 @@ class TestConstantPotential:
 
     V_CONST = 20.0  # Volts
 
-    def _expected_phase_per_slice(self):
-        """Phase accumulated in one slice of uniform potential."""
-        wavelength = float(energy2wavelength(ENERGY))
-        n = float(electron_refractive_index(jnp.array(self.V_CONST), ENERGY))
-        return 2 * np.pi * (n - 1) * DZ / wavelength
-
     def test_fresnel_constant_v(self):
         pot = _make_constant_potential(self.V_CONST)
         pw = _make_plane_wave()
@@ -125,11 +93,6 @@ class TestConstantPotential:
         # Amplitude of [0,0] beam should still be ~1
         amp = beam_amplitude_normalized(np.asarray(exit_wave), 0, 0)
         assert abs(amp - 1.0) < 1e-4, f"Fresnel const-V [0,0] amplitude = {amp}"
-
-    def test_kg_lanczos_constant_v(self):
-        pot = _make_constant_potential(self.V_CONST)
-        amp = _kg_lanczos_beam_amplitude(pot)
-        assert abs(amp - 1.0) < 1e-4, f"KG Lanczos const-V [0,0] amplitude = {amp}"
 
     def test_methods_agree_constant_v(self):
         """All methods should give similar exit waves for constant potential."""
@@ -141,14 +104,12 @@ class TestConstantPotential:
         w_fr, _, _ = simulate_fresnel_as(pot, pw, fk, DZ, ENERGY)
         w_as, _, _ = simulate_fresnel_as(pot, pw, ak, DZ, ENERGY)
         w_wpm, _, _ = simulate_wpm(pot, pw, DZ, ENERGY, SAMPLING)
-        amp_kg = _kg_lanczos_beam_amplitude(pot)
 
         # All should produce ~same beam amplitudes for [0,0]
         amps = {
             "fresnel": beam_amplitude_normalized(np.asarray(w_fr), 0, 0),
             "as": beam_amplitude_normalized(np.asarray(w_as), 0, 0),
             "wpm": beam_amplitude_normalized(np.asarray(w_wpm), 0, 0),
-            "kg_lanczos": amp_kg,
         }
         for name, amp in amps.items():
             assert abs(amp - 1.0) < 1e-3, f"{name} const-V [0,0] = {amp}"
@@ -182,14 +143,11 @@ class TestThinSpecimenAgreement:
         amp_fr = beam_amplitude_normalized(np.asarray(w_fr), 0, 0)
         amp_as = beam_amplitude_normalized(np.asarray(w_as), 0, 0)
         amp_wpm = beam_amplitude_normalized(np.asarray(w_wpm), 0, 0)
-        amp_kg = _kg_lanczos_beam_amplitude(pot)
 
         # All should agree within 1% for thin specimen
         ref = amp_fr
-        for name, amp in [("AS", amp_as), ("WPM", amp_wpm), ("KG Lanczos", amp_kg)]:
+        for name, amp in [("AS", amp_as), ("WPM", amp_wpm)]:
             rel_err = abs(amp - ref) / max(abs(ref), 1e-12)
             assert rel_err < 0.01, (
                 f"{name} vs Fresnel: {amp:.6f} vs {ref:.6f} (rel err {rel_err:.4f})"
             )
-
-

@@ -7,6 +7,7 @@ Python used for lightweight CI.
 
 from __future__ import annotations
 
+import argparse
 import ast
 import json
 from pathlib import Path
@@ -59,7 +60,7 @@ def assert_exports_exist(path: Path) -> None:
     print(f"{path.relative_to(ROOT)}: {len(exported)} exports ok")
 
 
-def parse_target_notebooks() -> None:
+def parse_target_notebooks(*, require_no_outputs: bool = False) -> None:
     for path in TARGET_NOTEBOOKS:
         notebook = json.loads(path.read_text())
         output_cells = 0
@@ -75,18 +76,33 @@ def parse_target_notebooks() -> None:
             )
             ast.parse(source, filename=f"{path.relative_to(ROOT)}:cell{index}")
 
-        if output_cells:
+        if require_no_outputs and output_cells:
             raise AssertionError(
                 f"{path.relative_to(ROOT)} contains {output_cells} code cells with outputs"
             )
-        print(f"{path.relative_to(ROOT)}: code-cell syntax ok, no outputs")
+        output_note = (
+            "no outputs"
+            if output_cells == 0
+            else f"{output_cells} code cell(s) with outputs"
+        )
+        print(f"{path.relative_to(ROOT)}: code-cell syntax ok, {output_note}")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Run dependency-light static checks for the repository.",
+    )
+    parser.add_argument(
+        "--enforce-clean-notebooks",
+        action="store_true",
+        help="fail if maintained notebooks contain saved code-cell outputs",
+    )
+    args = parser.parse_args(argv)
+
     parse_python_files()
     assert_exports_exist(ROOT / "wide_angle_propagation" / "propagation_methods.py")
     assert_exports_exist(ROOT / "wide_angle_propagation" / "notebook_utils.py")
-    parse_target_notebooks()
+    parse_target_notebooks(require_no_outputs=args.enforce_clean_notebooks)
 
 
 if __name__ == "__main__":

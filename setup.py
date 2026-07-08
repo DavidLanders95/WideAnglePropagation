@@ -27,7 +27,6 @@ setup(
         "numpy",
         "jax",
         "jaxlib",
-        "jax-dataclasses",
         "abtem",
         "ase",
         "matplotlib",
@@ -41,9 +40,6 @@ setup(
             "jupyter",
             "notebook",
         ],
-    },
-    package_data={
-        "wide_angle_propagation": ["*.cu"],
     },
     include_package_data=True,
 )

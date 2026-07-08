@@ -1,21 +1,6 @@
 """Shared fixtures for wide-angle propagation tests."""
 import pytest
 import numpy as np
-import jax
-import jax.numpy as jnp
-
-jax.config.update("jax_enable_x64", True)
-
-from wide_angle_propagation.propagation_methods import (
-    electron_refractive_index,
-    energy2wavelength,
-    energy2sigma,
-    simulate_fresnel_as,
-    simulate_wpm,
-    fresnel_propagation_kernel,
-    angular_spectrum_propagation_kernel,
-    get_frequencies,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -68,29 +53,6 @@ _raw_data_Au_Beam_0_0_Klein_Gordon_MS = """0.06421232876712413, 0.99847328244274
 24.14383561643836, 0.8118320610687024
 24.807363013698637, 0.8030534351145039"""
 
-_raw_data_Au_Beam_0_28_Klein_Gordon_FWD = """0.22062721060899548, 0.00022950819672130918
-0.7942772332571906, 0.000852459016393449
-1.500467420321705, 0.0018360655737704942
-2.339342334788604, 0.0033770491803278707
-3.0016335617428496, 0.004622950819672133
-4.680202580931187, 0.008819672131147538
-5.828562754792266, 0.011508196721311474
-7.373218261196406, 0.013475409836065575
-8.475824249959047, 0.013901639344262293
-9.798479197386307, 0.013770491803278686
-10.768593209394673, 0.013901639344262293
-11.915700504042945, 0.014885245901639345
-12.908872312333159, 0.01639344262295082
-14.41020711057142, 0.01940983606557377
-15.05035610682242, 0.020524590163934424
-16.373974807490292, 0.02170491803278688
-18.093647902391076, 0.02183606557377049
-19.32792667765346, 0.02144262295081967
-21.35669953065218, 0.02219672131147541
-22.901379130887335, 0.024196721311475405
-24.0047802160735, 0.02570491803278688
-24.93111573712666, 0.02626229508196721"""
-
 _raw_data_Au_Beam_0_28_Klein_Gordon_MS = """0.06620984763060989, 0.00009836065573769898
 0.8162989948053649, 0.0008196721311475447
 1.478421564942515, 0.0018360655737704873
@@ -124,11 +86,6 @@ def _parse_and_interpolate(raw_data):
 @pytest.fixture(scope="session")
 def paper_beam_0_0_kg_ms():
     return _parse_and_interpolate(_raw_data_Au_Beam_0_0_Klein_Gordon_MS)
-
-
-@pytest.fixture(scope="session")
-def paper_beam_0_28_kg_fwd():
-    return _parse_and_interpolate(_raw_data_Au_Beam_0_28_Klein_Gordon_FWD)
 
 
 @pytest.fixture(scope="session")
@@ -176,6 +133,7 @@ def _make_abtem_potential(atoms, parametrization="lobato"):
 @pytest.fixture(scope="session")
 def au_potential_lobato(au_atoms):
     """Potential array (V/Å) and slice thickness from Lobato parametrization."""
+    jnp = pytest.importorskip("jax.numpy")
     cupy = pytest.importorskip("cupy")
     pot_obj, slice_dz = _make_abtem_potential(au_atoms, "lobato")
     pot_array = jnp.array(cupy.asnumpy(pot_obj.build(lazy=False).array / slice_dz))
@@ -185,6 +143,7 @@ def au_potential_lobato(au_atoms):
 @pytest.fixture(scope="session")
 def au_potential_wk(au_atoms):
     """Potential array (V/Å) and slice thickness from Weickenmeier-Kohl parametrization."""
+    jnp = pytest.importorskip("jax.numpy")
     cupy = pytest.importorskip("cupy")
     from tests.wk_parametrization import make_wk_parametrization
     wk_param = make_wk_parametrization()
@@ -205,4 +164,5 @@ def au_sampling(au_atoms):
 @pytest.fixture(scope="session")
 def plane_wave_128():
     """Uniform plane wave on 128x128 grid (complex128)."""
+    jnp = pytest.importorskip("jax.numpy")
     return jnp.ones(AU_GPTS, dtype=jnp.complex128)

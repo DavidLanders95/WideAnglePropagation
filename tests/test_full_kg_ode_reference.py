@@ -6,9 +6,13 @@ multislice approximation.
 """
 
 import numpy as np
-import jax
-import jax.numpy as jnp
+import pytest
 from scipy.linalg import expm
+
+jax = pytest.importorskip("jax")
+jnp = pytest.importorskip("jax.numpy")
+pytest.importorskip("ase")
+pytest.importorskip("diffrax")
 
 from wide_angle_propagation.propagation_methods import (
     electron_refractive_index,
@@ -311,6 +315,56 @@ class TestUniformMediumReference:
 
 
 class TestExactReferenceConvergence:
+    def test_matches_exact_single_slice_matrix_exponential(self):
+        potential = _small_nonuniform_stack()[:1]
+        probe = _small_probe()
+        initial_phi = _forward_vacuum_phi(probe, ENERGY, SMALL_SAMPLING)
+
+        exact_wave, exact_phi, exact_wavefronts = _exact_full_kg_stack(
+            potential,
+            probe,
+            initial_phi,
+            SMALL_DZ,
+            ENERGY,
+            SMALL_SAMPLING,
+        )
+
+        ew, phi, _, wavefronts = simulate_kg_ode_full(
+            jnp.asarray(potential),
+            jnp.asarray(probe),
+            SMALL_DZ,
+            ENERGY,
+            SMALL_SAMPLING,
+            initial_phi=jnp.asarray(initial_phi),
+            rtol=1e-10,
+            atol=1e-12,
+        )
+
+        np.testing.assert_allclose(
+            np.asarray(ew),
+            exact_wave,
+            rtol=1e-6,
+            atol=1e-7,
+            err_msg=(
+                "Full KG ODE should match the exact one-slice matrix "
+                "exponential reference"
+            ),
+        )
+        np.testing.assert_allclose(
+            np.asarray(phi),
+            exact_phi,
+            rtol=1e-6,
+            atol=1e-7,
+            err_msg="One-slice exit derivative should match the exact reference",
+        )
+        np.testing.assert_allclose(
+            np.asarray(wavefronts),
+            exact_wavefronts,
+            rtol=1e-6,
+            atol=1e-7,
+            err_msg="One-slice saved wavefronts should match the exact reference",
+        )
+
     def test_matches_exact_multislice_matrix_exponential(self):
         potential = _small_nonuniform_stack()
         probe = _small_probe()
@@ -404,6 +458,61 @@ class TestExactReferenceConvergence:
 
 
 class TestSecondOrderStateHandling:
+    def test_sequential_calls_match_full_stack_when_phi_is_carried(self):
+        potential = _small_discontinuous_stack()
+        probe = _small_probe()
+
+        full_wave, full_phi, _, full_wavefronts = simulate_kg_ode_full(
+            jnp.asarray(potential),
+            jnp.asarray(probe),
+            SMALL_DZ,
+            ENERGY,
+            SMALL_SAMPLING,
+            rtol=1e-9,
+            atol=1e-11,
+        )
+
+        state = jnp.asarray(probe)
+        phi = None
+        sequential_wavefronts = []
+        for idx in range(potential.shape[0]):
+            state, phi, _, _ = simulate_kg_ode_full(
+                jnp.asarray(potential[idx:idx + 1]),
+                state,
+                SMALL_DZ,
+                ENERGY,
+                SMALL_SAMPLING,
+                initial_phi=phi,
+                rtol=1e-9,
+                atol=1e-11,
+            )
+            sequential_wavefronts.append(np.asarray(state))
+
+        sequential_wavefronts = np.stack(sequential_wavefronts)
+
+        np.testing.assert_allclose(
+            np.asarray(full_wavefronts),
+            sequential_wavefronts,
+            rtol=1e-6,
+            atol=1e-7,
+            err_msg=(
+                "Full KG wavefronts should match sequential one-slice calls "
+                "when exit_phi is passed back as initial_phi"
+            ),
+        )
+        np.testing.assert_allclose(
+            np.asarray(full_wave),
+            sequential_wavefronts[-1],
+            rtol=1e-6,
+            atol=1e-7,
+        )
+        np.testing.assert_allclose(
+            np.asarray(full_phi),
+            np.asarray(phi),
+            rtol=1e-6,
+            atol=1e-7,
+        )
+
     def test_slice_by_slice_calls_must_carry_exit_phi(self):
         potential = _small_discontinuous_stack()
         probe = _small_probe()
