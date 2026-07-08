@@ -44,7 +44,6 @@ Paper/*.fdb_latexmk
 Paper/*.fls
 Paper/*.log
 Paper/*.out
-Paper/*.pdf
 Paper/*.spl
 Paper/*.synctex*
 Paper/figures/
