@@ -57,15 +57,17 @@ exit_wave, diffraction_pattern, wavefronts = simulate_fresnel_as(
 
 ```bash
 python scripts/check_static.py
-pytest tests/test_basic.py
+python scripts/check_static.py --enforce-clean-notebooks
+pytest tests/test_multislice_method_basics.py
 pytest
 ```
 
 `scripts/check_static.py` validates package syntax, exported names, and the
 three maintained notebooks without importing the GPU/scientific runtime stack.
-The pytest suite requires JAX, and some integration tests and notebooks also
-require GPU dependencies (`cupy`, JAX with the appropriate backend, and abTEM
-data generation).
+Use `--enforce-clean-notebooks` when you want saved notebook outputs to fail
+the check. The pytest suite requires JAX, and some integration tests and
+notebooks also require GPU dependencies (`cupy`, JAX with the appropriate
+backend, and abTEM data generation).
 
 ## Notes
 

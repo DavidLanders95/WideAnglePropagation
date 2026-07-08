@@ -28,8 +28,6 @@
         }%
     }%
 }
-\usepackage{tikz}
-\usetikzlibrary{positioning}
 \usepackage[colorlinks=true, allcolors=blue]{hyperref}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 
@@ -82,16 +80,16 @@ electron microscopy \sep multislice \sep electron diffraction \sep TEM image sim
 \section{Introduction}
 \label{sec:introduction}
 
-The traditional image simulation workflow in electron microscopy assumed
-a structural model, calculated an image from that model, 
-and qualitatively compared the agreement with experiment via
+The traditional image simulation workflow in electron microscopy assumes
+a structural model, calculates an image from that model,
+and qualitatively compares the agreement with experiment via
 trial and error. In modern reconstruction workflows, including
 ptychography and related phase-retrieval methods, the recorded experimental
 data are now used to
-recover a projected potential, phase shift, or three-dimensional structure, whereby the
+recover a projected potential, phase shift, or three-dimensional structure, where the
 electron--matter interaction model is not merely a tool for visual
 comparison after the experiment, but part of the reconstruction algorithm
-itself. The accuracy of the forward model is therefore now a central limitation on
+itself. The accuracy of the forward model is therefore of critical importance to
 the accuracy of the recovered structure.
 
 At the most fundamental level, electron propagation through matter is a
@@ -536,6 +534,13 @@ weighted superposition of the fields propagated at the bounding indices:
 u(x,y) = (1 - w) \cdot u_L(x,y) + w \cdot u_R(x,y).
 \end{equation}
 
+The local refractive index first determines the two bounding reference
+indices $n_L$ and $n_R$, and the weight $w$ specifies the fractional position
+of $n(x,y)$ between those two values after the smoothstep mapping. The fields
+$u_L$ and $u_R$ are the full propagated fields obtained by assuming homogeneous
+media with refractive indices $n_L$ and $n_R$, respectively, and the output
+pixel is formed from their local two-bin mixture. 
+
 Equivalently, the
 WP-MS update can be written as
 \begin{equation}
@@ -581,13 +586,32 @@ the slice error reaches the required tolerance.
     \centering
     \safeincludegraphics[width=\textwidth,keepaspectratio]{wpm_binning_diagnostics}
     \caption{Diagnostics of the differentiable WP-MS binning strategy for a representative
-    MoS$_2$ slice. Top row: discretized refractive-index map (bin lower bound $n_L$),
-    smooth interpolation weights $w$, and histogram of the true refractive-index
-    distribution with superimposed bin centers. Bottom row: spatial approximation error
-    $n_{\mathrm{true}}-n_{\mathrm{fit}}$, error histogram on a log scale, and a 1D
-    cross-section comparing the original and fitted refractive-index profiles.}
+    Au~[100] slice. (a) Lower-bin map $n_L$, showing which reference interval
+    contains each pixel. (b) Smooth interpolation weight $w$, where low values
+    favour the lower-bin propagated field $u_L$ and high values favour the
+    upper-bin propagated field $u_R$. (c) Histogram of the true refractive-index
+    distribution with the reference-bin positions superimposed. (d) Spatial
+    approximation error $n_{\mathrm{true}}-n_{\mathrm{fit}}$. (e) Histogram of
+    the fitting error on a log scale. (f) One-dimensional cross-section
+    comparing the original refractive-index profile with the interpolated
+    profile $n_{\mathrm{fit}}$.}
     \label{fig:wpm_binning_diagnostics}
 \end{figure}
+
+Figure~\ref{fig:wpm_binning_diagnostics} illustrates how the two-bin
+interpolation scheme is applied to a representative slice. Panels (a) and (b)
+separate the binning construction into the interval assignment and the
+interpolation coordinate. In
+panel (a), the lower-bin map identifies the reference interval used at each
+pixel, whereas panel (b) gives the position of the true refractive index inside
+that interval through the interpolation weight. The diagnostic
+refractive-index fit,
+$n_{\mathrm{fit}}=(1-w)n_L+w n_R$, uses the same two-bin interpolation as the
+field update. Panels (c), (e), and (f) show that the chosen non-uniform binning
+resolves the refractive-index distribution for this slice, while panel (d)
+shows that the residual interpolation error is spatially concentrated around
+steep atomic peaks. This supports replacing a separate propagation for every
+distinct pixel value by a finite bank of propagated fields.
 
 In practice, WP-MS is most useful with GPU acceleration. For the simulations in
 this work, $N_{\mathrm{bins}}$ between 16 and 128 was sufficient for
@@ -599,13 +623,14 @@ resolved the refractive-index distribution of the sample.
 
 We use an ordinary differential equation (ODE) reference obtained by applying a
 method-of-lines discretisation to the second-order Klein--Gordon Helmholtz
-equation, representing the transverse coordinates on a periodic FFT grid while
-leaving $z$ as the evolution variable. In this formulation, the transverse
-pixel size sets the largest retained transverse spatial frequency, or
-equivalently the largest scattering angle represented on the grid, rather than
-resolving the full rapidly oscillating electron wavelength in every spatial
-direction, while the adaptive ODE integration along $z$ handles the rapid
-longitudinal oscillation. 
+equation. The transverse coordinates are represented on the same laterally
+periodic FFT grid used by the multislice methods, while $z$ is left as the
+continuous evolution variable. The transverse pixel size and field of view
+therefore set the retained transverse spatial frequencies, or equivalently the
+largest scattering angles represented on the grid. The method does not attempt
+to resolve the rapidly oscillating electron wavelength in all three spatial
+directions on a Cartesian mesh; instead, the adaptive ODE integration resolves
+the rapid longitudinal oscillation along $z$.
 
 Substituting $n_\mathrm{KG}$ into the Helmholtz equation gives
 \begin{equation}
@@ -629,12 +654,18 @@ Introducing $\phi=\partial_z\psi$ gives the equivalent first-order system
 \end{pmatrix}.
 \end{equation}
 We integrate this system with an adaptive high-order Runge--Kutta method,
-evaluating the transverse Laplacian spectrally using FFTs and applying the
-potential term by pointwise multiplication in real space. The potential is
-treated as constant within each slice, and the adaptive integration is forced to
-land on the slice boundaries, so the result is an accurate solution, up to the
-ODE tolerance, of the transversely band-limited, laterally periodic,
-slice-wise-constant Klein--Gordon Helmholtz problem.
+using the Dopri8 scheme in the implementation, with a maximum internal step
+size set from the largest retained discrete frequency. The transverse Laplacian
+is evaluated spectrally using FFTs, while the $n_\mathrm{KG}^2$ term is applied
+by pointwise multiplication in real space. The discrete potential
+supplied to the solver is interpreted as the slice-averaged electrostatic
+potential, so $n_\mathrm{KG}^2$ is constant in $z$ within each slice and
+discontinuous only at slice boundaries. The adaptive step-size controller is
+clipped at those boundaries, so no accepted ODE step crosses a jump in the
+right-hand side.
+Thus, for a fixed transverse grid and slice stack, the ODE reference solves the
+corresponding periodic FFT-grid Klein--Gordon problem to the specified ODE
+tolerance. 
 
 To initialise the calculation on the forward-propagating vacuum branch, the
 entrance wave $\psi(z=0)$ is supplemented by the longitudinal derivative
@@ -648,27 +679,43 @@ entrance wave $\psi(z=0)$ is supplemented by the longitudinal derivative
 \mathcal F\{\psi(z=0)\}
 \right],
 \end{equation}
-which selects the positive-$k_z$ branch of the incident field in vacuum. We use
-this calculation as the ODE reference because, after this entrance condition,
-the propagated state contains both $\psi$ and $\partial_z\psi$, so the
-subsequent evolution does not impose a one-way propagation approximation and
-any backward-propagating component generated by the discretised second-order
-equation is retained within this initial-value formulation. This is still not a
-full scattering boundary-value problem with radiation conditions imposed on
-both sides of the specimen, and the method remains much more expensive than the
-split-step propagation methods, so it is used here only as a benchmark.
+where the square-root branch is chosen to give the forward-propagating vacuum
+solution, and the decaying branch for any evanescent Fourier components on the
+grid. In our implementation, the same condition is used when no initial
+$\partial_z\psi$ is supplied; when the ODE solve is restarted slice by slice or
+cell by cell, the returned exit derivative must be carried forward as the next
+initial derivative. Otherwise, only $\psi$ is propagated and the second-order
+state has been changed.
 
-With this reference defined, the four methods presented above can be read as
-different approximations to the same scalar Helmholtz problem, after choosing
-either the Klein--Gordon or the relativistically corrected Schr\"odinger
-refractive index. F-MS uses a split-step specimen approximation together with
-the paraxial free-space propagator, AS-MS keeps the same split-step structure
-but restores the exact free-space spherical propagator, and WP-MS approximates
-the one-way propagation operator inside the medium by local homogeneous
-propagation. By contrast, the ODE reference keeps the second-order
-Klein--Gordon Helmholtz equation after transverse discretisation and evolves
-the transverse Laplacian and specimen potential together, which is why it is
-used as the reference calculation in the first numerical experiment.
+The entrance condition is one-way, but the subsequent evolution is not a
+one-way propagation approximation. After $z=0$, the state contains both
+$\psi$ and $\partial_z\psi$, and the second-order system can generate and carry
+the backward-propagating component allowed by the discretised initial-value
+problem.
+In the Au~[100] benchmark, this calculation is applied one unit cell at a time:
+the ODE solve is restarted for the next repeated cell using both the exit
+wavefunction and the exit derivative from the previous cell. Thus the complete
+second-order state is retained across unit cells, rather than being projected
+back onto the forward vacuum branch at each cell boundary. However, the
+calculation is still forward initialised at the entrance of the crystal and does
+not solve a global two-sided scattering problem in which reflections from later
+depths propagate back into earlier depths. Under the high-energy conditions
+considered here, we therefore use the ODE result as a non-paraxial forward
+reference, rather than as a quantitative backscattering calculation. Given the high-energy and weak-potential conditions, the backward-propagating
+component is expected to be small, and the ODE reference is an accurate benchmark for the forward-propagating multislice methods.
+
+With this reference defined, the three multislice methods and the ODE benchmark
+can be seen asdifferent approximations within the same scalar Helmholtz wave equation framework, once
+the refractive-index model is fixed. In the ODE benchmark below, all methods
+use the same slice-wise $n_\mathrm{KG}$ map.
+F-MS uses a split-step specimen approximation together with the paraxial
+free-space propagator, AS-MS keeps the same split-step structure but restores
+the exact free-space spherical propagator, and WP-MS remains one-way but
+approximates propagation inside the medium by local homogeneous propagation.
+By contrast, the ODE reference keeps the second-order Klein--Gordon Helmholtz
+equation after transverse discretisation and evolves the transverse Laplacian
+and specimen potential simultaneously, which is why it is used as the reference
+calculation in the first numerical experiment.
 See Table~\ref{tab:method_timeline} for a summary timeline of the methods
 presented in this work.
 
@@ -734,8 +781,8 @@ closely related developments in light and electron optics}
 \section{Benchmarks and Results}
 \label{sec:results}
 
-We use three numerical experiments to separate validation from practical
-high-angle comparisons. The first reproduces the Au~[100] beam-amplitude
+We use three numerical experiments to validate our methods against an ODE reference and to benchmark them against each other. 
+The first method reproduces the Au~[100] beam-amplitude
 benchmark of Rother and Scheerschmidt~\cite{RotherScheerschmidt2009}, so that
 F-MS, AS-MS, and WP-MS can be compared with an ODE solution of the full
 second-order Klein--Gordon equation. The ODE reference is not used in the
@@ -1030,8 +1077,7 @@ the practical correction at essentially the same per-slice cost as F-MS.
 
 \subsection{Consequences and limits}
 
-The silicon CBED calculation (Fig.~\ref{fig:si_cbed}) shows that the same propagator error is not limited to
-the most severe high-$Z$ case. Silicon scatters more weakly than gold, so the
+The silicon CBED calculation (Fig.~\ref{fig:si111_cbed_combined}) shows that the same propagator error is not limited to the most severe high-$Z$ case. Silicon scatters more weakly than gold, so the
 CBED amplitude differences are smaller than in the thick Au~[100] calculation,
 but the F-MS peak shifts still follow the angular dispersion error. These
 high-angle peaks would often be damped by thermal diffuse scattering in a
@@ -1084,10 +1130,9 @@ reference in the Au~[100] benchmark, but its additional accuracy over AS-MS is
 modest under the high-energy conditions tested here. Its main role in this work
 is to bridge the wave propagation method from scalar optics into electron
 optics and to provide a differentiable local-wavelength extension of
-angular-spectrum multislice. Future work should test it's performance at lower
-accelerating voltages, against FC-MS and
-bidirectional references, and inside ptychographic reconstructions where
-systematic forward-model errors can bias the recovered potential.
+angular-spectrum multislice. Future work should test the WP-MS methods performance at lower
+accelerating voltages, against the bidirectional FC-MS method and inside ptychographic reconstructions where
+systematic forward-model errors could bias the recovered potential.
 
 \bibliographystyle{elsarticle-num}
 \IfFileExists{Paper/sample.bib}{\bibliography{Paper/sample}}{\bibliography{sample}}

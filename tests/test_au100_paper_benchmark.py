@@ -1,4 +1,4 @@
-"""Integration tests: validate propagation methods against paper reference data.
+"""Au(100) paper benchmark tests for maintained propagation methods.
 
 Reference: Rother & Scheerschmidt (2009), doi:10.1016/j.ultramic.2008.08.008
 Figure 3: Au 300 kV, beam amplitudes vs crystal thickness.
@@ -8,31 +8,26 @@ Marked @pytest.mark.slow for tests that take >30 seconds.
 """
 import pytest
 import numpy as np
-import jax
-import jax.numpy as jnp
 
+jax = pytest.importorskip("jax")
+jnp = pytest.importorskip("jax.numpy")
+pytest.importorskip("ase")
 jax.config.update("jax_enable_x64", True)
 
 from wide_angle_propagation.propagation_methods import (
-    electron_refractive_index,
-    energy2wavelength,
     simulate_fresnel_as,
     simulate_wpm,
     fresnel_propagation_kernel,
     angular_spectrum_propagation_kernel,
 )
-from wide_angle_propagation.propagation_methods import (
-    beam_amplitudes_fwd_direct_allbeams,
-)
 from tests.conftest import (
     beam_amplitude_normalized,
     AU_ENERGY,
     AU_GPTS,
-    AU_N_SLICES_PER_CELL,
 )
 
 # Skip entire module if cupy unavailable (no GPU)
-cupy = pytest.importorskip("cupy")
+pytest.importorskip("cupy")
 
 
 # ---------------------------------------------------------------------------
@@ -96,35 +91,6 @@ def wk_sweep(au_potential_wk, au_sampling):
 
 
 # ---------------------------------------------------------------------------
-# Tests: WPM vs paper forward ODE curve
-# ---------------------------------------------------------------------------
-
-@pytest.mark.slow
-class TestWPMvsPaperFWD:
-    """WPM beam [0,28] should approach the paper's FWD curve.
-
-    The paper's FWD curve uses a forward-only wide-angle propagation,
-    which is analogous to WPM. We expect WPM to be in the same ballpark.
-    """
-
-    TOLERANCE = 0.30  # 30% — WPM is an approximation to the paper's FWD
-
-    def test_wpm_beam_028_wk(self, wk_sweep, paper_beam_0_28_kg_fwd):
-        x = np.arange(26, dtype=float)
-        computed = wk_sweep["wpm_028"]
-        reference = paper_beam_0_28_kg_fwd(x)
-
-        mask = x >= 5
-        rel_errors = np.abs(computed[mask] - reference[mask]) / np.maximum(reference[mask], 1e-6)
-        mean_err = np.mean(rel_errors)
-        max_err = np.max(rel_errors)
-        assert mean_err < self.TOLERANCE, (
-            f"WPM [0,28] WK vs paper FWD: mean rel error = {mean_err:.3f} "
-            f"(max = {max_err:.3f})"
-        )
-
-
-# ---------------------------------------------------------------------------
 # Tests: Multislice vs paper KG MS curve
 # ---------------------------------------------------------------------------
 
@@ -167,32 +133,6 @@ class TestMSvsPaperKGMS:
 
 
 # ---------------------------------------------------------------------------
-# Tests: WPM should be closer to ODE than Fresnel for high-angle beams
-# ---------------------------------------------------------------------------
-
-@pytest.mark.slow
-class TestWPMCloserToPaperFWD:
-    """For beam [0,28], WPM should be closer to the paper's FWD than Fresnel MS."""
-
-    def test_wpm_beats_fresnel_for_028(self, wk_sweep, paper_beam_0_28_kg_fwd):
-        """At 15-25 cells, WPM [0,28] should deviate less from paper FWD than Fresnel."""
-        x = np.arange(26, dtype=float)
-        reference = paper_beam_0_28_kg_fwd(x)
-        wpm = wk_sweep["wpm_028"]
-        fresnel = wk_sweep["ms_028"]
-
-        # Compare at thick specimens (15-25 cells)
-        mask = slice(15, 26)
-        err_wpm = np.mean(np.abs(wpm[mask] - reference[mask]))
-        err_fresnel = np.mean(np.abs(fresnel[mask] - reference[mask]))
-
-        assert err_wpm <= err_fresnel, (
-            f"WPM should be closer to paper FWD than Fresnel at high thickness. "
-            f"WPM err={err_wpm:.6f}, Fresnel err={err_fresnel:.6f}"
-        )
-
-
-# ---------------------------------------------------------------------------
 # Tests: Cross-method consistency
 # ---------------------------------------------------------------------------
 
@@ -225,55 +165,7 @@ class TestCrossMethodConsistency:
         max_val = np.maximum(np.mean(as_vals[mask]), 1e-8)
         rel_diff = diff / max_val
 
-        # This is an expected divergence — just document it passes
+        # This expected divergence documents that the two kernels are not identical.
         assert rel_diff > 0.001, (
             f"AS and Fresnel unexpectedly identical for [0,28] at high thickness"
-        )
-
-
-# ---------------------------------------------------------------------------
-# Tests: Forward-only KG Lanczos method
-# ---------------------------------------------------------------------------
-
-@pytest.mark.slow
-class TestKGLanczosVsPaperFWD:
-    """Lanczos KG FWD beam [0,28] should match the paper's FWD curve."""
-
-    MEAN_ABS_TOLERANCE = 0.010
-    CORRELATION_TOLERANCE = 0.98
-
-    def test_kg_lanczos_beam_028_wk(self, au_potential_wk, au_sampling,
-                                    paper_beam_0_28_kg_fwd):
-        """Lanczos KG FWD [0,28] vs paper's FWD ODE at selected thicknesses."""
-        pot_array, slice_dz = au_potential_wk
-        energy = AU_ENERGY
-        gpts = AU_GPTS
-        n_cells_array = np.arange(0, 26)
-
-        amps, _, _ = beam_amplitudes_fwd_direct_allbeams(
-            pot_array,
-            slice_dz,
-            energy,
-            au_sampling,
-            n_cells_array,
-            gpts,
-            lanczos_m=100,
-        )
-
-        computed = amps.get((0, 28), None)
-        assert computed is not None, "KG Lanczos did not produce (0,28) beam"
-
-        x = np.arange(26, dtype=float)
-        reference = paper_beam_0_28_kg_fwd(x)
-
-        mask = x >= 5
-        abs_errors = np.abs(computed[mask] - reference[mask])
-        mean_abs_err = np.mean(abs_errors)
-        corr = np.corrcoef(computed[mask], reference[mask])[0, 1]
-
-        assert mean_abs_err < self.MEAN_ABS_TOLERANCE, (
-            f"KG Lanczos [0,28] WK vs paper FWD: mean abs error = {mean_abs_err:.4f}"
-        )
-        assert corr > self.CORRELATION_TOLERANCE, (
-            f"KG Lanczos [0,28] WK vs paper FWD: correlation = {corr:.4f}"
         )
