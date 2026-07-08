@@ -70,9 +70,7 @@ convergent-beam electron diffraction (CBED) from Si~[111] and Au~[100]. AS-MS
 removes most of the wide-angle error of F-MS at essentially the same per-slice
 computational cost. WP-MS is closest to the ODE reference, but its additional
 accuracy over AS-MS is modest under the high-energy conditions studied here.
-These results identify the regimes where F-MS remains adequate, support AS-MS
-as a practical wide-angle default, and reserve WP-MS for applications requiring
-the most complete one-way split-step model.
+
 \end{abstract}
 
 \begin{keyword}
@@ -84,15 +82,16 @@ electron microscopy \sep multislice \sep electron diffraction \sep TEM image sim
 \section{Introduction}
 \label{sec:introduction}
 
-Image simulations are increasingly used as forward models in electron
-microscopy (EM). In the traditional workflow, a structural model was proposed,
-an image was calculated from that model, and the agreement with experiment was
-improved by trial and error. In modern reconstruction workflows, including
-ptychography and related phase-retrieval methods, the recorded data are used to
-recover a projected potential, phase shift, or three-dimensional structure. The
-electron--matter interaction model is then not merely a tool for visual
-comparison after the experiment; it is part of the reconstruction algorithm
-itself. The accuracy of the forward model is therefore a central limitation on
+The traditional image simulation workflow in electron microscopy assumed
+a structural model, calculated an image from that model, 
+and qualitatively compared the agreement with experiment via
+trial and error. In modern reconstruction workflows, including
+ptychography and related phase-retrieval methods, the recorded experimental
+data are now used to
+recover a projected potential, phase shift, or three-dimensional structure, whereby the
+electron--matter interaction model is not merely a tool for visual
+comparison after the experiment, but part of the reconstruction algorithm
+itself. The accuracy of the forward model is therefore now a central limitation on
 the accuracy of the recovered structure.
 
 At the most fundamental level, electron propagation through matter is a
@@ -108,9 +107,9 @@ tool to simulate the electron-specimen interaction.
 The standard implementation is paraxial Fresnel multislice (F-MS)
 ~\cite{cowley1957scattering,ishizuka1977practical}. F-MS is simple, fast, and
 well suited to conventional high-energy TEM and STEM simulations of thin,
-low-$Z$ specimens. In many experimental comparisons, other uncertainties such as
+low-$Z$ specimens. In many experimental comparisons, uncertainties such as
 thermal diffuse scattering, detector response, specimen drift, or imperfect
-aberration calibration dominate the error budget, so F-MS is often adequate.
+aberration calibration dominate, so F-MS is often adequate.
 However, for low incident energies, thick specimens, high-$Z$ materials, or
 simulations that retain high-angle diffraction information, F-MS can introduce
 significant errors because its propagation kernel is paraxial and because
@@ -118,7 +117,7 @@ standard forward multislice neglects backscattering
 ~\cite{RotherScheerschmidt2009,hillier_role_2017,WackerSchroeder2015,ming2013pcms}.
 
 The smallest correction to F-MS is to replace the parabolic Fresnel propagator
-between slices by the exact one-way spherical-wave propagator. As fare as we are aware, 
+between slices by the exact one-way spherical-wave propagator. As far as we are aware, 
 Ming et al.~\cite{ming2013pcms} were the first to explicitly propose the full spherical propagator
 correction in electron electron microscopy. We refer to
 this method as angular-spectrum multislice (AS-MS), following the terminology
@@ -140,7 +139,7 @@ components. The cost is that the square-root operator is no longer a simple
 Fourier-space phase factor, and can be expensive to compute depending of the number 
 of terms chosen to solve in the series expansion.
 
-A closely related problem was studied earlier in scalar light optics, and are known as
+A closely related method to that presented by Chen--Van Dyck was studied earlier in scalar light optics, and are known as
 Pad\'e beam-propagation methods, which approximate the same square-root operator by rational
 functions rather than Taylor polynomials~\cite{Hadley1992}. These
 approximants can represent the square-root dispersion relation over a wider
@@ -173,14 +172,13 @@ The method is therefore a natural starting point for a practical wide-angle
 multislice algorithm in electron microscopy, but to our knowledge it has not
 yet been systematically assessed in this context.
 
-The aim of this work is introduce clearly results from the light optics community, 
-and access their benefits in the context of electron microscopy multislice. We
-compare F-MS, AS-MS, and a wave-propagation multislice method (WP-MS) against a
+The aim of this work is to adapt the WPM from the light optics community (which wec call Wave Propagation Multislice, WP-MS) and assess it's benefits in the context of electron microscopy.
+We therefore compare F-MS, AS-MS, and the wave-propagation multislice method (WP-MS) against a
 forward ODE reference solution of the full second-order Klein--Gordon Helmholtz
 equation, and then test the FFT-based methods in representative Si~[111] and
 Au~[100] CBED simulations. The comparison identifies when F-MS remains
 sufficient, when the simple AS-MS correction captures the dominant error, and
-when the local-wavelength correction in WP-MS becomes relevant.
+if the local-wavelength correction in WP-MS becomes relevant.
 
 \section{Wave-Equation Models and Propagation Algorithms}
 \label{sec:propagation_models}
@@ -688,38 +686,38 @@ presented in this work.
 \midrule
 
 Fresnel MS &
-Fresnel; Fleck--Morris--Feit
+Fresnel (1818); Fleck--Morris--Feit (1976)
 \cite{fresnel1818memoire,fleck1976atmosphere} &
-Cowley--Moodie; Ishizuka--Uyeda
+Cowley--Moodie (1957); Ishizuka--Uyeda (1977)
 \cite{cowley1957scattering,ishizuka1977practical} &
 Split-step propagation with the paraxial Fresnel kernel. \\
 
 Angular Spectrum MS &
-Booker--Clemmow; Korpel et al.
+Booker--Clemmow (1950); Korpel et al. (1986)
 \cite{booker1950angular,korpel1986splitstep} &
-Ming--Chen
+Ming--Chen (2013)
 \cite{ming2013pcms} &
 Same split-step structure, but with the exact free-space propagator. \\
 
 Pad\'e/Series Expansion (BPMs) &
-Hadley; Lee--Voges
+Hadley (1992); Lee--Voges (1994)
 \cite{Hadley1992,lee1994wideangle} &
-van Dyck; Chen--Van Dyck
-\cite{vandyck1979higherorder,ChenVanDyck1997} &
-Higher-order approximations to the square-root propagation operator. \\
+Chen--Van Dyck (1997)
+\cite{ChenVanDyck1997} &
+Higher-order series expansion approximations to the square-root propagation operator. \\
 
 Wave Propagation Method &
-Brenner--Singer; Schmidt et al.
+Brenner--Singer (1993); Schmidt et al. (2016)
 \cite{Brenner1993,Schmidt2016} &
 This work &
 Local homogeneous angular-spectrum kernels applied inside the medium. \\
 
 ODE &
-Banerjee--Sharma
+Banerjee--Sharma (1989)
 \cite{banerjee1989helmholtz,sharma1989totalfields} &
-Wacker--Schr\"oder; Rother--Scheerschmidt\textsuperscript{*}
-\cite{WackerSchroeder2015,RotherScheerschmidt2009} &
-Direct and reciprocal-space references for non-paraxial propagation. \\
+Rother--Scheerschmidt (2009)\textsuperscript{*}; Wacker--Schr\"oder (2015)
+\cite{RotherScheerschmidt2009,WackerSchroeder2015} &
+Reciprocal-space and direct references for non-paraxial propagation. \\
 
 \midrule
 \multicolumn{4}{@{}L{0.90\textwidth}@{}}{\footnotesize
@@ -736,86 +734,88 @@ closely related developments in light and electron optics}
 \section{Benchmarks and Results}
 \label{sec:results}
 
-We present three numerical experiments designed to identify when each
-propagation method is useful. The first reproduces the Au~[100] beam-amplitude
-benchmark of Rother and Scheerschmidt~\cite{RotherScheerschmidt2009}, where
+We use three numerical experiments to separate validation from practical
+high-angle comparisons. The first reproduces the Au~[100] beam-amplitude
+benchmark of Rother and Scheerschmidt~\cite{RotherScheerschmidt2009}, so that
 F-MS, AS-MS, and WP-MS can be compared with an ODE solution of the full
-second-order Klein--Gordon equation. After this validation, the ODE reference is
-not used in the remaining tests because of its high computational cost. The
-second experiment compares the FFT-based methods for a lower-$Z$ Si~[111] CBED
-calculation at high energy and large thickness. The third experiment considers
-a thick Au~[100] convergent-probe calculation, using WP-MS as the practical
-high-angle reference.
+second-order Klein--Gordon equation. The ODE reference is not used in the
+remaining tests because of its high computational cost. Instead, the second
+experiment compares the FFT-based methods in a lower-$Z$ Si~[111] CBED
+calculation, and the third uses a thick Au~[100] convergent-probe calculation
+with WP-MS as the practical high-angle reference. This section reports the
+observed numerical differences; their common interpretation and practical
+consequences are discussed in Section~\ref{sec:discussion}.
 
 \subsection{Au~[100] ODE Benchmark}
 \label{sec:verification}
 
+To verify the implementation, we recreated the simulation presented in
+Figure~3 of Rother and Scheerschmidt~\cite{RotherScheerschmidt2009}. The
+benchmark propagates a plane wave through an Au~[100] crystal at 300~keV and
+compares against a converged ODE solution of the full second-order
+Klein--Gordon equation. Periodic lateral boundary conditions are implicit
+because each method uses Fourier propagation, so the crystal is repeated in the
+transverse directions. To test a thicker object, we extended the original
+Rother--Scheerschmidt calculation from 25 unit cells ($\sim$10~nm) to 100 unit
+cells ($\sim$40~nm).
+
 \begin{figure}[H]
     \centering
     \safeincludegraphics[width=\textwidth,keepaspectratio]{Au_exit_wave_amplitudes}
-    \caption{The left columns show the real-space exit-wave intensity and phase for the Au~[100] verification case. The rightmost column shows the HRTEM image intensity after applying a representative aberration-corrected 300~keV transfer function with residual $C_s=10~\mu\mathrm{m}$, defocus of $+6.0$~nm, a 12~mrad objective aperture. Color scales are shared across methods within each column, and image-plane NRMSE values are relative to the Klein--Gordon ODE reference.}
+    \caption{Au~[100] ODE verification case after 100 unit cells. The left
+    columns show the real-space exit-wave intensity and phase, and the rightmost
+    column shows the HRTEM image intensity after applying a representative
+    aberration-corrected 300~keV transfer function with residual
+    $C_s=10~\mu\mathrm{m}$, defocus of $+6.0$~nm, and a 12~mrad objective
+    aperture. Color scales are shared across methods within each column, and
+    image-plane NRMSE values are relative to the Klein--Gordon ODE reference.}
     \label{fig:au_exit_wave_amplitudes}
 \end{figure}
-
-To verify our implementation, and to assess which propagation methods retain
-accuracy at high angles in a thick high-$Z$ specimen, we recreated the
-simulation presented in Figure~3 of
-\cite{RotherScheerschmidt2009}. This benchmark propagates a plane wave through
-an Au~[100] crystal at 300~keV and compares against a converged ODE solution of
-the full second-order Klein--Gordon equation. Periodic lateral boundary
-conditions are implicit because each method uses Fourier propagation, so the
-crystal is repeated in the transverse directions. To test thicker
-objects, we extended the Rother--Scheerschmidt simulation from 25 unit cells
-($\sim$10~nm) to 100 unit cells ($\sim$40~nm).
 
 Figure~\ref{fig:au_exit_wave_amplitudes} shows the exit-wave intensity, phase,
 and transfer-function image intensity after propagation through 100 unit cells
 of Au~[100]. The F-MS exit-wave amplitude and phase are qualitatively different
-from the other three solutions, whereas AS-MS, WP-MS, and the Klein--Gordon ODE
-reference remain visually similar. After a representative microscope contrast
-transfer function is applied, however, the differences between methods are much
-less obvious. This explains why conventional F-MS can still be adequate
-for qualitative comparison of atomic-column images, even when the unfiltered
-exit wave contains appreciable high-angle error. To make the comparison more
-quantitative, Figure~\ref{fig:au_pixel_amplitudes} plots the normalised Fourier
-amplitude after each slice for the central [0, 0] component and for the
-high-angle [0, 28] component at approximately 135~mrad, following the
-comparison used by Rother and Scheerschmidt~\cite{RotherScheerschmidt2009}.
-
+from AS-MS, WP-MS, and the Klein--Gordon ODE reference, whereas the latter
+three remain visually similar. After the microscope transfer function is
+applied, however, the image-plane differences are much less obvious because the
+objective aperture and transfer function suppress part of the high-angle
+information. The unfiltered exit wave is therefore the more sensitive
+comparison for this benchmark.
 
 \begin{figure}[H]
     \centering
     \safeincludegraphics[width=\textwidth,keepaspectratio]{Au_pixel_amplitudes}
-    \caption{Pixel-amplitude comparison for the Au~[100] verification case. The central and high-angle pixels are compared across F-MS, angular spectrum multislice, wave propagation multislice, and the Klein--Gordon ODE reference.}
+    \caption{Fourier pixel-amplitude comparison for the Au~[100] verification
+    case. The central [0, 0] component and the high-angle [0, 28] component are
+    compared across F-MS, AS-MS, WP-MS, and the Klein--Gordon ODE reference.}
     \label{fig:au_pixel_amplitudes}
 \end{figure}
 
-For the central [0, 0] component, all methods agree closely up to
-approximately 10~nm, or 25 unit cells. Beyond this thickness, the F-MS result
-begins to deviate from the other methods even on the on-axis pixel. By about 15~nm,
-high-angle diffracted beams have propagated far enough through the crystal to
-now interfere back into the central beam, so an error in their accumulated phase
-can also modify the on-axis amplitude. For the high-angle [0, 28] component at
-135~mrad, the F-MS solution diverges from the ODE reference after approximately
-10 unit cells, or 4~nm, consistent with the findings of
-\cite{RotherScheerschmidt2009}, who attributed the discrepancy to the
-linearisation of the square-root operator. AS-MS tracks the ODE reference much
-more closely than F-MS and remains comparable to WP-MS. The WP-MS solution is
-slightly closer to the reference, but the difference from AS-MS only becomes
-clear at the largest thicknesses considered here. These results indicate that
-AS-MS and WP-MS capture the dominant correction to F-MS in this benchmark
-without the higher-order Taylor expansion used in FC-MS~\cite{ChenVanDyck1997}.
+Figure~\ref{fig:au_pixel_amplitudes} gives the corresponding Fourier-amplitude
+comparison after each slice. For the central [0, 0] component, all methods
+agree closely up to approximately 10~nm, or 25 unit cells. Beyond this
+thickness, the F-MS result begins to deviate from the other methods even on the
+on-axis pixel. By about 15~nm, high-angle diffracted beams have propagated far
+enough through the crystal to interfere back into the central beam, so an error
+in their accumulated phase also modifies the on-axis amplitude.
 
-\subsection{Si~[111] and Au~[100] CBED Simulations}
+For the high-angle [0, 28] component at approximately 135~mrad, the F-MS
+solution diverges from the ODE reference after approximately 10 unit cells, or
+4~nm, consistent with the findings of
+Rother and Scheerschmidt~\cite{RotherScheerschmidt2009}. AS-MS tracks the ODE
+reference much more closely than F-MS and remains comparable to WP-MS. WP-MS is
+slightly closer to the reference, but the difference between AS-MS and WP-MS is
+only clear at the largest thicknesses considered here.
+
+\subsection{Si~[111] CBED Peak Positions}
 \label{sec:silicon_cbed}
 
 After verifying AS-MS and WP-MS against the ODE solution, we focus on the three
-FFT-based multislice methods: F-MS, AS-MS, and WP-MS. The aim is to compare how
-their predictions differ in CBED patterns for representative low-$Z$ and
-high-$Z$ specimens. We first simulate Si~[111] at 100~keV with an 8~mrad probe
-and a specimen thickness near 1000~\AA, following the spirit of the low-energy
-CBED comparison of Hillier et al.~\cite{hillier_role_2017} but at a higher
-accelerating voltage. The maximum scattering angle was set to 300~mrad.
+FFT-based multislice methods: F-MS, AS-MS, and WP-MS. The first CBED test uses
+Si~[111] at 100~keV with an 8~mrad probe and a specimen thickness near
+1000~\AA, following the spirit of the low-energy CBED comparison of
+Hillier et al.~\cite{hillier_role_2017} but at a higher accelerating voltage.
+The maximum scattering angle was set to 300~mrad.
 
 \begin{figure}[H]
     \centering
@@ -833,98 +833,123 @@ accelerating voltage. The maximum scattering angle was set to 300~mrad.
 \end{figure}
 
 Figure~\ref{fig:si111_cbed_combined} shows the WP-MS CBED pattern, the radial
-profiles with detected peaks, and the peak displacements. The F-MS peaks shift progressively with
-scattering angle, but the AS-MS tracks WP-MS closely, with peak displacements near zero across the
-full 300~mrad range. This suggests that
-the dominant error in F-MS is the free-space dispersion approximation rather
-than the split-step treatment of the specimen, even for a lower-$Z$ material at
-a moderate thickness. Hillier et al.~\cite{hillier_role_2017} identified the
-need to retain the second longitudinal derivative of the wave equation in order
-to reproduce high-angle Laue-zone positions, and interpreted the difference
-between F-MS and a second-order ODE solution using the Ewald sphere. Our results
-show the same effect without directly solving the second-order ODE. In
-Figure~\ref{fig:si111_cbed_combined}(c), the detected peak shifts are compared
-with a rescaled dispersion-relation phase error, namely the difference between
-the parabolic Fresnel dispersion and the exact spherical dispersion:
-$|\Delta\phi| = (2\pi / \lambda)\,
-\bigl|\sqrt{1-\lambda^2 q^2} - 1 + \tfrac{1}{2}\lambda^2 q^2\bigr|$,
+profiles with detected peaks, and the peak displacements relative to WP-MS. The
+F-MS peaks shift progressively with scattering angle. By contrast, AS-MS tracks
+WP-MS closely, with peak displacements near zero across the full 300~mrad
+range.
+
+In Figure~\ref{fig:si111_cbed_combined}(c), the detected peak shifts are
+compared with a rescaled dispersion-relation phase error, namely the difference
+between the parabolic Fresnel dispersion and the exact spherical dispersion,
+\[
+|\Delta\phi|
+= \frac{2\pi}{\lambda}
+\left|\sqrt{1-\lambda^2 q^2} - 1 + \frac{1}{2}\lambda^2 q^2\right|,
+\]
 where $q=\sin\theta/\lambda$ is the transverse spatial frequency. This is the
 longitudinal phase error introduced when the exact spherical propagator is
 replaced by its Fresnel approximation. After fitting only the overall scale, the
 curve follows the F-MS $-$ WP-MS peak shifts closely, indicating that the
 observed displacement is mainly caused by accumulated free-space propagation
 error between slices. In this Si case, the additional WP-MS correction from the
-potential-dependent wavelength inside the specimen is not clearly visible, and
-replacing the F-MS propagator by the AS-MS propagator already recovers most of
-the lost accuracy.
+potential-dependent wavelength inside the specimen is not clearly resolved in
+the peak positions.
 
-These high-angle peaks would often be damped by thermal diffuse scattering in a
-room-temperature TEM experiment, particularly beyond about 200~mrad. The
-propagator error is nevertheless relevant for simulations that preserve
-high-angle diffraction information, for cooled samples, and for reconstruction
-algorithms where systematic forward-model errors can be absorbed into the
-recovered potential.
+\subsection{Au~[100] CBED Amplitude Errors}
+\label{sec:au_cbed}
 
 To test whether a higher atomic number increases the differences between the
-FFT-based methods, we simulated
-convergent-beam electron diffraction from an Au~[100] supercell at 200~keV using
-a 5~mrad aberration-free probe. The probe was
-propagated to a specimen thickness of approximately 100~nm. To
-sample the high-angle components of the convergent beam accurately, the enlarged $9 \times 9$ gold 
-cell was discretized on a $2048 \times 2048$ grid. We then propagated the wave using F-MS, AS-MS, and WP-MS, and
-compared the exit-surface CBED patterns obtained from the Fourier transform of
-each exit wave.
+FFT-based methods, we simulated convergent-beam electron diffraction from an
+Au~[100] supercell at 200~keV using a 5~mrad aberration-free probe. The probe
+was propagated to a specimen thickness of approximately 100~nm. To sample the
+high-angle components of the convergent beam accurately, the enlarged
+$9 \times 9$ gold cell was discretized on a $2048 \times 2048$ grid. We then
+propagated the wave using F-MS, AS-MS, and WP-MS, and compared the
+exit-surface CBED patterns obtained from the Fourier transform of each exit
+wave.
 
 \begin{figure}[H]
     \centering
     \safeincludegraphics[width=\textwidth,keepaspectratio]{cbed_combined_amplitude_log_error_maps}
-    \caption{CBED exit-wave amplitude comparison for the Au~[100] convergence-angle experiment. The maps show the final diffraction patterns produced by F-MS, AS-MS, and WP-MS, together with log-scale amplitude errors relative to WP-MS.}
+    \caption{CBED exit-wave amplitude comparison for the Au~[100]
+    convergence-angle experiment. The maps show the final diffraction patterns
+    produced by F-MS, AS-MS, and WP-MS, together with log-scale amplitude errors
+    relative to WP-MS.}
     \label{fig:cbed_combined_amplitude_log_error_maps}
 \end{figure}
 
-Figure~\ref{fig:cbed_combined_amplitude_log_error_maps} shows the same pattern
-in the recorded diffraction plane. The F-MS CBED amplitude differs visibly from
-WP-MS, especially in the higher-angle features of the CBED pattern. AS-MS remains much closer to
-WP-MS, and the remaining difference in amplitude between AS-MS and WP-MS is small compared
-with the discrepancy introduced by the Fresnel propagator.
+Figure~\ref{fig:cbed_combined_amplitude_log_error_maps} compares the final
+diffraction-plane amplitudes. The F-MS CBED amplitude differs visibly from
+WP-MS, especially in the higher-angle features of the pattern. AS-MS remains
+much closer to WP-MS, and the remaining AS-MS--WP-MS amplitude difference is
+small compared with the F-MS--WP-MS discrepancy.
 
 \begin{figure}[H]
     \centering
     \safeincludegraphics[width=\textwidth,keepaspectratio]{cbed_error_vs_thickness}
-    \caption{Relative CBED amplitude error as a function of specimen thickness for the Au~[100] convergence-angle study. The error is reported against the WP-MS reference at the end of each unit cell.}
+    \caption{Relative CBED amplitude error as a function of specimen thickness
+    for the Au~[100] convergence-angle study. The error is reported against the
+    WP-MS reference at the end of each unit cell.}
     \label{fig:cbed_error_vs_thickness}
 \end{figure}
 
-In Figure~\ref{fig:cbed_error_vs_thickness} we visualise the root mean square
-(RMSE) error of the CBED amplitude against the WP-MS reference as a function of
-thickness. After a thickness of approximately 10~nm, there is an
-order-of-magnitude error difference between the F-MS and AS-MS solutions. The
-AS-MS method does become less accurate as the thickness increases, but remains
-much closer to WP-MS than to F-MS throughout the calculation. The residual
-amplitude difference between AS-MS and WP-MS is consistent with the fact that
-WP-MS uses the local refractive index in the propagation kernel, and therefore
-tracks the potential-dependent wavelength through each slice. The refractive
-index near the centre of a gold atom is approximately 1.07 in this simulation,
-large enough that over this thickness the local-wavelength correction begins to
-affect the output CBED amplitude.
-A similar residual difference in amplitudes between the WP-MS and AS-MS is visible in the
-exit-wave comparison of Figure~\ref{fig:au_exit_wave_amplitudes} from the first numerical experiment, even at 40~nm.
+Figure~\ref{fig:cbed_error_vs_thickness} shows the root mean square error of
+the CBED amplitude against the WP-MS reference as a function of thickness. After
+approximately 10~nm, the F-MS amplitude error is about an order of magnitude
+larger than the AS-MS error. The AS-MS error increases with thickness, but it
+remains much closer to WP-MS than to F-MS throughout the calculation. A residual
+AS-MS--WP-MS difference is also visible in the Au~[100] exit-wave comparison of
+Figure~\ref{fig:au_exit_wave_amplitudes}, even at 40~nm.
 
-Although ptychographic reconstruction for specimens as thick as this is not yet feasible,
-our results show that the choice of propagator can change the diffraction-plane
-amplitudes. Because ptychographic
-reconstructions are sensitive to systematic amplitude errors, such errors could
-be absorbed as artifacts or bias the recovered potential. Therefore the
-choice of propagator may become more consequential as ptychography is
-pushed toward thicker specimens and higher scattering angles. Because AS-MS has
-the same FFT structure and essentially the same per-slice cost as F-MS, it is a
-practical default whenever the simulation grid already supports high-angle
-scattering.
+\section{Discussion}
+\label{sec:discussion}
 
-The practical advantage of AS-MS is only immediately useful if it does not require a much
-finer grid than conventional F-MS. The additional sampling concern comes
-from the angular-spectrum propagation phase, which is steeper than the Fresnel
-phase at large transverse wavevector. For one propagation step,
+The three benchmarks point to a common source of error in conventional
+multislice under the high-angle, thick-specimen conditions tested here. In the
+Au~[100] ODE benchmark, the F-MS discrepancy appears first in the 135~mrad beam
+and only later in the central beam, after diffracted components have propagated
+far enough through the crystal to interfere back into it. In the Si~[111] CBED
+calculation, the F-MS peak shifts follow the parabolic-versus-exact dispersion
+error, while AS-MS remains close to WP-MS over the measured angular range. In
+the thick Au~[100] CBED calculation, the F-MS amplitude error becomes roughly
+an order of magnitude larger than the AS-MS error beyond about 10~nm. Taken
+together, these observations indicate that the dominant F-MS error in these
+tests is the accumulated longitudinal phase error from the parabolic Fresnel
+propagator.
+
+\subsection{AS-MS as the minimal wide-angle correction}
+
+AS-MS removes most of this error by changing only the free-space propagation
+kernel. The transmission step, split-step ordering, FFT structure, and number
+of FFTs per slice are the same as in F-MS. In the spatial-frequency
+convention used here, the replacement is
+\[
+\exp(-i\pi k_\perp^2 \Delta z/k_0)
+\quad\rightarrow\quad
+\exp\left(2\pi i\Delta z[\sqrt{k_0^2-k_\perp^2}-k_0]\right).
+\]
+The correction is small when all important Fourier components satisfy
+$k_\perp\ll k_0$, but it becomes significant when the simulation retains
+components with large $k_\perp/k_0=\sin\theta$. Once those components are
+present, the error is not confined to high-angle beams because dynamical
+scattering can later mix them back into lower-angle amplitudes.
+
+This is the main practical result of the comparison. If a simulation grid
+already represents the high-angle scattering of interest, then replacing the
+Fresnel kernel by the angular-spectrum kernel removes the dominant wide-angle
+propagation error in these benchmarks without changing the basic multislice
+workflow. Under those conditions, there is little practical reason to retain
+the Fresnel propagator except for direct comparison with legacy calculations or
+for regimes where the paraxial error is already negligible relative to other
+uncertainties.
+
+\subsection{Sampling and cost}
+
+The practical advantage of AS-MS would be less useful if the exact
+angular-spectrum phase required a substantially finer grid than F-MS. The
+additional sampling concern comes from the angular-spectrum propagation phase,
+which is steeper than the Fresnel phase at large transverse wavevector. For one
+propagation step,
 
 \[
 \phi_{\mathrm{F}}(k_\perp) = -\pi\frac{\Delta z}{k_0}k_\perp^2,
@@ -961,8 +986,8 @@ condition is
 \approx 1.02,
 \]
 
-so the axial sampling bound is tightened by only about 2\%. The transverse grid sets a separate 
-limit as it determines the largest
+so the axial sampling bound is tightened by only about 2\%. The transverse
+grid sets a separate limit because it determines the largest
 scattering angle that can be represented without aliasing. A real-space pixel
 size $\Delta x$ gives a maximum transverse spatial frequency
 $k_{\perp,\mathrm{Nyq}}=1/(2\Delta x)$. Since
@@ -978,108 +1003,64 @@ angle is
 Here we used $\lambda \approx 0.025\,\text{\AA}$ at 200~keV and
 $\Delta x = 0.04\,\text{\AA}$. This angle is still far from the
 evanescent boundary at $\theta=90^\circ$, where the square root in the ASM
-kernel becomes singular. In the present benchmarks, AS-MS therefore does not
-require a substantially finer axial or transverse sampling than F-MS once the
-simulation already resolves the high-angle features of interest.
+kernel becomes singular. In the present benchmarks, AS-MS therefore has the
+same per-slice FFT cost as F-MS and does not require substantially finer axial
+or transverse sampling once the simulation already resolves the high-angle
+features of interest.
 
-\section{Discussion}
-\label{sec:discussion}
-
-The results point to the Fresnel free-space propagator as the main limitation
-of F-MS in the high-angle and thick-specimen regimes tested here. In the
-Au~[100] ODE benchmark, the discrepancy appears first in the 135~mrad beam and
-only later in the central beam, after the incorrectly propagated diffracted
-components have had enough thickness to interfere back into it. In the
-Si~[111] CBED calculation, the F-MS peak displacements follow the
-parabolic-versus-exact dispersion error, while AS-MS remains close to WP-MS
-over the measured angular range. In the thick Au~[100] CBED calculation, the
-F-MS amplitude error becomes roughly an order of magnitude larger than the
-AS-MS error beyond about 10~nm. Taken together, these observations indicate
-that the dominant F-MS error is the accumulated longitudinal phase error from
-the parabolic Fresnel propagator.
-
-\subsection{AS-MS and the high-angle error}
-
-AS-MS removes most of the F-MS error by changing only the propagation kernel.
-The Fresnel kernel is replaced by the exact one-way angular-spectrum kernel,
-while the transmission step and FFT structure are unchanged. In terms of the
-spatial-frequency convention used here, the corresponding replacement is
-\[
-\exp(-i\pi k_\perp^2 \Delta z/k_0)
-\quad\rightarrow\quad
-\exp\left(2\pi i\Delta z[\sqrt{k_0^2-k_\perp^2}-k_0]\right).
-\]
-This correction is small when all important Fourier components satisfy
-$k_\perp\ll k_0$, but it becomes significant when the simulation retains
-components with large $k_\perp/k_0=\sin\theta$. A high-angle phase error is not
-confined to the high-angle beam itself. In a thick dynamical calculation, those
-components can later interfere back into lower-angle beams, which explains why
-the central Au~[100] amplitude eventually changes even though the first visible
-error appears in the 135~mrad component.
-
-This also clarifies why the sampling requirement is not a prohibitive obstacle
-under the present conditions. The angular-spectrum phase has a steeper
-large-angle derivative than the Fresnel phase, but the penalty remains close to
-unity until $k_\perp$ approaches the evanescent boundary. If the real-space grid
-already resolves the diffraction angles of interest, AS-MS adds little
-computational cost and only a small sampling penalty relative to F-MS.
-
-\subsection{Why WP-MS remains close to AS-MS}
+\subsection{WP-MS contribution}
 
 WP-MS makes a further correction by allowing the propagation kernel to depend on
-the local electrostatic refractive index, so the wavelength can change inside
-each slice. This makes WP-MS the more complete one-way split-step model, and it
-is closest to the ODE reference in the Au~[100] benchmark. Under the high-energy
-conditions considered here, however, the local-wavelength correction is smaller
-than the correction obtained by removing the Fresnel approximation. For these
-specimens and energies, the main source of error is the paraxial free-space
-dispersion relation rather than the absence of a potential-dependent wavelength
-in the propagation step.
+the local electrostatic refractive index, so the wavelength changes inside each
+slice. In the electron-optics setting, this gives
+a differentiable one-way split-step method that retains FFT-based propagation
+while incorporating a potential-dependent wavelength.
 
-It may seem surprising that WP-MS works well despite its local homogeneous
-approximation. The likely reason is that, for high-energy electron microscopy,
-the refractive index differs only modestly from unity over most of the slice and
-becomes large only in highly localized regions near atomic cores. In this
-regime, using a bank of locally homogeneous angular spectrum propagators is a
-useful physical approximation rather than a literal microscopic description of
-the medium. The potential-dependent wavelength in WP-MS should be interpreted
-in this stationary wave-equation sense. It does not imply a loss of coherence:
-the time-dependent phase is still governed by the conserved electron energy,
-while the spatial wavelength changes as a representation of propagation through
-the electrostatic potential.
+WP-MS is closest to the ODE reference in the Au~[100] benchmark, and the
+residual AS-MS--WP-MS difference in the thick Au~[100] CBED calculation is
+consistent with this additional local-wavelength correction. The refractive
+index near the centre of a gold atom is approximately 1.07 in this simulation,
+large enough that the correction can accumulate over tens of nanometres. Under
+the high-energy conditions considered here, however, this effect is smaller
+than the improvement obtained by replacing the Fresnel propagator with the
+angular-spectrum propagator. WP-MS should therefore be seen as the more
+complete one-way reference model in these tests, while AS-MS provides most of
+the practical correction at essentially the same per-slice cost as F-MS. 
 
-\subsection{Consequences for forward models}
 
-The silicon calculation shows that the same propagator error is not limited to
+\subsection{Consequences and limits}
+
+The silicon CBED calculation (Fig.~\ref{fig:si_cbed}) shows that the same propagator error is not limited to
 the most severe high-$Z$ case. Silicon scatters more weakly than gold, so the
-CBED amplitude difference is smaller than in the thick Au~[100] calculation.
-However, the F-MS peak shifts still follow the angular dispersion error, while
-AS-MS remains close to WP-MS across the measured range. A conventional image
-simulation can hide part of this error if the transfer function or objective
-aperture suppresses the affected Fourier components. CBED and ptychographic
-forward models use diffraction-plane intensities more directly, so the same
-propagator error can become more visible.
+CBED amplitude differences are smaller than in the thick Au~[100] calculation,
+but the F-MS peak shifts still follow the angular dispersion error. These
+high-angle peaks would often be damped by thermal diffuse scattering in a
+room-temperature TEM experiment, particularly beyond about 200~mrad, and a
+conventional image simulation can hide part of the error if the transfer
+function or objective aperture suppresses the affected Fourier components.
+CBED and ptychographic forward models use diffraction-plane intensities more
+directly, so the same propagator error can become more visible.
 
 In a ptychographic reconstruction, the forward model predicts detector
 intensities for each probe position. If the propagator gives the wrong
 high-angle amplitudes, peak positions, or accumulated phase through a thick
-specimen, the optimization can compensate through the recovered potential. The
-thick Au~[100] CBED calculation shows that this modeling error is much larger
-for F-MS than for AS-MS after approximately 10~nm. For forward models that
-already use F-MS, most of the wide-angle correction can therefore be recovered
-by replacing the Fresnel kernel with the angular-spectrum kernel, while keeping
-the same transmission step and per-slice FFT complexity.
+specimen, the optimization can compensate through the recovered potential.
+Although ptychographic reconstruction for specimens as thick as the Au~[100]
+CBED test is not yet routine, the calculation shows that the choice of
+propagator can change the diffraction-plane amplitudes before other
+experimental effects are added. For forward models that already use F-MS, most
+of the wide-angle correction can therefore be recovered by replacing the
+Fresnel kernel with the angular-spectrum kernel, while keeping the same
+transmission step and per-slice FFT complexity.
 
 The comparison here remains restricted to high-energy, elastic,
-forward-scattering calculations. Energy spread, inelastic scattering, thermal
-diffuse scattering, specimen drift, lens aberrations, and detector response will
-also contribute to the error budget of experimental simulations. WP-MS should be
-tested separately at lower accelerating voltages, for thicker high-$Z$
-specimens, and for slice thicknesses where the potential-dependent wavelength
-change becomes a comparable source of phase error. Its main advantage in those
-tests is that it provides a differentiable one-way method with a propagation
-kernel that depends on the local electrostatic refractive index while retaining
-FFT-based propagation.
+forward-scattering calculations. Lower accelerating voltages should be tested
+separately because wide-angle propagation, potential-dependent wavelength
+changes, and backscattering effects become more significant at lower energies
+~\cite{ming2013pcms,WackerSchroeder2015,hillier_role_2017}. The WP-MS
+implementation used here is one-way, but unlike the AS-MS or F-MS methods, 
+can be formulated into a form that can include bidirectional propagation
+~\cite{FertigBrenner2010,Fertig2011,WendeDrozellaHerkommer2023}. Adapting the bidirectional WP-MS to electron optics could then provide a practical alternative to the FC-MS method of Chen and Van Dyck~\cite{ChenVanDyck1997}. 
 
 \section{Conclusion}
 
@@ -1088,22 +1069,25 @@ electron microscopy, giving a wave-propagation multislice (WP-MS) method that
 tracks high-angle propagation and local wavelength changes within a
 differentiable split-step framework. We then compared F-MS, AS-MS, and WP-MS in
 three complementary settings: an Au~[100] ODE benchmark, a lower-$Z$ Si~[111]
-CBED calculation, and a thick Au~[100] CBED calculation.
+CBED peak-position test, and a thick Au~[100] CBED amplitude test.
 
-Across these tests, replacing the Fresnel kernel with the exact angular-spectrum
-kernel accounts for most of the improvement over conventional multislice. WP-MS
-is consistently the most complete one-way model and is closest to the ODE
+Across these tests, replacing the Fresnel kernel with the exact
+angular-spectrum kernel accounts for most of the improvement over conventional
+multislice. AS-MS keeps the same transmission step, FFT structure, and
+per-slice FFT cost as F-MS, and under the conditions studied here it does not
+require substantially finer sampling once the high-angle features are already
+represented. For high-angle elastic forward simulations where F-MS is still
+being used, AS-MS is therefore the most direct practical default.
+
+WP-MS is the more complete one-way split-step model and is closest to the ODE
 reference in the Au~[100] benchmark, but its additional accuracy over AS-MS is
-small under the high-energy conditions tested here. The main practical
-recommendation is that for high-angle elastic forward simulations
-where F-MS is still being used, AS-MS should be the default standard,
-because it removes the dominant paraxial dispersion error without changing the
-basic FFT-based multislice workflow.
-
-Future work could extend the WP-MS toward a bidirectional formulation that can include
-backscattering, and then benchmark it against FC-MS in lower-energy simulations, and
-measure how F-MS, AS-MS, and WP-MS affect ptychographic reconstructions across
-specimen thickness, accelerating voltage, and atomic number.
+modest under the high-energy conditions tested here. Its main role in this work
+is to bridge the wave propagation method from scalar optics into electron
+optics and to provide a differentiable local-wavelength extension of
+angular-spectrum multislice. Future work should test it's performance at lower
+accelerating voltages, against FC-MS and
+bidirectional references, and inside ptychographic reconstructions where
+systematic forward-model errors can bias the recovered potential.
 
 \bibliographystyle{elsarticle-num}
 \IfFileExists{Paper/sample.bib}{\bibliography{Paper/sample}}{\bibliography{sample}}
