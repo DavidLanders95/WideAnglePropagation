@@ -46,7 +46,8 @@ Paper/*.log
 Paper/*.out
 Paper/*.spl
 Paper/*.synctex*
-Paper/figures/
+Paper/figures/*
+!Paper/figures/README.md
 archive/delete_candidates_*/latex_build_artifacts/**/*
 
 # Executed notebook artifacts and temporary notebook files
