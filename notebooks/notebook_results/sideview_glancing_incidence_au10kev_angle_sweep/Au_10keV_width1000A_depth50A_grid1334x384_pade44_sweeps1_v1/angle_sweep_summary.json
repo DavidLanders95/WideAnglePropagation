@@ -1,0 +1,64 @@
+{
+  "cache_dir": "notebook_results/sideview_glancing_incidence_au10kev_angle_sweep/Au_10keV_width1000A_depth50A_grid1334x384_pade44_sweeps1_v1",
+  "summary_file": "notebook_results/sideview_glancing_incidence_au10kev_angle_sweep/Au_10keV_width1000A_depth50A_grid1334x384_pade44_sweeps1_v1/angle_sweep_summary.json",
+  "material": "Au",
+  "energy_keV": 10.0,
+  "angle_sweep_degrees": [
+    5.0
+  ],
+  "grid_shape": [
+    1334,
+    384
+  ],
+  "sampling_A": [
+    0.3125,
+    0.7496251874062968
+  ],
+  "pade_order": [
+    4,
+    4
+  ],
+  "wpm_bins": 32,
+  "backscatter_sweeps": 1,
+  "nyquist_safety_fraction": 0.5,
+  "max_tilt_nyquist_fraction": 0.4463228235697254,
+  "lattice_nyquist_fraction": 0.36764354458376497,
+  "angle_results": [
+    {
+      "material": "Au",
+      "energy_keV": 10.0,
+      "angle_degrees": 5.0,
+      "grid_shape": [
+        1334,
+        384
+      ],
+      "sampling_A": [
+        0.3125,
+        0.7496251874062968
+      ],
+      "du_over_lambda": 2.560490046318365,
+      "path_step_over_lambda": 6.142105058634757,
+      "input_center_u_A": 43.744331762962005,
+      "tilt_nyquist_fraction": 0.4463228235697254,
+      "lattice_nyquist_fraction": 0.36764354458376497,
+      "carrier_phase_error_rad_over_slab": 0.37273586302971673,
+      "cached_unique_slices": 12,
+      "runtime_s": 0.00034842267632484436,
+      "wpm_exit_intensity_rmse_vs_fresnel": 0.1284943392067252,
+      "pade_exit_intensity_rmse_vs_fresnel": 0.12824481805530352,
+      "pade_exit_intensity_rmse_vs_wpm": 0.021240532566003705,
+      "wpm_farfield_rmse_vs_fresnel": 0.09017091319695127,
+      "pade_farfield_rmse_vs_fresnel": 0.06387927425101593,
+      "pade_farfield_rmse_vs_wpm": 0.0397014986340506,
+      "wpm_reflected_power": 6.948104798800669e-09,
+      "pade_reflected_power": 8.142447698328565e-24,
+      "fresnel_q99": 0.15523008670707225,
+      "wpm_q99": 0.15154162926399747,
+      "pade_q99": 0.15154162926399747,
+      "wpm_residual_last": 0.2375668075500619,
+      "pade_residual_last": 0.22594285689163887,
+      "cache_file": "notebook_results/sideview_glancing_incidence_au10kev_angle_sweep/Au_10keV_width1000A_depth50A_grid1334x384_pade44_sweeps1_v1/angle_05p0deg_cross_sections.npz",
+      "loaded_from_cache": false
+    }
+  ]
+}

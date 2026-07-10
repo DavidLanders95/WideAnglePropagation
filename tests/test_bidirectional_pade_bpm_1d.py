@@ -10,7 +10,9 @@ from wide_angle_propagation.propagation_methods import (
     apply_pade_rational_1d,
     build_sideview_operator_x_1d,
     pade_sqrt_coefficients,
+    pade_forward_step_1d,
     simulate_bidirectional_pade_bpm_1d,
+    wpm_step_adaptive_1d,
 )
 
 
@@ -54,6 +56,34 @@ def test_build_sideview_operator_shape_and_finite_values():
     assert operator.shape == (N, N)
     assert np.isfinite(np.asarray(n0))
     assert np.all(np.isfinite(np.asarray(operator)))
+
+
+def test_pade_vacuum_plane_wave_matches_wpm_wide_angle():
+    n = 32
+    dx = 0.25
+    dz = 20.0
+    mode = 8
+    coords = jnp.arange(n)
+    wave = jnp.exp(2.0j * jnp.pi * mode * coords / n)
+
+    pade_wave = pade_forward_step_1d(
+        wave,
+        jnp.zeros(n),
+        dx,
+        dz,
+        ENERGY,
+        pade_order=(2, 2),
+    )
+    wpm_wave, _, _, _ = wpm_step_adaptive_1d(
+        wave,
+        jnp.ones(n),
+        dz,
+        ENERGY,
+        dx,
+        n_bins=8,
+    )
+
+    np.testing.assert_allclose(np.asarray(pade_wave), np.asarray(wpm_wave), rtol=1e-8, atol=1e-8)
 
 
 def test_bidirectional_pade_vacuum_has_zero_reflection():

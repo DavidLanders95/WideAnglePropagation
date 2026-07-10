@@ -563,49 +563,125 @@ def bidirectional_wpm_sweep_1d(
     n_sweeps=4,
     boundary="outgoing",
 ):
-    """Reference bidirectional 1D WPM sweep with explicit reflected storage."""
+    """Reference bidirectional 1D WPM sweep with iterative reflected storage."""
     n_maps = klein_gordon_refractive_index_1d(potential_slices, energy)
-    wave_plus = _as_complex_wave_1d(input_wave)
-    reflected_accum = jnp.zeros_like(wave_plus)
-    forward_wavefronts = []
-    reflection_events = []
+    input_wave = _as_complex_wave_1d(input_wave)
+    n_slices = potential_slices.shape[0]
+    zero = jnp.zeros_like(input_wave)
+    sweep_count = max(int(n_sweeps), 1)
+    backward_from_right = [zero for _ in range(n_slices + 1)]
+    residuals = []
 
-    for potential_index in range(n_maps.shape[0]):
-        wave_plus, _, _, _ = wpm_step_adaptive_1d(
-            wave_plus,
-            n_maps[potential_index],
-            dz,
-            energy,
-            dx,
-            n_bins=n_bins,
-        )
-        forward_wavefronts.append(wave_plus)
-        if potential_index + 1 < n_maps.shape[0]:
-            wave_plus, reflected, _ = interface_coupling_wpm_1d(
+    def forward_pass(backward_boundary):
+        wave_plus = input_wave
+        forward_wavefronts = []
+        plus_at_interfaces = [zero for _ in range(n_slices + 1)]
+        for potential_index in range(n_slices):
+            wave_plus, _, _, _ = wpm_step_adaptive_1d(
                 wave_plus,
                 n_maps[potential_index],
-                n_maps[potential_index + 1],
+                dz,
+                energy,
+                dx,
+                n_bins=n_bins,
+            )
+            forward_wavefronts.append(wave_plus)
+            plus_at_interfaces[potential_index + 1] = wave_plus
+            if potential_index + 1 < n_slices:
+                n_left = n_maps[potential_index]
+                n_right = n_maps[potential_index + 1]
+                backward_incident = backward_boundary[potential_index + 1]
+                transmitted_lr, reflected_lr, _ = interface_coupling_wpm_1d(
+                    wave_plus,
+                    n_left,
+                    n_right,
+                    dx,
+                    energy,
+                    direction="forward",
+                )
+                transmitted_rl, reflected_rl, _ = interface_coupling_wpm_1d(
+                    backward_incident,
+                    n_left,
+                    n_right,
+                    dx,
+                    energy,
+                    direction="backward",
+                )
+                wave_plus = transmitted_lr + reflected_rl
+        return wave_plus, forward_wavefronts, plus_at_interfaces
+
+    def backward_pass(plus_at_interfaces):
+        new_backward = [zero for _ in range(n_slices + 1)]
+        backward_wavefronts = [zero for _ in range(n_slices)]
+        wave_minus = zero
+        for potential_index in range(n_slices - 2, -1, -1):
+            new_backward[potential_index + 1] = wave_minus
+            n_left = n_maps[potential_index]
+            n_right = n_maps[potential_index + 1]
+            _, reflected_lr, _ = interface_coupling_wpm_1d(
+                plus_at_interfaces[potential_index + 1],
+                n_left,
+                n_right,
                 dx,
                 energy,
+                direction="forward",
             )
-            reflection_events.append(reflected)
-            reflected_accum = reflected_accum + reflected / max(n_sweeps, 1)
+            transmitted_rl, reflected_rl, _ = interface_coupling_wpm_1d(
+                wave_minus,
+                n_left,
+                n_right,
+                dx,
+                energy,
+                direction="backward",
+            )
+            wave_minus, _, _, _ = wpm_step_adaptive_1d(
+                reflected_lr + transmitted_rl,
+                n_maps[potential_index],
+                -dz,
+                energy,
+                dx,
+                n_bins=n_bins,
+            )
+            new_backward[potential_index] = wave_minus
+            backward_wavefronts[potential_index] = wave_minus
+        return new_backward, backward_wavefronts
 
-    if reflection_events:
-        reflected_wave = sum(reflection_events) / max(n_sweeps, 1)
-        residual = jnp.linalg.norm(reflection_events[-1]) / (
-            jnp.linalg.norm(input_wave) + 1e-30
-        )
-    else:
-        reflected_wave = reflected_accum
-        residual = jnp.array(0.0)
+    for _ in range(sweep_count):
+        _, _, plus_at_interfaces = forward_pass(backward_from_right)
+        new_backward_from_right, backward_wavefronts = backward_pass(plus_at_interfaces)
+        residual = sum(
+            jnp.linalg.norm(new_backward_from_right[i] - backward_from_right[i])
+            for i in range(n_slices + 1)
+        ) / (jnp.linalg.norm(input_wave) + 1e-30)
+        residuals.append(residual)
+        backward_from_right = new_backward_from_right
+
+    transmitted, forward_wavefronts, plus_at_interfaces = forward_pass(backward_from_right)
+    final_backward_from_right, backward_wavefronts = backward_pass(plus_at_interfaces)
+    reflected_wave = final_backward_from_right[0]
 
     diagnostics = {
         "wavefronts_plus": _stack_wavefronts_or_empty_1d(forward_wavefronts, input_wave),
-        "residual_per_sweep": jnp.full((n_sweeps,), residual),
+        "wavefronts_minus": _stack_wavefronts_or_empty_1d(backward_wavefronts, input_wave),
+        "residual_per_sweep": jnp.asarray(residuals),
         "boundary": boundary,
+        "two_way": True,
     }
-    return wave_plus, reflected_wave, diagnostics
+    return transmitted, reflected_wave, diagnostics
+
+
+def _apply_scalar_interface_scattering_1d(plus_from_left, minus_from_right, n_left, n_right):
+    S = interface_scattering_matrix_1d(n_left, n_right)
+    plus_right = S[0, 0] * plus_from_left + S[0, 1] * minus_from_right
+    minus_left = S[1, 0] * plus_from_left + S[1, 1] * minus_from_right
+    return plus_right, minus_left
+
+
+def _residual_between_boundary_lists(new_boundary, old_boundary, reference_wave):
+    return sum(
+        jnp.linalg.norm(new_boundary[i] - old_boundary[i])
+        for i in range(len(new_boundary))
+    ) / (jnp.linalg.norm(reference_wave) + 1e-30)
 
 
 def simulate_bidirectional_wpm_1d(
@@ -686,7 +762,21 @@ def _periodic_laplacian_matrix_1d(n: int, dx: float):
     return (jnp.roll(eye, 1, axis=0) - 2.0 * eye + jnp.roll(eye, -1, axis=0)) / dx**2
 
 
-def build_sideview_operator_x_1d(potential_or_index, dx, energy, *, n0_mode="slice_mean"):
+def _spectral_laplacian_matrix_1d(n: int, dx: float):
+    eye = jnp.eye(n, dtype=jnp.complex128)
+    frequencies = get_frequencies_1d(n, dx)
+    symbol = -(2.0 * jnp.pi * frequencies) ** 2
+    return jnp.fft.ifft(symbol[:, None] * jnp.fft.fft(eye, axis=0), axis=0)
+
+
+def build_sideview_operator_x_1d(
+    potential_or_index,
+    dx,
+    energy,
+    *,
+    n0_mode="slice_mean",
+    transverse_operator="spectral",
+):
     """Build the dense dimensionless sideview square-root operator ``X``."""
     n_profile = jnp.asarray(potential_or_index)
     if jnp.iscomplexobj(n_profile):
@@ -703,7 +793,12 @@ def build_sideview_operator_x_1d(potential_or_index, dx, energy, *, n0_mode="sli
 
     wavelength = energy2wavelength(energy)
     k0 = 1.0 / wavelength
-    lap = _periodic_laplacian_matrix_1d(refractive_index.shape[0], dx)
+    if transverse_operator == "spectral":
+        lap = _spectral_laplacian_matrix_1d(refractive_index.shape[0], dx)
+    elif transverse_operator == "finite_difference":
+        lap = _periodic_laplacian_matrix_1d(refractive_index.shape[0], dx)
+    else:
+        raise ValueError("transverse_operator must be 'spectral' or 'finite_difference'")
     lap_term = lap / (2.0 * jnp.pi * k0 * n0) ** 2
     index_term = jnp.diag((refractive_index**2 - n0**2) / n0**2)
     return jnp.asarray(index_term + lap_term, dtype=jnp.complex128), n0
@@ -744,9 +839,16 @@ def pade_forward_step_1d(
     pade_order=(1, 1),
     n0_mode="slice_mean",
     evanescent="damp",
+    transverse_operator="spectral",
 ):
     """Propagate a forward wave through one dense Pade square-root BPM step."""
-    X, n0 = build_sideview_operator_x_1d(potential_slice, dx, energy, n0_mode=n0_mode)
+    X, n0 = build_sideview_operator_x_1d(
+        potential_slice,
+        dx,
+        energy,
+        n0_mode=n0_mode,
+        transverse_operator=transverse_operator,
+    )
     R = _pade_sqrt_matrix(X, pade_order)
     k0 = 1.0 / energy2wavelength(energy)
     generator = 1j * 2.0 * jnp.pi * dz * k0 * n0 * R
@@ -764,9 +866,16 @@ def pade_backward_step_1d(
     pade_order=(1, 1),
     n0_mode="slice_mean",
     evanescent="damp",
+    transverse_operator="spectral",
 ):
     """Propagate a backward wave through one dense Pade square-root BPM step."""
-    X, n0 = build_sideview_operator_x_1d(potential_slice, dx, energy, n0_mode=n0_mode)
+    X, n0 = build_sideview_operator_x_1d(
+        potential_slice,
+        dx,
+        energy,
+        n0_mode=n0_mode,
+        transverse_operator=transverse_operator,
+    )
     R = _pade_sqrt_matrix(X, pade_order)
     k0 = 1.0 / energy2wavelength(energy)
     generator = -1j * 2.0 * jnp.pi * dz * k0 * n0 * R
@@ -799,40 +908,96 @@ def bidirectional_pade_sweep_1d(
     boundary="pml",
     scattering_update="s_matrix",
     n_sweeps=4,
+    transverse_operator="spectral",
 ):
-    """Reference bidirectional dense Pade BPM sweep."""
-    wave_plus = _as_complex_wave_1d(input_wave)
-    reflected = jnp.zeros_like(wave_plus)
-    wavefronts_plus = []
+    """Reference bidirectional dense Pade BPM sweep with two-way iterations."""
+    input_wave = _as_complex_wave_1d(input_wave)
+    n_slices = potential_slices.shape[0]
+    zero = jnp.zeros_like(input_wave)
+    sweep_count = max(int(n_sweeps), 1)
+    backward_from_right = [zero for _ in range(n_slices + 1)]
+    residuals = []
     n_maps = klein_gordon_refractive_index_1d(potential_slices, energy)
 
-    for j in range(potential_slices.shape[0]):
-        wave_plus = pade_forward_step_1d(
-            wave_plus,
-            potential_slices[j],
-            dx,
-            dz,
-            energy,
-            pade_order=pade_order,
-            n0_mode=n0_mode,
-            evanescent=evanescent,
+    def forward_pass(backward_boundary):
+        wave_plus = input_wave
+        wavefronts_plus = []
+        plus_at_interfaces = [zero for _ in range(n_slices + 1)]
+        for j in range(n_slices):
+            wave_plus = pade_forward_step_1d(
+                wave_plus,
+                potential_slices[j],
+                dx,
+                dz,
+                energy,
+                pade_order=pade_order,
+                n0_mode=n0_mode,
+                evanescent=evanescent,
+                transverse_operator=transverse_operator,
+            )
+            wavefronts_plus.append(wave_plus)
+            plus_at_interfaces[j + 1] = wave_plus
+            if j + 1 < n_slices:
+                wave_plus, _ = _apply_scalar_interface_scattering_1d(
+                    wave_plus,
+                    backward_boundary[j + 1],
+                    n_maps[j],
+                    n_maps[j + 1],
+                )
+        return wave_plus, wavefronts_plus, plus_at_interfaces
+
+    def backward_pass(plus_at_interfaces):
+        new_backward = [zero for _ in range(n_slices + 1)]
+        wavefronts_minus = [zero for _ in range(n_slices)]
+        wave_minus = zero
+        for j in range(n_slices - 2, -1, -1):
+            new_backward[j + 1] = wave_minus
+            _, minus_left = _apply_scalar_interface_scattering_1d(
+                plus_at_interfaces[j + 1],
+                wave_minus,
+                n_maps[j],
+                n_maps[j + 1],
+            )
+            wave_minus = pade_backward_step_1d(
+                minus_left,
+                potential_slices[j],
+                dx,
+                dz,
+                energy,
+                pade_order=pade_order,
+                n0_mode=n0_mode,
+                evanescent=evanescent,
+                transverse_operator=transverse_operator,
+            )
+            new_backward[j] = wave_minus
+            wavefronts_minus[j] = wave_minus
+        return new_backward, wavefronts_minus
+
+    for _ in range(sweep_count):
+        _, _, plus_at_interfaces = forward_pass(backward_from_right)
+        new_backward_from_right, wavefronts_minus = backward_pass(plus_at_interfaces)
+        residuals.append(
+            _residual_between_boundary_lists(
+                new_backward_from_right,
+                backward_from_right,
+                input_wave,
+            )
         )
-        wavefronts_plus.append(wave_plus)
-        if j + 1 < potential_slices.shape[0]:
-            S = interface_scattering_matrix_1d(n_maps[j], n_maps[j + 1])
-            reflected = reflected + S[1, 0] * wave_plus / max(n_sweeps, 1)
-            wave_plus = S[0, 0] * wave_plus
+        backward_from_right = new_backward_from_right
+
+    transmitted, wavefronts_plus, plus_at_interfaces = forward_pass(backward_from_right)
+    final_backward_from_right, wavefronts_minus = backward_pass(plus_at_interfaces)
+    reflected = final_backward_from_right[0]
 
     diagnostics = {
         "wavefronts_plus": _stack_wavefronts_or_empty_1d(wavefronts_plus, input_wave),
-        "residual_per_sweep": jnp.full(
-            (n_sweeps,),
-            jnp.linalg.norm(reflected) / (jnp.linalg.norm(input_wave) + 1e-30),
-        ),
+        "wavefronts_minus": _stack_wavefronts_or_empty_1d(wavefronts_minus, input_wave),
+        "residual_per_sweep": jnp.asarray(residuals),
         "boundary": boundary,
         "scattering_update": scattering_update,
+        "two_way": True,
     }
-    return wave_plus, reflected, diagnostics
+    return transmitted, reflected, diagnostics
 
 
 def simulate_bidirectional_pade_bpm_1d(
@@ -848,6 +1013,7 @@ def simulate_bidirectional_pade_bpm_1d(
     boundary="pml",
     scattering_update="s_matrix",
     n_sweeps=4,
+    transverse_operator="spectral",
     return_diagnostics=True,
 ):
     """Simulate sideview 1D bidirectional Pade square-root BPM."""
@@ -863,6 +1029,7 @@ def simulate_bidirectional_pade_bpm_1d(
         boundary=boundary,
         scattering_update=scattering_update,
         n_sweeps=n_sweeps,
+        transverse_operator=transverse_operator,
     )
     intensity = diffraction_intensity_1d(transmitted)
     transmitted_power = jnp.sum(jnp.abs(transmitted) ** 2)

@@ -1,0 +1,269 @@
+{
+  "cache_dir": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2",
+  "summary_file": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2/survey_summary.json",
+  "survey_cases": 9,
+  "survey_grid_shape": [
+    1334,
+    192
+  ],
+  "survey_pade_order": [
+    4,
+    4
+  ],
+  "survey_worst_nyquist_fraction": 0.47640622015017275,
+  "nyquist_safety_fraction": 0.5,
+  "survey_results": [
+    {
+      "material": "Si",
+      "energy_keV": 10.0,
+      "grid_shape": [
+        1334,
+        192
+      ],
+      "sampling_A": [
+        0.46875,
+        0.7496251874062968
+      ],
+      "tilt_nyquist_fraction": 0.268079441784823,
+      "lattice_nyquist_fraction": 0.27605420269058983,
+      "cached_unique_slices": 16,
+      "cache_file": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2/Si_10keV_cross_sections.npz",
+      "loaded_from_cache": true,
+      "runtime_s": 123.94694490078837,
+      "wpm_exit_intensity_rmse_vs_fresnel": 0.009787136557899171,
+      "pade_exit_intensity_rmse_vs_fresnel": 0.005311632368079562,
+      "pade_exit_intensity_rmse_vs_wpm": 0.007268165507724763,
+      "wpm_farfield_rmse_vs_fresnel": 0.027522986298572544,
+      "pade_farfield_rmse_vs_fresnel": 0.008685321610848895,
+      "pade_farfield_rmse_vs_wpm": 0.02147341966098571,
+      "wpm_reflected_power": 6.2426738983582e-08,
+      "pade_reflected_power": 6.218487998677714e-08,
+      "wpm_residual_last": 0.08918223405737419,
+      "pade_residual_last": 0.08884305009833167
+    },
+    {
+      "material": "Si",
+      "energy_keV": 20.0,
+      "grid_shape": [
+        1334,
+        192
+      ],
+      "sampling_A": [
+        0.46875,
+        0.7496251874062968
+      ],
+      "tilt_nyquist_fraction": 0.3809539872157179,
+      "lattice_nyquist_fraction": 0.27605420269058983,
+      "cached_unique_slices": 16,
+      "cache_file": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2/Si_20keV_cross_sections.npz",
+      "loaded_from_cache": true,
+      "runtime_s": 122.94928527716547,
+      "wpm_exit_intensity_rmse_vs_fresnel": 0.007516804119001584,
+      "pade_exit_intensity_rmse_vs_fresnel": 0.004769896191716641,
+      "pade_exit_intensity_rmse_vs_wpm": 0.003048832539839519,
+      "wpm_farfield_rmse_vs_fresnel": 0.01883251504486484,
+      "pade_farfield_rmse_vs_fresnel": 0.004849854710447665,
+      "pade_farfield_rmse_vs_wpm": 0.015987225698350687,
+      "wpm_reflected_power": 1.5922571396367422e-08,
+      "pade_reflected_power": 1.5871565943475048e-08,
+      "wpm_residual_last": 0.04501323704107193,
+      "pade_residual_last": 0.044880996619721614
+    },
+    {
+      "material": "Si",
+      "energy_keV": 30.0,
+      "grid_shape": [
+        1334,
+        192
+      ],
+      "sampling_A": [
+        0.46875,
+        0.7496251874062968
+      ],
+      "tilt_nyquist_fraction": 0.4688049272391163,
+      "lattice_nyquist_fraction": 0.27605420269058983,
+      "cached_unique_slices": 16,
+      "cache_file": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2/Si_30keV_cross_sections.npz",
+      "loaded_from_cache": true,
+      "runtime_s": 121.53854025620967,
+      "wpm_exit_intensity_rmse_vs_fresnel": 0.007482119975232563,
+      "pade_exit_intensity_rmse_vs_fresnel": 0.005209329673264107,
+      "pade_exit_intensity_rmse_vs_wpm": 0.0024391951936907122,
+      "wpm_farfield_rmse_vs_fresnel": 0.02034382711474832,
+      "pade_farfield_rmse_vs_fresnel": 0.008680102016055957,
+      "pade_farfield_rmse_vs_wpm": 0.01472108058394333,
+      "wpm_reflected_power": 7.2097000144428e-09,
+      "pade_reflected_power": 7.188401199567633e-09,
+      "wpm_residual_last": 0.03028174337097143,
+      "pade_residual_last": 0.03020362626513068
+    },
+    {
+      "material": "Mo",
+      "energy_keV": 10.0,
+      "grid_shape": [
+        1334,
+        192
+      ],
+      "sampling_A": [
+        0.46875,
+        0.7496251874062968
+      ],
+      "tilt_nyquist_fraction": 0.268079441784823,
+      "lattice_nyquist_fraction": 0.47640622015017275,
+      "cached_unique_slices": 9,
+      "cache_file": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2/Mo_10keV_cross_sections.npz",
+      "loaded_from_cache": true,
+      "runtime_s": 122.39946036599576,
+      "wpm_exit_intensity_rmse_vs_fresnel": 0.010712940876122075,
+      "pade_exit_intensity_rmse_vs_fresnel": 0.008046039315672042,
+      "pade_exit_intensity_rmse_vs_wpm": 0.008023903222287897,
+      "wpm_farfield_rmse_vs_fresnel": 0.030388745657944582,
+      "pade_farfield_rmse_vs_fresnel": 0.008992255582607828,
+      "pade_farfield_rmse_vs_wpm": 0.026885661580819308,
+      "wpm_reflected_power": 4.988088228318963e-07,
+      "pade_reflected_power": 4.958590321496263e-07,
+      "wpm_residual_last": 0.2830843254203928,
+      "pade_residual_last": 0.2806693258195884
+    },
+    {
+      "material": "Mo",
+      "energy_keV": 20.0,
+      "grid_shape": [
+        1334,
+        192
+      ],
+      "sampling_A": [
+        0.46875,
+        0.7496251874062968
+      ],
+      "tilt_nyquist_fraction": 0.3809539872157179,
+      "lattice_nyquist_fraction": 0.47640622015017275,
+      "cached_unique_slices": 9,
+      "cache_file": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2/Mo_20keV_cross_sections.npz",
+      "loaded_from_cache": true,
+      "runtime_s": 124.83694328740239,
+      "wpm_exit_intensity_rmse_vs_fresnel": 0.012588205332297398,
+      "pade_exit_intensity_rmse_vs_fresnel": 0.007972584716455962,
+      "pade_exit_intensity_rmse_vs_wpm": 0.008027567009347437,
+      "wpm_farfield_rmse_vs_fresnel": 0.035431684007897035,
+      "pade_farfield_rmse_vs_fresnel": 0.008997638425976024,
+      "pade_farfield_rmse_vs_wpm": 0.03738803813419288,
+      "wpm_reflected_power": 1.2753280261808368e-07,
+      "pade_reflected_power": 1.2700123154894064e-07,
+      "wpm_residual_last": 0.14292165456990732,
+      "pade_residual_last": 0.14200266899375125
+    },
+    {
+      "material": "Mo",
+      "energy_keV": 30.0,
+      "grid_shape": [
+        1334,
+        192
+      ],
+      "sampling_A": [
+        0.46875,
+        0.7496251874062968
+      ],
+      "tilt_nyquist_fraction": 0.4688049272391163,
+      "lattice_nyquist_fraction": 0.47640622015017275,
+      "cached_unique_slices": 9,
+      "cache_file": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2/Mo_30keV_cross_sections.npz",
+      "loaded_from_cache": true,
+      "runtime_s": 146.11986581701785,
+      "wpm_exit_intensity_rmse_vs_fresnel": 0.009606038902774226,
+      "pade_exit_intensity_rmse_vs_fresnel": 0.005872360448810486,
+      "pade_exit_intensity_rmse_vs_wpm": 0.006442359616497251,
+      "wpm_farfield_rmse_vs_fresnel": 0.0037703888124335097,
+      "pade_farfield_rmse_vs_fresnel": 0.0030164444900689473,
+      "pade_farfield_rmse_vs_wpm": 0.0029467779898172215,
+      "wpm_reflected_power": 5.776567069287467e-08,
+      "pade_reflected_power": 5.758726234927139e-08,
+      "wpm_residual_last": 0.09608904281240159,
+      "pade_residual_last": 0.09561196413383416
+    },
+    {
+      "material": "Au",
+      "energy_keV": 10.0,
+      "grid_shape": [
+        1334,
+        192
+      ],
+      "sampling_A": [
+        0.46875,
+        0.7496251874062968
+      ],
+      "tilt_nyquist_fraction": 0.268079441784823,
+      "lattice_nyquist_fraction": 0.36764354458376497,
+      "cached_unique_slices": 12,
+      "cache_file": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2/Au_10keV_cross_sections.npz",
+      "loaded_from_cache": true,
+      "runtime_s": 128.03133266884834,
+      "wpm_exit_intensity_rmse_vs_fresnel": 0.040924838582013595,
+      "pade_exit_intensity_rmse_vs_fresnel": 0.023597648262069417,
+      "pade_exit_intensity_rmse_vs_wpm": 0.025725263014512764,
+      "wpm_farfield_rmse_vs_fresnel": 0.040402727934396046,
+      "pade_farfield_rmse_vs_fresnel": 0.019699289423439244,
+      "pade_farfield_rmse_vs_wpm": 0.024432550565183103,
+      "wpm_reflected_power": 3.310504821656791e-09,
+      "pade_reflected_power": 8.909835471712648e-23,
+      "wpm_residual_last": 0.30779236531723747,
+      "pade_residual_last": 0.2991088029219741
+    },
+    {
+      "material": "Au",
+      "energy_keV": 20.0,
+      "grid_shape": [
+        1334,
+        192
+      ],
+      "sampling_A": [
+        0.46875,
+        0.7496251874062968
+      ],
+      "tilt_nyquist_fraction": 0.3809539872157179,
+      "lattice_nyquist_fraction": 0.36764354458376497,
+      "cached_unique_slices": 12,
+      "cache_file": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2/Au_20keV_cross_sections.npz",
+      "loaded_from_cache": true,
+      "runtime_s": 146.364374387078,
+      "wpm_exit_intensity_rmse_vs_fresnel": 0.01570294465403165,
+      "pade_exit_intensity_rmse_vs_fresnel": 0.006109502195633883,
+      "pade_exit_intensity_rmse_vs_wpm": 0.010281521505102033,
+      "wpm_farfield_rmse_vs_fresnel": 0.008206293443103588,
+      "pade_farfield_rmse_vs_fresnel": 0.0019387389421293903,
+      "pade_farfield_rmse_vs_wpm": 0.007804648678709295,
+      "wpm_reflected_power": 9.0389626463964e-11,
+      "pade_reflected_power": 9.7424153485661e-26,
+      "wpm_residual_last": 0.15285495528778414,
+      "pade_residual_last": 0.1512397807363548
+    },
+    {
+      "material": "Au",
+      "energy_keV": 30.0,
+      "grid_shape": [
+        1334,
+        192
+      ],
+      "sampling_A": [
+        0.46875,
+        0.7496251874062968
+      ],
+      "tilt_nyquist_fraction": 0.4688049272391163,
+      "lattice_nyquist_fraction": 0.36764354458376497,
+      "cached_unique_slices": 12,
+      "cache_file": "notebook_results/sideview_glancing_incidence_low_energy_methods/width1000A_depth50A_angle2p0_grid1334x192_pade44_sweeps1_v2/Au_30keV_cross_sections.npz",
+      "loaded_from_cache": true,
+      "runtime_s": 133.3232424966991,
+      "wpm_exit_intensity_rmse_vs_fresnel": 0.021164264118629064,
+      "pade_exit_intensity_rmse_vs_fresnel": 0.010225692060918445,
+      "pade_exit_intensity_rmse_vs_wpm": 0.014143896451504843,
+      "wpm_farfield_rmse_vs_fresnel": 0.016226417189555125,
+      "pade_farfield_rmse_vs_fresnel": 0.005548342775228605,
+      "pade_farfield_rmse_vs_wpm": 0.014663645070122642,
+      "wpm_reflected_power": 1.356244815715669e-10,
+      "pade_reflected_power": 1.7488106191634793e-27,
+      "wpm_residual_last": 0.10341531857892121,
+      "pade_residual_last": 0.10181077317135506
+    }
+  ]
+}
