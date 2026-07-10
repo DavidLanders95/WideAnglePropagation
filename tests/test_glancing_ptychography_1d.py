@@ -8,22 +8,28 @@ jax = pytest.importorskip("jax")
 jnp = pytest.importorskip("jax.numpy")
 jax.config.update("jax_enable_x64", True)
 
-from wide_angle_propagation.propagation_methods import (
+from wide_angle_propagation.propagation_methods import (  # noqa: E402
     fresnel_propagation_kernel_1d,
     phase_grating_1d_from_projected_potential,
     simulate_glancing_fresnel_baseline_1d,
 )
-from wide_angle_propagation.ptychography_1d import (
+from wide_angle_propagation.ptychography_1d import (  # noqa: E402
     beam_path_reconstruction_region_1d,
     GlancingScan1D,
+    LatticeSiteModel1D,
+    LatticeSiteReconstruction1D,
     PotentialReconstruction1D,
     load_glancing_scan_1d,
     load_glancing_sideview_cache_1d,
+    load_lattice_site_reconstruction_1d,
     load_potential_reconstruction_1d,
     normalized_amplitude_loss_1d,
+    reconstruct_lattice_site_potential_1d,
     reconstruct_potential_1d,
+    render_lattice_site_potential_1d,
     save_glancing_scan_1d,
     save_glancing_sideview_cache_1d,
+    save_lattice_site_reconstruction_1d,
     save_potential_reconstruction_1d,
     simulate_glancing_scan_1d,
     simulate_glancing_sideview_cache_1d,
@@ -50,6 +56,43 @@ def _potential(n_s, n_u=N_U):
 
 def _kernel(n_u=N_U, du=DU, ds=DS):
     return fresnel_propagation_kernel_1d(n_u, du, ds, ENERGY)
+
+
+def _small_lattice_model(maximum_displacement=0.5):
+    shape = (8, 12)
+    patch = np.array(
+        [
+            [0.0, 0.2, 0.0],
+            [0.3, 2.0, 0.3],
+            [0.0, 0.2, 0.0],
+        ],
+        dtype=np.float64,
+    )
+    starts = np.array([[2, 3], [4, 7]], dtype=np.int32)
+    reference = np.full(shape, 0.05, dtype=np.float64)
+    for start in starts:
+        reference[
+            start[0] : start[0] + patch.shape[0],
+            start[1] : start[1] + patch.shape[1],
+        ] += patch
+    sites = np.column_stack(
+        [
+            (starts[:, 0] + 1) * 0.4,
+            (starts[:, 1] + 1) * 0.3,
+        ]
+    )
+    return LatticeSiteModel1D(
+        reference_potential=jnp.asarray(reference),
+        site_coordinates=jnp.asarray(sites),
+        site_patches=jnp.asarray(np.stack([patch, patch])),
+        patch_starts=jnp.asarray(starts),
+        control_coordinates_s=jnp.array([0.0, (shape[0] - 1) * 0.4]),
+        control_coordinates_u=jnp.array([0.0, (shape[1] - 1) * 0.3]),
+        axial_sampling=0.4,
+        transverse_sampling=0.3,
+        maximum_displacement=maximum_displacement,
+        metadata={"species": "Si"},
+    )
 
 
 def test_scan_validates_starts_and_returns_full_detector():
@@ -190,6 +233,92 @@ def test_masked_potential_has_zero_gradient_outside_mask():
     np.testing.assert_array_equal(np.asarray(gradient[~mask]), 0.0)
 
 
+def test_lattice_renderer_identity_and_unit_vacancy():
+    model = _small_lattice_model()
+    vacancies = jnp.zeros(2)
+    controls = jnp.zeros((2, 2, 2))
+    identity = render_lattice_site_potential_1d(model, vacancies, controls)
+    np.testing.assert_allclose(identity, model.reference_potential, atol=1e-14)
+
+    one_vacancy = render_lattice_site_potential_1d(
+        model, vacancies.at[0].set(1.0), controls
+    )
+    expected = np.asarray(model.reference_potential).copy()
+    start = np.asarray(model.patch_starts[0])
+    patch = np.asarray(model.site_patches[0])
+    expected[
+        start[0] : start[0] + patch.shape[0],
+        start[1] : start[1] + patch.shape[1],
+    ] -= patch
+    np.testing.assert_allclose(one_vacancy, expected, atol=1e-14)
+
+
+def test_lattice_renderer_vacancy_and_displacement_gradients_match_difference():
+    model = _small_lattice_model()
+    weights = jnp.linspace(0.2, 1.7, np.prod(model.reference_potential.shape)).reshape(
+        model.reference_potential.shape
+    )
+    controls = jnp.zeros((2, 2, 2)).at[..., 0].set(0.07)
+    vacancies = jnp.array([0.15, 0.05])
+
+    def objective(vacancy_values, control_values):
+        potential = render_lattice_site_potential_1d(
+            model, vacancy_values, control_values
+        )
+        return jnp.sum(weights * potential)
+
+    vacancy_gradient, control_gradient = jax.grad(objective, argnums=(0, 1))(
+        vacancies, controls
+    )
+    step = 1e-5
+    vacancy_difference = (
+        objective(vacancies.at[0].add(step), controls)
+        - objective(vacancies.at[0].add(-step), controls)
+    ) / (2 * step)
+    control_difference = (
+        objective(vacancies, controls.at[0, 0, 0].add(step))
+        - objective(vacancies, controls.at[0, 0, 0].add(-step))
+    ) / (2 * step)
+    np.testing.assert_allclose(
+        vacancy_gradient[0], vacancy_difference, rtol=2e-7, atol=2e-9
+    )
+    np.testing.assert_allclose(
+        control_gradient[0, 0, 0], control_difference, rtol=2e-5, atol=2e-8
+    )
+
+
+def test_direct_reconstruction_retains_fixed_exterior():
+    pytest.importorskip("optax", reason="the ptychography extra is not installed")
+    n_s, n_u = 5, 12
+    mask = jnp.zeros((n_s, n_u), dtype=bool).at[1:4, 4:8].set(True)
+    fixed = jnp.full((n_s, n_u), 17.0)
+    initial = fixed.at[mask].set(30.0)
+    starts = jnp.array([0, 1])
+    probe = _probe(n_u=n_u, du=0.3)
+    kernel = _kernel(n_u=n_u, du=0.3, ds=0.4)
+    measured = simulate_glancing_scan_1d(initial, probe, starts, 4, kernel, 0.4, ENERGY)
+    result = reconstruct_potential_1d(
+        initial,
+        mask,
+        probe,
+        starts,
+        4,
+        kernel,
+        0.4,
+        ENERGY,
+        measured,
+        fixed_potential=fixed,
+        potential_scale=30.0,
+        potential_max=50.0,
+        updates=1,
+        minibatch_size=2,
+        validation_interval=1,
+        rematerialize=False,
+    )
+    np.testing.assert_array_equal(np.asarray(result.potential)[~np.asarray(mask)], 17.0)
+    assert result.metadata["uses_fixed_potential"] is True
+
+
 def test_direct_potential_gradient_matches_finite_difference():
     n_s = 4
     u = (jnp.arange(N_U) - N_U // 2) * DU
@@ -215,7 +344,9 @@ def test_direct_potential_gradient_matches_finite_difference():
     step = 1e-2
     finite = (objective(x0 + step) - objective(x0 - step)) / (2 * step)
     assert np.isfinite(np.asarray(automatic))
-    np.testing.assert_allclose(np.asarray(automatic), np.asarray(finite), rtol=2e-4, atol=2e-8)
+    np.testing.assert_allclose(
+        np.asarray(automatic), np.asarray(finite), rtol=2e-4, atol=2e-8
+    )
 
 
 def test_sideview_cache_matches_batch_detector_and_downsamples_intensity():
@@ -286,7 +417,9 @@ def test_scan_cache_and_potential_result_round_trip_without_pickle(tmp_path):
     cache_path = tmp_path / "sideviews.npz"
     save_glancing_sideview_cache_1d(cache_path, cache)
     loaded_cache = load_glancing_sideview_cache_1d(cache_path)
-    np.testing.assert_allclose(loaded_cache.sideview_wavefields, cache.sideview_wavefields)
+    np.testing.assert_allclose(
+        loaded_cache.sideview_wavefields, cache.sideview_wavefields
+    )
     assert loaded_cache.metadata == cache.metadata
 
     mask = jnp.zeros((3, 4), dtype=bool).at[:, 1:3].set(True)
@@ -311,8 +444,47 @@ def test_scan_cache_and_potential_result_round_trip_without_pickle(tmp_path):
     save_potential_reconstruction_1d(result_path, result)
     loaded_result = load_potential_reconstruction_1d(result_path)
     np.testing.assert_allclose(loaded_result.potential, result.potential)
-    np.testing.assert_array_equal(loaded_result.reconstruction_mask, result.reconstruction_mask)
+    np.testing.assert_array_equal(
+        loaded_result.reconstruction_mask, result.reconstruction_mask
+    )
     assert loaded_result.best_update == result.best_update
+
+    lattice_model = _small_lattice_model()
+    lattice_result = LatticeSiteReconstruction1D(
+        potential=lattice_model.reference_potential,
+        initial_potential=lattice_model.reference_potential,
+        vacancy_fractions=jnp.array([0.9, 0.1]),
+        initial_vacancy_fractions=jnp.zeros(2),
+        displacement_controls=jnp.zeros((2, 2, 2)).at[..., 0].set(0.03),
+        initial_displacement_controls=jnp.zeros((2, 2, 2)),
+        site_coordinates=lattice_model.site_coordinates,
+        displaced_site_coordinates=lattice_model.site_coordinates
+        + jnp.array([0.03, 0.0]),
+        control_coordinates_s=lattice_model.control_coordinates_s,
+        control_coordinates_u=lattice_model.control_coordinates_u,
+        predicted_intensities=scan.intensities,
+        measured_intensities=scan.intensities,
+        window_starts=scan.window_starts,
+        scan_coordinates=scan.scan_coordinates,
+        detector_angles=scan.detector_angles,
+        update_history=jnp.array([0, 10]),
+        elapsed_time_history=jnp.array([0.5, 1.5]),
+        training_loss_history=jnp.array([1.0, 0.1]),
+        validation_loss_history=jnp.array([1.1, 0.2]),
+        best_update=10,
+        metadata={"species": "Si"},
+    )
+    lattice_path = tmp_path / "lattice_result.npz"
+    save_lattice_site_reconstruction_1d(lattice_path, lattice_result)
+    loaded_lattice = load_lattice_site_reconstruction_1d(lattice_path)
+    np.testing.assert_allclose(
+        loaded_lattice.vacancy_fractions, lattice_result.vacancy_fractions
+    )
+    np.testing.assert_allclose(
+        loaded_lattice.displacement_controls,
+        lattice_result.displacement_controls,
+    )
+    assert loaded_lattice.metadata == {"species": "Si"}
 
 
 def test_reconstruction_rejects_phase_wrapping_bound():
@@ -337,6 +509,93 @@ def test_reconstruction_rejects_phase_wrapping_bound():
         )
 
 
+def test_tiny_lattice_vacancy_reconstruction_recovers_site_fraction():
+    pytest.importorskip("optax", reason="the ptychography extra is not installed")
+    model = _small_lattice_model(maximum_displacement=0.0)
+    u = (jnp.arange(12) - 6) * 0.3
+    probe = jnp.exp(-0.5 * ((u + 0.1) / 0.65) ** 2) * jnp.exp(0.25j * u)
+    kernel = fresnel_propagation_kernel_1d(12, 0.3, 0.4, ENERGY)
+    starts = jnp.arange(5)
+    controls = jnp.zeros((2, 2, 2))
+    target_vacancies = jnp.array([0.85, 0.0])
+    target = render_lattice_site_potential_1d(model, target_vacancies, controls)
+    measured = simulate_glancing_scan_1d(target, probe, starts, 4, kernel, 0.4, ENERGY)
+    initial_prediction = simulate_glancing_scan_1d(
+        model.reference_potential, probe, starts, 4, kernel, 0.4, ENERGY
+    )
+    initial_loss = normalized_amplitude_loss_1d(initial_prediction, measured)
+
+    result = reconstruct_lattice_site_potential_1d(
+        model,
+        probe,
+        starts,
+        4,
+        kernel,
+        0.4,
+        ENERGY,
+        measured,
+        potential_max=10.0,
+        learning_rate_start=0.1,
+        learning_rate_end=1e-3,
+        updates=100,
+        minibatch_size=5,
+        validation_interval=20,
+        evaluation_batch_size=5,
+        rematerialize=False,
+    )
+    recovered_loss = normalized_amplitude_loss_1d(
+        result.predicted_intensities, measured
+    )
+    assert float(recovered_loss) < 1e-4 * float(initial_loss)
+    np.testing.assert_allclose(result.vacancy_fractions, target_vacancies, atol=4e-3)
+
+
+def test_tiny_lattice_strain_reconstruction_recovers_site_displacements():
+    pytest.importorskip("optax", reason="the ptychography extra is not installed")
+    model = _small_lattice_model(maximum_displacement=0.5)
+    u = (jnp.arange(12) - 6) * 0.3
+    base_probe = jnp.exp(-0.5 * ((u + 0.1) / 0.65) ** 2) * jnp.exp(0.25j * u)
+    probes = jnp.stack([jnp.roll(base_probe, index - 2) for index in range(5)])
+    kernel = fresnel_propagation_kernel_1d(12, 0.3, 0.4, ENERGY)
+    starts = jnp.arange(5)
+    target_controls = jnp.zeros((2, 2, 2))
+    target_controls = target_controls.at[0, :, 1].set(0.12)
+    target_controls = target_controls.at[1, :, 1].set(-0.12)
+    target = render_lattice_site_potential_1d(model, jnp.zeros(2), target_controls)
+    measured = simulate_glancing_scan_1d(target, probes, starts, 4, kernel, 0.4, ENERGY)
+
+    result = reconstruct_lattice_site_potential_1d(
+        model,
+        probes,
+        starts,
+        4,
+        kernel,
+        0.4,
+        ENERGY,
+        measured,
+        potential_max=10.0,
+        learning_rate_start=0.05,
+        learning_rate_end=5e-4,
+        updates=300,
+        minibatch_size=5,
+        validation_interval=50,
+        evaluation_batch_size=5,
+        rematerialize=False,
+    )
+    site_s_fraction = np.asarray(model.site_coordinates[:, 0]) / float(
+        model.control_coordinates_s[-1]
+    )
+    expected_u_displacement = 0.12 - 0.24 * site_s_fraction
+    recovered_displacement = np.asarray(
+        result.displaced_site_coordinates - result.site_coordinates
+    )
+    np.testing.assert_allclose(
+        recovered_displacement[:, 1], expected_u_displacement, atol=1e-4
+    )
+    np.testing.assert_allclose(recovered_displacement[:, 0], 0.0, atol=1e-3)
+    np.testing.assert_allclose(result.vacancy_fractions, 0.0, atol=1e-6)
+
+
 def test_tiny_direct_potential_reconstruction_reduces_loss_and_recovers_shape():
     pytest.importorskip("optax", reason="the ptychography extra is not installed")
     n_s, n_u = 7, 24
@@ -351,9 +610,7 @@ def test_tiny_direct_potential_reconstruction_reduces_loss_and_recovers_shape():
     u_profile = jnp.exp(-0.5 * ((u - 0.15) / 0.55) ** 2)
     target = 650.0 * s_profile[:, None] * u_profile[None, :] * mask
     initial = 60.0 * mask
-    measured = simulate_glancing_scan_1d(
-        target, probe, starts, 3, kernel, ds, ENERGY
-    )
+    measured = simulate_glancing_scan_1d(target, probe, starts, 3, kernel, ds, ENERGY)
     initial_prediction = simulate_glancing_scan_1d(
         initial, probe, starts, 3, kernel, ds, ENERGY
     )
@@ -381,7 +638,9 @@ def test_tiny_direct_potential_reconstruction_reduces_loss_and_recovers_shape():
         rematerialize=False,
         seed=4,
     )
-    recovered_loss = normalized_amplitude_loss_1d(result.predicted_intensities, measured)
+    recovered_loss = normalized_amplitude_loss_1d(
+        result.predicted_intensities, measured
+    )
     correlation = np.corrcoef(
         np.asarray(result.potential)[np.asarray(mask)],
         np.asarray(target)[np.asarray(mask)],

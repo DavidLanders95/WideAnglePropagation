@@ -11,8 +11,12 @@ and second-order Klein-Gordon propagation.
 - `wide_angle_propagation/notebook_utils.py`: beam/amplitude utilities, plotting
   helpers, and compact result-file helpers used by the notebooks.
 - `wide_angle_propagation/ptychography_1d.py`: focused helpers for masked
-  pixelwise-potential reconstruction and selected-scan side-view caches in
-  synthetic one-dimensional glancing-incidence scans.
+  pixelwise and physics-informed lattice-site reconstruction, together with
+  selected-scan side-view caches for synthetic one-dimensional
+  glancing-incidence scans.
+- `wide_angle_propagation/ptychography_workflow_1d.py`: concise experiment,
+  reconstruction-comparison, plotting, and interactive-viewer API used by the
+  glancing-incidence ptychography notebook.
 - `tests/`: regression and behavior tests for the propagation methods.
 - `notebooks/figure_generation/01_axel_lubk_verification.ipynb`: Au [100]
   beam-amplitude verification against the full KG ODE reference.

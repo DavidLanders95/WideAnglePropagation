@@ -21,6 +21,7 @@ PYTHON_FILES = [
     ROOT / "wide_angle_propagation" / "sideview_geometry.py",
     ROOT / "wide_angle_propagation" / "notebook_utils.py",
     ROOT / "wide_angle_propagation" / "ptychography_1d.py",
+    ROOT / "wide_angle_propagation" / "ptychography_workflow_1d.py",
 ]
 TARGET_NOTEBOOKS = [
     ROOT / "notebooks" / "sideview_glancing_incidence_example.ipynb",
@@ -109,6 +110,9 @@ def main(argv: list[str] | None = None) -> None:
     assert_exports_exist(ROOT / "wide_angle_propagation" / "sideview_geometry.py")
     assert_exports_exist(ROOT / "wide_angle_propagation" / "notebook_utils.py")
     assert_exports_exist(ROOT / "wide_angle_propagation" / "ptychography_1d.py")
+    assert_exports_exist(
+        ROOT / "wide_angle_propagation" / "ptychography_workflow_1d.py"
+    )
     parse_target_notebooks(require_no_outputs=args.enforce_clean_notebooks)
 
 
