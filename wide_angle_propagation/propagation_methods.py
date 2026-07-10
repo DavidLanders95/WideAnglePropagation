@@ -41,6 +41,7 @@ __all__ = [
     "interface_scattering_matrix_1d",
     "klein_gordon_refractive_index_1d",
     "line_to_line_cylindrical_propagate_1d",
+    "rayleigh_sommerfeld_propagate_1d",
     "make_gaussian_atom_potential_sideview_1d",
     "pade_backward_step_1d",
     "pade_forward_step_1d",
@@ -53,6 +54,7 @@ __all__ = [
     "simulate_fresnel_as_jit",
     "simulate_bidirectional_pade_bpm_1d",
     "simulate_bidirectional_wpm_1d",
+    "simulate_glancing_angular_spectrum_1d",
     "simulate_glancing_fresnel_baseline_1d",
     "simulate_kg_ode_full",
     "simulate_single_slice_cylindrical_1d",
@@ -313,7 +315,13 @@ def _trapz_weights(coords):
 
 
 def cylindrical_green_asymptotic_1d(R, energy, *, eps: float = 1e-12):
-    """High-frequency 2D cylindrical Green-function asymptotic kernel."""
+    """Unnormalised high-frequency 2D cylindrical Green-function shape.
+
+    This helper is retained for source-integral experiments. It is not, by
+    itself, a Rayleigh--Sommerfeld propagation kernel; use
+    :func:`rayleigh_sommerfeld_propagate_1d` when the input is a boundary
+    field.
+    """
     wavelength = energy2wavelength(energy)
     k = 2.0 * jnp.pi / wavelength
     R_safe = jnp.maximum(jnp.asarray(R), eps)
@@ -341,6 +349,73 @@ def line_to_line_cylindrical_propagate_1d(
     R = jnp.sqrt(jnp.sum(delta * delta, axis=-1))
     weights = _trapz_weights(source_line.coords)
     kernel = cylindrical_green_asymptotic_1d(R, energy)
+    return kernel @ (_as_complex_wave_1d(source_wave) * weights)
+
+
+def _rayleigh_sommerfeld_asymptotic_kernel_1d(
+    delta,
+    source_normal,
+    energy,
+    *,
+    eps: float = 1e-12,
+):
+    """Return the forward 2D Rayleigh--Sommerfeld kernel in the far field.
+
+    For an outgoing scalar 2D Helmholtz wave, the field-only
+    Rayleigh--Sommerfeld kernel on a planar boundary is the normal derivative
+    of the Dirichlet image Green function. Its large-``k R`` limit is
+
+    ``sqrt(k / (2 pi R)) exp(i (k R - pi/4)) (n_source . R_hat)``.
+
+    The final factor is the obliquity factor. It rejects the backward
+    half-space and, unlike a direct ``G U`` source integral, has the correct
+    scalar-wave dimensions and normalization. The approximation is accurate
+    when every retained source-target pair satisfies ``k R >> 1``.
+    """
+    delta = jnp.asarray(delta)
+    source_normal = jnp.asarray(source_normal)
+    R = jnp.sqrt(jnp.sum(delta * delta, axis=-1))
+    R_safe = jnp.maximum(R, eps)
+    wavelength = energy2wavelength(energy)
+    k = 2.0 * jnp.pi / wavelength
+    obliquity = jnp.sum(delta * source_normal[None, None, :], axis=-1) / R_safe
+    kernel = (
+        jnp.sqrt(k / (2.0 * jnp.pi * R_safe))
+        * jnp.exp(1j * (k * R_safe - jnp.pi / 4.0))
+        * obliquity
+    )
+    return jnp.where(obliquity > 0.0, kernel, 0.0 + 0.0j)
+
+
+def rayleigh_sommerfeld_propagate_1d(
+    source_wave,
+    source_line,
+    target_line,
+    energy,
+    *,
+    source_normal=None,
+    quadrature="trapezoid",
+):
+    """Propagate a boundary field with a forward 2D RS asymptotic integral.
+
+    ``source_wave`` is interpreted as the scalar field on ``source_line``,
+    not as an arbitrary line-source density. ``source_normal`` selects the
+    outgoing half-space; it defaults to ``source_line.normal`` and may be
+    reversed when the physical field leaves the opposite side of the line.
+
+    The implementation uses the high-frequency form of the 2D
+    Rayleigh--Sommerfeld kernel. It should not be used for source-target
+    separations comparable with an electron wavelength.
+    """
+    if quadrature != "trapezoid":
+        raise ValueError("Only trapezoid quadrature is currently implemented")
+
+    source_points = source_line.points()
+    target_points = target_line.points()
+    delta = target_points[:, None, :] - source_points[None, :, :]
+    normal = source_line.normal if source_normal is None else jnp.asarray(source_normal)
+    weights = _trapz_weights(source_line.coords)
+    kernel = _rayleigh_sommerfeld_asymptotic_kernel_1d(delta, normal, energy)
     return kernel @ (_as_complex_wave_1d(source_wave) * weights)
 
 
@@ -387,51 +462,76 @@ def simulate_single_slice_cylindrical_1d(
     quadrature="trapezoid",
     green_kernel="cylindrical_asymptotic",
     steering="specular",
+    input_normal=None,
+    sample_normal=None,
     return_diagnostics=True,
 ):
-    """Direct sideview line-to-line propagation through one projected slice."""
-    sample_wave = line_to_line_cylindrical_propagate_1d(
+    """Single-slice sideview model using forward RS boundary propagation.
+
+    The potential is a projected phase grating on ``sample_line``. The two
+    propagations use the normalized, obliquity-weighted 2D
+    Rayleigh--Sommerfeld kernel. ``input_normal`` and ``sample_normal`` can
+    select the outward side of each boundary independently.
+
+    ``green_kernel`` and ``steering`` are retained as compatibility arguments
+    for older callers; only the forward RS kernel is used.
+    """
+    if green_kernel != "cylindrical_asymptotic":
+        raise ValueError("Only the Rayleigh--Sommerfeld asymptotic kernel is implemented")
+
+    sample_wave = rayleigh_sommerfeld_propagate_1d(
         input_wave,
         input_line,
         sample_line,
         energy,
         quadrature=quadrature,
-        green_kernel=green_kernel,
+        source_normal=input_normal,
     )
     grating = phase_grating_1d_from_projected_potential(projected_potential, energy)
     sample_wave_after = sample_wave * grating
-    output_wave = line_to_line_cylindrical_propagate_1d(
+    output_wave = rayleigh_sommerfeld_propagate_1d(
         sample_wave_after,
         sample_line,
         output_line,
         energy,
         quadrature=quadrature,
-        green_kernel=green_kernel,
+        source_normal=sample_normal,
     )
     intensity = jnp.abs(output_wave) ** 2
     if not return_diagnostics:
         return output_wave, intensity
+    input_line_intensity = jnp.sum(
+        jnp.abs(input_wave) ** 2 * _trapz_weights(input_line.coords)
+    )
+    output_line_intensity = jnp.sum(
+        intensity * _trapz_weights(output_line.coords)
+    )
     diagnostics = {
         "sample_wave": sample_wave,
         "sample_wave_after_grating": sample_wave_after,
-        "input_power": jnp.sum(jnp.abs(input_wave) ** 2),
-        "output_power": jnp.sum(intensity),
+        # The legacy names are retained, although these are line integrals of
+        # scalar intensity rather than vector electromagnetic fluxes.
+        "input_power": input_line_intensity,
+        "output_power": output_line_intensity,
+        "input_line_intensity": input_line_intensity,
+        "output_line_intensity": output_line_intensity,
         "steering": steering,
     }
     return output_wave, intensity, diagnostics
 
 
-def simulate_glancing_fresnel_baseline_1d(
+def _simulate_glancing_split_step_1d(
     input_wave,
     potential_slices,
     dx,
     dz,
     energy,
     *,
+    kernel_builder,
     input_tilt=0.0,
     return_diagnostics=True,
 ):
-    """Slice-based 1D Fresnel multislice baseline for sideview propagation."""
+    """Run a slice-based 1D split-step method with a supplied vacuum kernel."""
     wave = _as_complex_wave_1d(input_wave)
     potential_slices = jnp.asarray(potential_slices)
     n = wave.shape[0]
@@ -440,7 +540,7 @@ def simulate_glancing_fresnel_baseline_1d(
         wavelength = energy2wavelength(energy)
         wave = wave * jnp.exp(1j * 2.0 * jnp.pi * coords * jnp.sin(input_tilt) / wavelength)
 
-    kernel = fresnel_propagation_kernel_1d(n, dx, dz, energy)
+    kernel = kernel_builder(n, dx, dz, energy)
     wavefronts = []
     for potential_slice in potential_slices:
         wave = wave * phase_grating_1d_from_projected_potential(potential_slice * dz, energy)
@@ -456,6 +556,52 @@ def simulate_glancing_fresnel_baseline_1d(
         "input_tilt": input_tilt,
     }
     return wave, intensity, diagnostics
+
+
+def simulate_glancing_fresnel_baseline_1d(
+    input_wave,
+    potential_slices,
+    dx,
+    dz,
+    energy,
+    *,
+    input_tilt=0.0,
+    return_diagnostics=True,
+):
+    """Slice-based 1D Fresnel multislice baseline for sideview propagation."""
+    return _simulate_glancing_split_step_1d(
+        input_wave,
+        potential_slices,
+        dx,
+        dz,
+        energy,
+        kernel_builder=fresnel_propagation_kernel_1d,
+        input_tilt=input_tilt,
+        return_diagnostics=return_diagnostics,
+    )
+
+
+def simulate_glancing_angular_spectrum_1d(
+    input_wave,
+    potential_slices,
+    dx,
+    dz,
+    energy,
+    *,
+    input_tilt=0.0,
+    return_diagnostics=True,
+):
+    """Slice-based 1D angular-spectrum multislice propagation."""
+    return _simulate_glancing_split_step_1d(
+        input_wave,
+        potential_slices,
+        dx,
+        dz,
+        energy,
+        kernel_builder=angular_spectrum_propagation_kernel_1d,
+        input_tilt=input_tilt,
+        return_diagnostics=return_diagnostics,
+    )
 
 
 def wpm_step_adaptive_1d(

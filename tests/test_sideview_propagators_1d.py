@@ -12,6 +12,7 @@ from wide_angle_propagation.propagation_methods import (
     fourier_propagate_1d,
     fresnel_propagation_kernel_1d,
     get_frequencies_1d,
+    simulate_glancing_angular_spectrum_1d,
     simulate_glancing_fresnel_baseline_1d,
 )
 
@@ -74,6 +75,26 @@ def test_fresnel_baseline_gradient_through_potential_strength():
 
     grad = jax.grad(objective)(2.0)
     assert np.isfinite(np.asarray(grad))
+
+
+def test_glancing_angular_spectrum_matches_direct_split_step():
+    wave = jnp.exp(-0.5 * (jnp.linspace(-2.0, 2.0, N) / 0.5) ** 2).astype(
+        jnp.complex128
+    )
+    potential = jnp.zeros((2, N), dtype=jnp.float64)
+
+    propagated, _, diagnostics = simulate_glancing_angular_spectrum_1d(
+        wave,
+        potential,
+        DX,
+        DZ,
+        ENERGY,
+    )
+    kernel = angular_spectrum_propagation_kernel_1d(N, DX, DZ, ENERGY)
+    expected = fourier_propagate_1d(fourier_propagate_1d(wave, kernel), kernel)
+
+    np.testing.assert_allclose(np.asarray(propagated), np.asarray(expected), atol=1e-10)
+    assert diagnostics["wavefronts"].shape == potential.shape
 
 
 def test_diffraction_intensity_1d_shape_and_nonnegative():

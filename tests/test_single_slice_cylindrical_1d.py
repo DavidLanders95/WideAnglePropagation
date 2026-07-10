@@ -7,8 +7,12 @@ pytest.importorskip("ase")
 jax.config.update("jax_enable_x64", True)
 
 from wide_angle_propagation.propagation_methods import (
+    angular_spectrum_propagation_kernel_1d,
     cylindrical_green_asymptotic_1d,
+    energy2wavelength,
+    fourier_propagate_1d,
     project_atoms_to_sample_line_1d,
+    rayleigh_sommerfeld_propagate_1d,
     simulate_single_slice_cylindrical_1d,
 )
 from wide_angle_propagation.sideview_geometry import line_from_angle
@@ -32,6 +36,40 @@ def test_cylindrical_kernel_has_inverse_sqrt_amplitude_trend():
     g2 = cylindrical_green_asymptotic_1d(r2, ENERGY)
     ratio = jnp.abs(g1) / jnp.abs(g2)
     np.testing.assert_allclose(np.asarray(ratio), np.sqrt(r2 / r1), rtol=1e-12)
+
+
+def test_rayleigh_sommerfeld_matches_angular_spectrum_in_vacuum():
+    """The normalized RS far-field kernel reproduces forward plane propagation."""
+    n = 512
+    dx = 0.05
+    distance = 20.0
+    coords = (jnp.arange(n) - n // 2) * dx
+    source_line = line_from_angle(jnp.array([0.0, 0.0]), 0.0, coords)
+    target_line = line_from_angle(jnp.array([0.0, distance]), 0.0, coords)
+    tilt = 0.04
+    wavelength = energy2wavelength(ENERGY)
+    source_wave = (
+        jnp.exp(-0.5 * (coords / 2.0) ** 2)
+        * jnp.exp(1j * 2.0 * jnp.pi * coords * jnp.sin(tilt) / wavelength)
+    )
+
+    rs_wave = rayleigh_sommerfeld_propagate_1d(
+        source_wave, source_line, target_line, ENERGY
+    )
+    angular_spectrum_wave = fourier_propagate_1d(
+        source_wave,
+        angular_spectrum_propagation_kernel_1d(n, dx, distance, ENERGY),
+    )
+
+    relative_error = jnp.linalg.norm(rs_wave - angular_spectrum_wave) / jnp.linalg.norm(
+        angular_spectrum_wave
+    )
+    assert float(relative_error) < 5e-3
+    np.testing.assert_allclose(
+        np.asarray(jnp.sum(jnp.abs(rs_wave) ** 2)),
+        np.asarray(jnp.sum(jnp.abs(angular_spectrum_wave) ** 2)),
+        rtol=5e-3,
+    )
 
 
 def test_single_slice_cylindrical_returns_finite_output():

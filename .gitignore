@@ -51,5 +51,6 @@ Paper/figures/*
 archive/delete_candidates_*/latex_build_artifacts/**/*
 
 # Executed notebook artifacts and temporary notebook files
+notebook_results/
 notebooks/**/*_executed.ipynb
 notebooks/**/*.ipynb.tmp
