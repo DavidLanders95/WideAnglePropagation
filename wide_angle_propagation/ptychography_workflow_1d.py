@@ -53,6 +53,7 @@ __all__ = [
     "reconstruct_experiment_1d",
     "reconstruction_metrics_1d",
     "save_experiment_results_1d",
+    "save_lattice_reconstruction_gif_1d",
     "simulate_experiment_1d",
 ]
 
@@ -91,6 +92,7 @@ class SiliconGlancingConfig1D:
     cutoff_check_A: float = 10.0
     maximum_displacement_A: float = 0.5
     displacement_control_spacing_A: float = 25.0
+    displacement_control_spacing_u_A: float = 3.0
 
 
 @dataclass(frozen=True)
@@ -101,9 +103,9 @@ class SiliconGlancingExperiment1D:
     pristine_potential: Array
     lattice_model: LatticeSiteModel1D
     truth_potentials: Mapping[str, Array]
-    truth_vacancy_fractions: Array
+    truth_vacancy_fractions: Mapping[str, Array]
     truth_displacement_controls: Mapping[str, Array]
-    vacancy_site_indices: Array
+    defect_site_indices: Mapping[str, Array]
     variable_sites: Array
     reconstruction_mask: Array
     beam_path_scan_coverage: Array
@@ -129,6 +131,7 @@ class GlancingDataset1D:
     case: str
     potential: Array
     scan: GlancingScan1D
+    truth_vacancy_fractions: Array
     truth_displacement_controls: Array
     zero_exterior_amplitude_nrmse: float
     template_cutoff_amplitude_nrmse: float
@@ -151,6 +154,9 @@ class ReconstructionOptions1D:
     rematerialize: bool = True
     seed: int = 0
     progress: bool = True
+    initial_site_offset_A: tuple[float, float] = (0.0, 0.0)
+    initial_control_noise_A: float = 0.0
+    lattice_checkpoint_interval: int | None = None
 
 
 def _tile_to_shape(array: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
@@ -313,7 +319,8 @@ def _truth_controls(
     control_s_A: np.ndarray,
     control_u_A: np.ndarray,
     defect_center_s_A: float,
-) -> tuple[np.ndarray, np.ndarray]:
+    maximum_displacement_A: float,
+) -> Mapping[str, np.ndarray]:
     control_s, control_u = np.meshgrid(control_s_A, control_u_A, indexing="ij")
     envelope = np.exp(
         -0.5 * ((control_s - defect_center_s_A) / 75.0) ** 2
@@ -322,8 +329,111 @@ def _truth_controls(
     axial = envelope / max(float(np.max(np.abs(envelope))), 1e-12)
     transverse = ((control_s - defect_center_s_A) / 75.0) * envelope
     transverse /= max(float(np.max(np.abs(transverse))), 1e-12)
-    strained = np.stack([0.25 * axial, 0.15 * transverse], axis=-1)
-    return np.zeros_like(strained), strained
+    strained = np.stack(
+        [
+            min(0.25, maximum_displacement_A) * axial,
+            min(0.15, maximum_displacement_A) * transverse,
+        ],
+        axis=-1,
+    )
+
+    # A two-lobed, depth-dependent field is deliberately less compatible with
+    # one affine deformation while remaining smooth on the control grid.
+    left = np.exp(
+        -0.5 * ((control_s - defect_center_s_A + 42.0) / 48.0) ** 2
+        - 0.5 * ((control_u + 3.0) / 5.0) ** 2
+    )
+    right = np.exp(
+        -0.5 * ((control_s - defect_center_s_A - 38.0) / 32.0) ** 2
+        - 0.5 * ((control_u + 7.0) / 4.0) ** 2
+    )
+    depth_shear = ((control_u + 4.0) / 8.0) * np.exp(
+        -0.5 * ((control_s - defect_center_s_A) / 65.0) ** 2
+        - 0.5 * ((control_u + 5.0) / 7.0) ** 2
+    )
+    hard_axial = left - 0.8 * right + 0.35 * depth_shear
+    hard_transverse = (
+        ((control_s - defect_center_s_A + 42.0) / 48.0) * left
+        - 0.7 * ((control_s - defect_center_s_A - 38.0) / 32.0) * right
+        + 0.3 * depth_shear
+    )
+    hard_axial /= max(float(np.max(np.abs(hard_axial))), 1e-12)
+    hard_transverse /= max(float(np.max(np.abs(hard_transverse))), 1e-12)
+    hard = np.stack(
+        [
+            min(0.35, maximum_displacement_A) * hard_axial,
+            min(0.20, maximum_displacement_A) * hard_transverse,
+        ],
+        axis=-1,
+    )
+    return {
+        "vacancy": np.zeros_like(strained),
+        "vacancy_plus_strain": strained,
+        "strained_surface_defects": hard,
+    }
+
+
+def _surface_defect_truths(
+    variable_sites: np.ndarray,
+    *,
+    center_s_A: float,
+    simple_width_sites: int,
+) -> tuple[Mapping[str, np.ndarray], Mapping[str, np.ndarray]]:
+    """Build a simple terrace vacancy and an irregular multilayer surface pit."""
+
+    def nearest(indices: np.ndarray, target: float, count: int) -> np.ndarray:
+        if not len(indices) or count <= 0:
+            return np.empty(0, dtype=int)
+        order = np.argsort(np.abs(variable_sites[indices, 0] - target))
+        return indices[order[: min(count, len(indices))]]
+
+    layers = np.unique(np.round(variable_sites[:, 1], decimals=8))[::-1]
+    layer_indices = [
+        np.flatnonzero(np.isclose(variable_sites[:, 1], layer, atol=1e-7))
+        for layer in layers[:3]
+    ]
+    if not layer_indices or len(layer_indices[0]) < simple_width_sites:
+        raise ValueError("not enough variable top-layer sites for the defect")
+
+    simple_sites = nearest(layer_indices[0], center_s_A, simple_width_sites)
+    simple = np.zeros(len(variable_sites), dtype=float)
+    simple[simple_sites] = 1.0
+
+    top_width = max(simple_width_sites + 4, 6)
+    central_widths = (
+        top_width,
+        max(round(0.6 * top_width), 2),
+        max(round(0.3 * top_width), 1),
+    )
+    complex_groups = [
+        nearest(indices, center_s_A, width)
+        for indices, width in zip(layer_indices, central_widths)
+    ]
+    top_s = variable_sites[layer_indices[0], 0]
+    available_half_span = max(
+        min(center_s_A - float(np.min(top_s)), float(np.max(top_s)) - center_s_A),
+        0.0,
+    )
+    satellite_offset = min(45.0, 0.55 * available_half_span)
+    satellite_width = max(round(0.3 * top_width), 2)
+    complex_groups.extend(
+        [
+            nearest(layer_indices[0], center_s_A - satellite_offset, satellite_width),
+            nearest(layer_indices[0], center_s_A + satellite_offset, satellite_width),
+        ]
+    )
+    complex_sites = np.unique(np.concatenate(complex_groups))
+    complex_fractions = np.zeros(len(variable_sites), dtype=float)
+    complex_fractions[complex_sites] = 1.0
+    fractions = {
+        "vacancy": simple,
+        "vacancy_plus_strain": simple.copy(),
+        "strained_surface_defects": complex_fractions,
+    }
+    indices = {
+        case: np.flatnonzero(values >= 0.5) for case, values in fractions.items()
+    }
+    return fractions, indices
 
 
 def build_silicon_glancing_experiment_1d(
@@ -430,7 +540,7 @@ def build_silicon_glancing_experiment_1d(
         variable_sites[:, 0], config.displacement_control_spacing_A
     )
     control_u_A = _control_axis(
-        variable_sites[:, 1], config.displacement_control_spacing_A
+        variable_sites[:, 1], config.displacement_control_spacing_u_A
     )
     template, half_shape = _projected_si_template(
         config, ds=ds, du=du, cutoff_A=config.atomic_template_cutoff_A
@@ -459,31 +569,32 @@ def build_silicon_glancing_experiment_1d(
             "species": "Si",
             "atomic_potential": "Lobato finite projection",
             "atomic_template_cutoff_A": config.atomic_template_cutoff_A,
-            "displacement_control_spacing_A": config.displacement_control_spacing_A,
+            "displacement_control_spacing_s_A": config.displacement_control_spacing_A,
+            "displacement_control_spacing_u_A": config.displacement_control_spacing_u_A,
             "update_region": config.update_region,
         },
     )
 
-    top_sites = np.flatnonzero(np.isclose(variable_sites[:, 1], 0.0, atol=0.51 * du))
-    if len(top_sites) < config.defect_width_sites:
-        raise ValueError("not enough illuminated top-layer sites for the defect")
-    vacancy_sites = top_sites[
-        np.argsort(np.abs(variable_sites[top_sites, 0] - config.defect_center_s_A))[
-            : config.defect_width_sites
-        ]
-    ]
-    vacancy_fractions = np.zeros(len(variable_sites), dtype=float)
-    vacancy_fractions[vacancy_sites] = 1.0
-    zero_controls, strained_controls = _truth_controls(
-        control_s_A, control_u_A, config.defect_center_s_A
+    truth_vacancies, defect_indices = _surface_defect_truths(
+        variable_sites,
+        center_s_A=config.defect_center_s_A,
+        simple_width_sites=config.defect_width_sites,
+    )
+    truth_controls = _truth_controls(
+        control_s_A,
+        control_u_A,
+        config.defect_center_s_A,
+        config.maximum_displacement_A,
     )
     truth_controls = {
-        "vacancy": jnp.asarray(zero_controls),
-        "vacancy_plus_strain": jnp.asarray(strained_controls),
+        case: jnp.asarray(value) for case, value in truth_controls.items()
+    }
+    truth_vacancies = {
+        case: jnp.asarray(value) for case, value in truth_vacancies.items()
     }
     truth_potentials = {
         case: render_lattice_site_potential_1d(
-            lattice_model, jnp.asarray(vacancy_fractions), controls
+            lattice_model, truth_vacancies[case], controls
         )
         for case, controls in truth_controls.items()
     }
@@ -492,7 +603,7 @@ def build_silicon_glancing_experiment_1d(
         config, ds=ds, du=du, cutoff_A=config.cutoff_check_A
     )
     larger_patches, larger_starts = _patches_for_sites(
-        variable_sites[vacancy_sites],
+        variable_sites[defect_indices["vacancy"]],
         larger_template,
         larger_half_shape,
         s_A=s_A,
@@ -503,7 +614,7 @@ def build_silicon_glancing_experiment_1d(
     )
     cutoff_model = LatticeSiteModel1D(
         reference_potential=jnp.asarray(pristine),
-        site_coordinates=jnp.asarray(variable_sites[vacancy_sites]),
+        site_coordinates=jnp.asarray(variable_sites[defect_indices["vacancy"]]),
         site_patches=jnp.asarray(larger_patches),
         patch_starts=jnp.asarray(larger_starts),
         control_coordinates_s=jnp.asarray([control_s_A[0], control_s_A[-1]]),
@@ -514,7 +625,7 @@ def build_silicon_glancing_experiment_1d(
     )
     cutoff_check = render_lattice_site_potential_1d(
         cutoff_model,
-        jnp.ones(len(vacancy_sites)),
+        jnp.ones(len(defect_indices["vacancy"])),
         jnp.zeros((2, 2, 2)),
     )
 
@@ -545,7 +656,7 @@ def build_silicon_glancing_experiment_1d(
     validation_indices = np.arange(
         0, config.n_scans, config.validation_stride, dtype=np.int32
     )
-    n_controls = int(np.prod(strained_controls.shape))
+    n_controls = int(np.prod(truth_controls["vacancy_plus_strain"].shape))
     n_parameters = len(variable_sites) + n_controls
     summary = {
         "potential shape": pristine.shape,
@@ -565,16 +676,21 @@ def build_silicon_glancing_experiment_1d(
         "pixel / lattice reduction": float(
             reconstruction_mask.sum() / max(n_parameters, 1)
         ),
-        "explicit vacancy sites": len(vacancy_sites),
+        "simple vacancy sites": len(defect_indices["vacancy"]),
+        "complex surface-defect sites": len(
+            defect_indices["strained_surface_defects"]
+        ),
     }
     return SiliconGlancingExperiment1D(
         config=config,
         pristine_potential=jnp.asarray(pristine),
         lattice_model=lattice_model,
         truth_potentials=truth_potentials,
-        truth_vacancy_fractions=jnp.asarray(vacancy_fractions),
+        truth_vacancy_fractions=truth_vacancies,
         truth_displacement_controls=truth_controls,
-        vacancy_site_indices=jnp.asarray(vacancy_sites),
+        defect_site_indices={
+            case: jnp.asarray(indices) for case, indices in defect_indices.items()
+        },
         variable_sites=jnp.asarray(variable_sites),
         reconstruction_mask=jnp.asarray(reconstruction_mask),
         beam_path_scan_coverage=jnp.asarray(coverage),
@@ -676,6 +792,7 @@ def simulate_experiment_1d(
         case=case,
         potential=potential,
         scan=scan,
+        truth_vacancy_fractions=experiment.truth_vacancy_fractions[case],
         truth_displacement_controls=experiment.truth_displacement_controls[case],
         zero_exterior_amplitude_nrmse=zero_exterior_nrmse,
         template_cutoff_amplitude_nrmse=cutoff_nrmse,
@@ -759,6 +876,27 @@ def reconstruct_experiment_1d(
             **common,
         )
     if "lattice_sites" in methods:
+        offset = np.asarray(options.initial_site_offset_A, dtype=float)
+        if offset.shape != (2,) or not np.all(np.isfinite(offset)):
+            raise ValueError("initial_site_offset_A must contain two finite values")
+        if not np.isfinite(options.initial_control_noise_A) or (
+            options.initial_control_noise_A < 0.0
+        ):
+            raise ValueError("initial_control_noise_A must be finite and non-negative")
+        control_shape = (
+            len(experiment.lattice_model.control_coordinates_s),
+            len(experiment.lattice_model.control_coordinates_u),
+            2,
+        )
+        rng = np.random.default_rng(options.seed)
+        initial_controls = np.broadcast_to(offset, control_shape).copy()
+        initial_controls += options.initial_control_noise_A * rng.standard_normal(
+            control_shape
+        )
+        maximum_displacement = experiment.lattice_model.maximum_displacement
+        initial_controls = np.clip(
+            initial_controls, -maximum_displacement, maximum_displacement
+        )
         results["lattice sites"] = reconstruct_lattice_site_potential_1d(
             experiment.lattice_model,
             experiment.input_probes,
@@ -768,6 +906,7 @@ def reconstruct_experiment_1d(
             experiment.axial_sampling,
             experiment.config.energy_eV,
             dataset.intensities,
+            initial_displacement_controls=initial_controls,
             scan_coordinates=experiment.scan_coordinates,
             detector_angles=experiment.detector_angles,
             validation_indices=np.asarray(experiment.validation_indices),
@@ -780,6 +919,7 @@ def reconstruct_experiment_1d(
             seed=options.seed,
             progress=options.progress,
             progress_description="lattice-site reconstruction",
+            checkpoint_interval=options.lattice_checkpoint_interval,
         )
     return results
 
@@ -811,7 +951,7 @@ def reconstruction_metrics_1d(
             )
         if isinstance(result, LatticeSiteReconstruction1D):
             predicted = np.asarray(result.vacancy_fractions) >= 0.5
-            actual = np.asarray(experiment.truth_vacancy_fractions) >= 0.5
+            actual = np.asarray(dataset.truth_vacancy_fractions) >= 0.5
             tp = np.count_nonzero(predicted & actual)
             fp = np.count_nonzero(predicted & ~actual)
             fn = np.count_nonzero(~predicted & actual)
@@ -860,6 +1000,146 @@ def save_experiment_results_1d(
             save_potential_reconstruction_1d(path, result)
         paths[name] = path
     return paths
+
+
+def _update_region_view(
+    experiment: SiliconGlancingExperiment1D,
+    *,
+    margin_A: float = 1.0,
+) -> tuple[tuple[slice, slice], list[float]]:
+    """Return a tight, slightly padded view around the mutable support."""
+    mask = np.asarray(experiment.reconstruction_mask)
+    rows, columns = np.where(mask)
+    if not rows.size:
+        raise ValueError("reconstruction_mask must contain at least one pixel")
+    pad_s = int(np.ceil(margin_A / experiment.axial_sampling))
+    pad_u = int(np.ceil(margin_A / experiment.transverse_sampling))
+    s_slice = slice(
+        max(int(rows.min()) - pad_s, 0),
+        min(int(rows.max()) + pad_s + 1, mask.shape[0]),
+    )
+    u_slice = slice(
+        max(int(columns.min()) - pad_u, 0),
+        min(int(columns.max()) + pad_u + 1, mask.shape[1]),
+    )
+    s_A = np.asarray(experiment.axial_coordinates)[s_slice]
+    u_A = np.asarray(experiment.transverse_coordinates)[u_slice]
+    return (s_slice, u_slice), [s_A[0], s_A[-1], u_A[0], u_A[-1]]
+
+
+def save_lattice_reconstruction_gif_1d(
+    path: str | Path,
+    experiment: SiliconGlancingExperiment1D,
+    dataset: GlancingDataset1D,
+    result: LatticeSiteReconstruction1D,
+    *,
+    fps: int = 20,
+    frame_stride: int = 1,
+    dpi: int = 100,
+) -> Path:
+    """Render compact lattice checkpoints beside truth and save them as a GIF."""
+    import jax
+    import matplotlib.pyplot as plt
+    from matplotlib.animation import FuncAnimation, PillowWriter
+
+    updates = np.asarray(result.checkpoint_updates)
+    vacancies = np.asarray(result.vacancy_fraction_history)
+    controls = np.asarray(result.displacement_control_history)
+    if updates.size == 0:
+        raise ValueError(
+            "the reconstruction has no checkpoints; set "
+            "ReconstructionOptions1D.lattice_checkpoint_interval"
+        )
+    if vacancies.shape[0] != updates.size or controls.shape[0] != updates.size:
+        raise ValueError("checkpoint histories must have the same number of frames")
+    if fps < 1 or frame_stride < 1 or dpi < 1:
+        raise ValueError("fps, frame_stride, and dpi must be positive integers")
+
+    path = Path(path)
+    if path.suffix.lower() != ".gif":
+        raise ValueError("path must end in .gif")
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    slices, extent = _update_region_view(experiment)
+    s_slice, u_slice = slices
+    support = np.asarray(experiment.reconstruction_mask)[slices]
+    model = experiment.lattice_model
+    cropped_model = LatticeSiteModel1D(
+        reference_potential=model.reference_potential[slices],
+        site_coordinates=model.site_coordinates,
+        site_patches=model.site_patches,
+        patch_starts=model.patch_starts
+        - jnp.asarray([s_slice.start, u_slice.start]),
+        control_coordinates_s=model.control_coordinates_s,
+        control_coordinates_u=model.control_coordinates_u,
+        axial_sampling=model.axial_sampling,
+        transverse_sampling=model.transverse_sampling,
+        maximum_displacement=model.maximum_displacement,
+        metadata=model.metadata,
+    )
+    render_frame = jax.jit(
+        lambda vacancy, control: render_lattice_site_potential_1d(
+            cropped_model, vacancy, control
+        )
+    )
+    truth = np.where(support, np.asarray(dataset.potential)[slices], np.nan)
+    vmax = float(
+        np.percentile(np.asarray(dataset.potential)[slices][support], 99.5)
+    )
+    frame_indices = list(range(0, updates.size, frame_stride))
+    if frame_indices[-1] != updates.size - 1:
+        frame_indices.append(updates.size - 1)
+
+    first = frame_indices[0]
+    reconstructed = np.asarray(render_frame(vacancies[first], controls[first]))
+    reconstructed = np.where(support, reconstructed, np.nan)
+    cmap = plt.get_cmap("magma").copy()
+    cmap.set_bad("white")
+    figure, axes = plt.subplots(1, 2, figsize=(10, 3.6), constrained_layout=True)
+    truth_image = axes[0].imshow(
+        truth.T,
+        origin="lower",
+        aspect="auto",
+        extent=extent,
+        cmap=cmap,
+        vmin=0.0,
+        vmax=vmax,
+    )
+    reconstruction_image = axes[1].imshow(
+        reconstructed.T,
+        origin="lower",
+        aspect="auto",
+        extent=extent,
+        cmap=cmap,
+        vmin=0.0,
+        vmax=vmax,
+    )
+    axes[0].set_title("Ground truth")
+    update_title = axes[1].set_title(f"Reconstruction: update {updates[first]}")
+    for axis in axes:
+        axis.set(xlabel="s (A)", ylabel="u (A)")
+    figure.colorbar(truth_image, ax=axes, label="projected potential")
+
+    def update(frame_index: int):
+        potential = np.asarray(
+            render_frame(vacancies[frame_index], controls[frame_index])
+        )
+        reconstruction_image.set_data(np.where(support, potential, np.nan).T)
+        update_title.set_text(f"Reconstruction: update {updates[frame_index]}")
+        return reconstruction_image, update_title
+
+    animation = FuncAnimation(
+        figure,
+        update,
+        frames=frame_indices,
+        interval=1_000 / fps,
+        blit=False,
+    )
+    try:
+        animation.save(path, writer=PillowWriter(fps=fps), dpi=dpi)
+    finally:
+        plt.close(figure)
+    return path
 
 
 def plot_experiment_overview_1d(
@@ -932,9 +1212,8 @@ def plot_reconstruction_comparison_1d(
 
     if not results:
         raise ValueError("results must contain at least one reconstruction")
-    s_A = np.asarray(experiment.axial_coordinates)
-    u_A = np.asarray(experiment.transverse_coordinates)
-    extent = [s_A[0], s_A[-1], u_A[0], u_A[-1]]
+    slices, extent = _update_region_view(experiment)
+    support = np.asarray(experiment.reconstruction_mask)[slices]
     fig, axes = plt.subplots(
         1,
         len(results) + 1,
@@ -948,8 +1227,9 @@ def plot_reconstruction_comparison_1d(
     )
     for axis, (name, value) in zip(axes, images):
         potential = value if name == "ground truth" else value.potential
+        visible = np.where(support, np.asarray(potential)[slices], np.nan)
         image = axis.imshow(
-            np.asarray(potential).T,
+            visible.T,
             origin="lower",
             aspect="auto",
             extent=extent,
@@ -995,9 +1275,14 @@ def plot_lattice_reconstruction_1d(
     displacements = np.asarray(
         result.displaced_site_coordinates - result.site_coordinates
     )
+    _, view_extent = _update_region_view(experiment)
     fig, axes = plt.subplots(1, 2, figsize=(11, 3.5), constrained_layout=True)
     axes[0].scatter(sites[:, 0], vacancies, s=10, c=vacancies, cmap="magma")
-    axes[0].set(xlabel="site s (A)", ylabel="vacancy fraction")
+    axes[0].set(
+        xlabel="site s (A)",
+        ylabel="vacancy fraction",
+        xlim=view_extent[:2],
+    )
     axes[1].quiver(
         sites[:, 0],
         sites[:, 1],
@@ -1007,7 +1292,13 @@ def plot_lattice_reconstruction_1d(
         scale_units="xy",
         scale=1,
     )
-    axes[1].set(xlabel="site s (A)", ylabel="site u (A)", title="Displacement field")
+    axes[1].set(
+        xlabel="site s (A)",
+        ylabel="site u (A)",
+        title="Displacement field",
+        xlim=view_extent[:2],
+        ylim=view_extent[2:],
+    )
 
     controls = np.asarray(result.displacement_controls)
     control_s = np.asarray(result.control_coordinates_s)
@@ -1043,6 +1334,7 @@ def plot_lattice_reconstruction_1d(
             vmax=limit,
         )
         axis.set(title=title, xlabel="s (A)", ylabel="u (A)")
+        axis.set(xlim=view_extent[:2], ylim=view_extent[2:])
         strain_fig.colorbar(image, ax=axis, label="strain")
     return fig, strain_fig
 

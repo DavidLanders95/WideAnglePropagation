@@ -152,6 +152,15 @@ class LatticeSiteReconstruction1D:
     training_loss_history: Array
     validation_loss_history: Array
     best_update: int
+    checkpoint_updates: Array = field(
+        default_factory=lambda: np.empty(0, dtype=np.int32)
+    )
+    vacancy_fraction_history: Array = field(
+        default_factory=lambda: np.empty((0, 0), dtype=float)
+    )
+    displacement_control_history: Array = field(
+        default_factory=lambda: np.empty((0, 0, 0, 2), dtype=float)
+    )
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -1178,6 +1187,7 @@ def reconstruct_lattice_site_potential_1d(
     seed: int = 0,
     progress: bool = False,
     progress_description: str = "lattice-site reconstruction",
+    checkpoint_interval: int | None = None,
 ) -> LatticeSiteReconstruction1D:
     """Recover site vacancies and a smooth displacement field.
 
@@ -1259,6 +1269,10 @@ def reconstruct_lattice_site_potential_1d(
     if not isinstance(rematerialize, (bool, np.bool_)):
         raise TypeError("rematerialize must be a boolean")
     _validate_progress(progress, progress_description)
+    if checkpoint_interval is None:
+        checkpoint_stride = 0
+    else:
+        checkpoint_stride = _integer("checkpoint_interval", checkpoint_interval)
 
     reference_max = float(np.max(np.asarray(reference)))
     if potential_max is None:
@@ -1425,6 +1439,17 @@ def reconstruct_lattice_site_potential_1d(
     best_metric = validation_loss if validation_host.size else training_loss
     best_parameters = parameters
     best_update = 0
+    checkpoint_updates: list[int] = []
+    vacancy_checkpoints: list[Array] = []
+    control_checkpoints: list[Array] = []
+
+    def checkpoint(update: int, values: Mapping[str, Array]) -> None:
+        checkpoint_updates.append(update)
+        vacancy_checkpoints.append(values["vacancies"])
+        control_checkpoints.append(physical_controls(values))
+
+    if checkpoint_stride:
+        checkpoint(0, parameters)
 
     for update in _update_iterator(
         n_updates,
@@ -1450,6 +1475,10 @@ def reconstruct_lattice_site_potential_1d(
             "vacancies": jnp.clip(parameters["vacancies"], 0.0, 1.0),
             "controls": jnp.clip(parameters["controls"], -1.0, 1.0),
         }
+        if checkpoint_stride and (
+            update % checkpoint_stride == 0 or update == n_updates
+        ):
+            checkpoint(update, parameters)
 
         if update % metric_interval == 0 or update == n_updates:
             training_loss, validation_loss = record(update, parameters)
@@ -1487,6 +1516,7 @@ def reconstruct_lattice_site_potential_1d(
         "n_vacancy_parameters": int(n_site),
         "n_displacement_control_parameters": n_control_parameters,
         "n_specimen_parameters": int(n_site) + n_control_parameters,
+        "checkpoint_interval": checkpoint_stride or None,
         "best_metric": best_metric,
         "detector_angle_unit": "mrad",
     }
@@ -1511,6 +1541,17 @@ def reconstruct_lattice_site_potential_1d(
         training_loss_history=jnp.asarray(training_history),
         validation_loss_history=jnp.asarray(validation_history),
         best_update=best_update,
+        checkpoint_updates=jnp.asarray(checkpoint_updates, dtype=jnp.int32),
+        vacancy_fraction_history=(
+            jnp.stack(vacancy_checkpoints)
+            if vacancy_checkpoints
+            else jnp.empty((0, n_site), dtype=reference.dtype)
+        ),
+        displacement_control_history=(
+            jnp.stack(control_checkpoints)
+            if control_checkpoints
+            else jnp.empty((0, *control_shape), dtype=reference.dtype)
+        ),
         metadata=metadata,
     )
 
@@ -1682,6 +1723,11 @@ def save_lattice_site_reconstruction_1d(
         training_loss_history=np.asarray(result.training_loss_history),
         validation_loss_history=np.asarray(result.validation_loss_history),
         best_update=np.asarray(result.best_update, dtype=np.int64),
+        checkpoint_updates=np.asarray(result.checkpoint_updates),
+        vacancy_fraction_history=np.asarray(result.vacancy_fraction_history),
+        displacement_control_history=np.asarray(
+            result.displacement_control_history
+        ),
         metadata_json=_metadata_json(result.metadata),
     )
 
@@ -1714,5 +1760,20 @@ def load_lattice_site_reconstruction_1d(
             training_loss_history=jnp.asarray(data["training_loss_history"]),
             validation_loss_history=jnp.asarray(data["validation_loss_history"]),
             best_update=int(data["best_update"].item()),
+            checkpoint_updates=jnp.asarray(
+                data["checkpoint_updates"]
+                if "checkpoint_updates" in data.files
+                else np.empty(0, dtype=np.int32)
+            ),
+            vacancy_fraction_history=jnp.asarray(
+                data["vacancy_fraction_history"]
+                if "vacancy_fraction_history" in data.files
+                else np.empty((0, data["vacancy_fractions"].shape[0]))
+            ),
+            displacement_control_history=jnp.asarray(
+                data["displacement_control_history"]
+                if "displacement_control_history" in data.files
+                else np.empty((0, *data["displacement_controls"].shape))
+            ),
             metadata=json.loads(str(data["metadata_json"].item())),
         )

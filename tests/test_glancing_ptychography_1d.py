@@ -472,6 +472,11 @@ def test_scan_cache_and_potential_result_round_trip_without_pickle(tmp_path):
         training_loss_history=jnp.array([1.0, 0.1]),
         validation_loss_history=jnp.array([1.1, 0.2]),
         best_update=10,
+        checkpoint_updates=jnp.array([0, 10]),
+        vacancy_fraction_history=jnp.array([[0.0, 0.0], [0.9, 0.1]]),
+        displacement_control_history=jnp.stack(
+            [jnp.zeros((2, 2, 2)), jnp.zeros((2, 2, 2)).at[..., 0].set(0.03)]
+        ),
         metadata={"species": "Si"},
     )
     lattice_path = tmp_path / "lattice_result.npz"
@@ -483,6 +488,14 @@ def test_scan_cache_and_potential_result_round_trip_without_pickle(tmp_path):
     np.testing.assert_allclose(
         loaded_lattice.displacement_controls,
         lattice_result.displacement_controls,
+    )
+    np.testing.assert_allclose(
+        loaded_lattice.vacancy_fraction_history,
+        lattice_result.vacancy_fraction_history,
+    )
+    np.testing.assert_allclose(
+        loaded_lattice.displacement_control_history,
+        lattice_result.displacement_control_history,
     )
     assert loaded_lattice.metadata == {"species": "Si"}
 
@@ -542,12 +555,16 @@ def test_tiny_lattice_vacancy_reconstruction_recovers_site_fraction():
         validation_interval=20,
         evaluation_batch_size=5,
         rematerialize=False,
+        checkpoint_interval=25,
     )
     recovered_loss = normalized_amplitude_loss_1d(
         result.predicted_intensities, measured
     )
     assert float(recovered_loss) < 1e-4 * float(initial_loss)
     np.testing.assert_allclose(result.vacancy_fractions, target_vacancies, atol=4e-3)
+    np.testing.assert_array_equal(result.checkpoint_updates, [0, 25, 50, 75, 100])
+    assert result.vacancy_fraction_history.shape == (5, 2)
+    assert result.displacement_control_history.shape == (5, 2, 2, 2)
 
 
 def test_tiny_lattice_strain_reconstruction_recovers_site_displacements():
