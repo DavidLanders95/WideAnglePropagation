@@ -10,6 +10,9 @@ and second-order Klein-Gordon propagation.
   and simulation loops.
 - `wide_angle_propagation/notebook_utils.py`: beam/amplitude utilities, plotting
   helpers, and compact result-file helpers used by the notebooks.
+- `wide_angle_propagation/ptychography_1d.py`: focused helpers for masked
+  pixelwise-potential reconstruction and selected-scan side-view caches in
+  synthetic one-dimensional glancing-incidence scans.
 - `tests/`: regression and behavior tests for the propagation methods.
 - `notebooks/figure_generation/01_axel_lubk_verification.ipynb`: Au [100]
   beam-amplitude verification against the full KG ODE reference.
@@ -32,6 +35,12 @@ python -m pip install -e ".[dev]"
 
 GPU-enabled notebook workflows also require a working CuPy/JAX/abTEM
 installation compatible with your CUDA runtime.
+
+The optional glancing-incidence reconstruction workflow uses Optax:
+
+```bash
+python -m pip install -e ".[dev,ptychography]"
+```
 
 ## Minimal Usage
 

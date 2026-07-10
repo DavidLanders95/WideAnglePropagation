@@ -39,6 +39,10 @@ setup(
             "pytest",
             "jupyter",
             "notebook",
+            "ipywidgets",
+        ],
+        "ptychography": [
+            "optax",
         ],
     },
     include_package_data=True,

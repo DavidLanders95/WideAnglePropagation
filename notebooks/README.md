@@ -16,11 +16,24 @@ dependencies.
 - `figure_generation/04_wpm_binning_diagnostics.ipynb`: WPM binning
   diagnostics used for the paper figure.
 
+## Glancing-Incidence Workflows
+
+- `sideview_glancing_incidence_example.ipynb`: reference 1D sideview geometry
+  and comparison of propagation approximations.
+- `sideview_glancing_ptychography_1d.ipynb`: 30 keV, 2 degree silicon
+  ptychography prototype with overlapping Fresnel scans, direct recovery of an
+  unconstrained 2D potential patch in a geometric scanned-beam region, held-out validation, and
+  stored interactive side-view diagnostics. Full simulation and reconstruction
+  are disabled by default because the atomistic case is intended for a GPU.
+
 ## Data And Outputs
 
 - Input crystal data lives in `notebooks/data/`.
 - Generated compact simulation caches and notebook figures are written under
   `notebooks/cbed/results/` and `notebooks/verification/figures/`.
+- Glancing ptychography datasets and reconstructions are written under
+  `notebook_results/sideview_glancing_ptychography_1d/` only after
+  its opt-in execution flags are enabled.
 - Paper-ready exports are written under `Paper/figures/` when the save flags in
   each notebook are enabled.
 

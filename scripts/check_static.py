@@ -20,10 +20,11 @@ PYTHON_FILES = [
     ROOT / "wide_angle_propagation" / "propagation_methods.py",
     ROOT / "wide_angle_propagation" / "sideview_geometry.py",
     ROOT / "wide_angle_propagation" / "notebook_utils.py",
+    ROOT / "wide_angle_propagation" / "ptychography_1d.py",
 ]
 TARGET_NOTEBOOKS = [
     ROOT / "notebooks" / "sideview_glancing_incidence_example.ipynb",
-    ROOT / "notebooks" / "sideview_glancing_benchmark.ipynb",
+    ROOT / "notebooks" / "sideview_glancing_ptychography_1d.ipynb",
     ROOT / "notebooks" / "figure_generation" / "01_axel_lubk_verification.ipynb",
     ROOT / "notebooks" / "figure_generation" / "02_converge_probe_si.ipynb",
     ROOT / "notebooks" / "figure_generation" / "03_convergent_probe_au.ipynb",
@@ -107,6 +108,7 @@ def main(argv: list[str] | None = None) -> None:
     assert_exports_exist(ROOT / "wide_angle_propagation" / "propagation_methods.py")
     assert_exports_exist(ROOT / "wide_angle_propagation" / "sideview_geometry.py")
     assert_exports_exist(ROOT / "wide_angle_propagation" / "notebook_utils.py")
+    assert_exports_exist(ROOT / "wide_angle_propagation" / "ptychography_1d.py")
     parse_target_notebooks(require_no_outputs=args.enforce_clean_notebooks)
 
 
