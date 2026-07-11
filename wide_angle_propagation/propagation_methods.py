@@ -10,6 +10,8 @@ The module is organized around the maintained comparison in the paper:
 
 from __future__ import annotations
 
+import math
+
 import jax
 import jax.numpy as jnp
 import jax.scipy.linalg
@@ -108,18 +110,27 @@ def electron_refractive_index(potential, energy):
 
 def interaction_constant(energy: float):
     """Return the relativistic TEM interaction constant in rad / (V Angstrom)."""
-    wavelength_m = energy2wavelength(energy) * 1.0e-10
-    gamma = 1.0 + energy / electron_rest_energy()
-    sigma_m = (
+    # Evaluate the dimensional prefactor on the Python host before converting
+    # to JAX.  Forming ``h**2`` in a float32 JAX expression underflows to zero
+    # (and previously made the default-JAX interaction constant NaN).  Combining
+    # both metre-to-Angstrom conversions analytically leaves a well-scaled
+    # prefactor of approximately 2.1e-2 in the units used below.
+    prefactor_A = (
         2.0
-        * jnp.pi
-        * gamma
+        * math.pi
         * units._me
         * units._e
-        * wavelength_m
         / units._hplanck**2
+        * 1.0e-20
     )
-    return sigma_m * 1.0e-10
+    wavelength_A = energy2wavelength(energy)
+    gamma = 1.0 + energy / electron_rest_energy()
+    dtype = jnp.asarray(wavelength_A).dtype
+    return (
+        jnp.asarray(prefactor_A, dtype=dtype)
+        * jnp.asarray(gamma, dtype=dtype)
+        * jnp.asarray(wavelength_A, dtype=dtype)
+    )
 
 
 def schrodinger_refractive_index_1d(potential, energy):

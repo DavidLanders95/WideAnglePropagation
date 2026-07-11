@@ -40,6 +40,7 @@ setup(
             "jupyter",
             "notebook",
             "ipywidgets",
+            "ipympl",
         ],
         "ptychography": [
             "optax",
