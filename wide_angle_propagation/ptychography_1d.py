@@ -1,11 +1,12 @@
-"""Differentiable 1D glancing-incidence ptychography helpers.
+"""Differentiable 1D glancing-incidence propagation and compatibility helpers.
 
 The propagation coordinate is ``s`` and the single transverse/detector
 coordinate is ``u``.  A scan translates a fixed-length axial window through a
-global two-dimensional electrostatic potential ``V(s, u)``.  Reconstruction is
-available either for independent real-potential pixels inside a finite
-geometric region or for a known lattice whose site vacancies and smooth
-displacements remain directly interpretable.
+global two-dimensional electrostatic potential ``V(s, u)``. The maintained
+user-facing inverse route is the sparse atomistic-edit facade in
+``ptychography_atomistic_workflow_1d``. Pixel and dense lattice-site routines
+remain here for compatibility and controlled baseline tests; they are not
+re-exported by the package root.
 """
 
 from __future__ import annotations
@@ -34,36 +35,24 @@ from .ptychography_support_contract_1d import (
 
 __all__ = [
     "beam_path_reconstruction_region_1d",
-    "ConvergenceOptions1D",
     "decompose_lattice_site_displacement_controls_1d",
     "decompose_lattice_site_similarity_controls_1d",
     "GlancingScan1D",
     "GlancingSideviewCache1D",
     "LatticeSiteModel1D",
-    "LatticeOptimizationOptions1D",
-    "LatticeSiteReconstruction1D",
-    "PreparedLatticeSiteReconstruction1D",
-    "PotentialReconstruction1D",
     "PtychographyMeasurement1D",
     "PtychographyObjective1D",
     "load_glancing_scan_1d",
     "load_glancing_sideview_cache_1d",
-    "load_lattice_site_reconstruction_1d",
-    "load_potential_reconstruction_1d",
     "lattice_site_displacements_1d",
     "normalized_amplitude_loss_1d",
-    "prepare_lattice_site_reconstruction_1d",
     "ptychography_expected_signal_electrons_1d",
+    "ptychography_objective_from_signal_electrons_1d",
     "ptychography_objective_loss_1d",
-    "reconstruct_lattice_site_potential_1d",
-    "reconstruct_potential_1d",
     "render_lattice_site_potential_1d",
     "render_lattice_site_potential_from_displacements_1d",
-    "run_prepared_lattice_site_reconstruction_1d",
     "save_glancing_scan_1d",
     "save_glancing_sideview_cache_1d",
-    "save_lattice_site_reconstruction_1d",
-    "save_potential_reconstruction_1d",
     "simulate_glancing_scan_1d",
     "simulate_glancing_sideview_cache_1d",
     "validate_ptychography_measurement_1d",
@@ -1256,6 +1245,42 @@ def _ptychography_objective_from_signal_1d(
             + jnp.log(variance / objective.minimum_expected_electrons)
         )
     return jnp.sum(jnp.where(valid, loss_terms, 0.0)) / jnp.count_nonzero(valid)
+
+
+def ptychography_objective_from_signal_electrons_1d(
+    predicted_signal_electrons: Any,
+    measurement: PtychographyMeasurement1D,
+    objective: PtychographyObjective1D,
+) -> Array:
+    """Evaluate the calibrated detector objective from expected signal counts.
+
+    This is the shared, JAX-differentiable count-loss boundary for specimen
+    parameterizations that already converted their forward intensities into
+    signal electrons.  It deliberately fits no detector scale, background, or
+    calibration field.  Callers that introduce bounded nuisance parameters
+    must transform the prediction explicitly and bind that transformation into
+    their own problem contract.
+    """
+    measurement, objective, _ = _validated_measurement_objective_pair_1d(
+        measurement, objective
+    )
+    predicted = _array(
+        "predicted_signal_electrons", predicted_signal_electrons, 2
+    )
+    if predicted.shape != measurement.calibrated_signal_electrons.shape:
+        raise ValueError(
+            "predicted_signal_electrons must match the measurement shape"
+        )
+    host = _concrete_numpy(predicted)
+    if host is not None and (
+        np.any(~np.isfinite(host)) or np.any(host < 0.0)
+    ):
+        raise ValueError(
+            "predicted_signal_electrons must be finite and non-negative"
+        )
+    return _ptychography_objective_from_signal_1d(
+        predicted, measurement, objective
+    )
 
 
 def _validated_measurement_objective_pair_1d(
@@ -3451,8 +3476,6 @@ def run_prepared_lattice_site_reconstruction_1d(
     probe = prepared.input_probe
     probe_rows = prepared.probe_rows
     starts = prepared.window_starts
-    length = prepared.window_length
-    kernel = prepared.propagation_kernel
     slice_thickness = prepared.slice_thickness
     energy = prepared.energy
     measured = prepared.measured_intensities
@@ -3500,7 +3523,6 @@ def run_prepared_lattice_site_reconstruction_1d(
     eval_batch_size = prepared.evaluation_batch_size
     gradient_clip = prepared.gradient_clip
     epsilon = prepared.epsilon
-    rematerialize = prepared.rematerialize
 
     n_updates = _integer("updates", updates)
     metric_interval = _integer("validation_interval", validation_interval)
@@ -3913,7 +3935,7 @@ def run_prepared_lattice_site_reconstruction_1d(
             checkpoint(update, parameters)
 
         if update % metric_interval == 0 or update == n_updates:
-            gradient_norm = float(np.asarray(optax.tree.norm(gradient)))
+            gradient_norm = float(np.asarray(optax.global_norm(gradient)))
             squared_step = sum(
                 jnp.sum((parameters[key] - last_evaluated_parameters[key]) ** 2)
                 for key in parameters

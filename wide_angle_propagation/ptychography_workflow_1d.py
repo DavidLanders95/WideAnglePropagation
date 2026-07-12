@@ -1,18 +1,22 @@
-"""Readable high-level workflow for the glancing ptychography notebook.
+"""Experiment construction and reporting for glancing ptychography.
 
-The numerical inverse methods remain in :mod:`ptychography_1d`.  This module
-collects the experiment construction, matched synthetic data, comparison
-baselines, and notebook visualization behind a small public API so the example
-notebook can concentrate on the scientific sequence rather than bookkeeping.
+The maintained inverse path is the silicon sparse atomistic-edit facade in
+``ptychography_atomistic_workflow_1d``. This larger module owns experiment and
+synthetic-data construction plus its authenticated reporting adapters. Older
+pixel and dense lattice comparison helpers remain available for compatibility
+tests, but are not re-exported by the package root or used by maintained
+reconstruction notebooks.
 """
 
 from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass, field, replace as dataclass_replace
+import hashlib
 import operator
 from pathlib import Path
 import tempfile
+from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 import jax.numpy as jnp
@@ -36,14 +40,18 @@ from .ptychography_1d import (
     decompose_lattice_site_displacement_controls_1d,
     lattice_site_displacements_1d,
     prepare_lattice_site_reconstruction_1d,
+    ptychography_expected_signal_electrons_1d,
     reconstruct_lattice_site_potential_1d,
     reconstruct_potential_1d,
     render_lattice_site_potential_1d,
+    render_lattice_site_potential_from_displacements_1d,
     save_glancing_scan_1d,
     save_lattice_site_reconstruction_1d,
     save_potential_reconstruction_1d,
     simulate_glancing_scan_1d,
     simulate_glancing_sideview_cache_1d,
+    validate_ptychography_measurement_1d,
+    validate_ptychography_objective_1d,
 )
 from .ptychography_atomic_validation_1d import (
     AtomicTemplateComparison1D,
@@ -51,6 +59,32 @@ from .ptychography_atomic_validation_1d import (
     IndependentSiAtomicTemplate1D,
     compare_si_atomic_template_1d,
     render_si_atomic_template_1d,
+)
+from .ptychography_atomistic_edit_1d import (
+    AtomisticEditDiscoverySupport1D,
+    AtomisticEditModel1D,
+    AtomisticEditOptions1D,
+    AtomisticEditState1D,
+    atomistic_edit_active_parameter_count_1d,
+    atomistic_edit_addition_positions_1d,
+    atomistic_edit_addition_roles_1d,
+    make_atomistic_edit_discovery_support_1d,
+    make_atomistic_edit_kernel_1d,
+    make_atomistic_edit_model_1d,
+    render_atomistic_edit_potential_1d,
+    validate_atomistic_edit_state_1d,
+)
+from .ptychography_atomistic_edit_solver_1d import (
+    AtomisticEditReconstruction1D,
+    PreparedAtomisticEditReconstruction1D,
+    prepare_atomistic_edit_reconstruction_1d,
+)
+from .ptychography_atomistic_truth_1d import (
+    AdaptiveAtomicCubatureConvergenceReport1D,
+    AtomicQuadratureConvergenceReport1D,
+    DirectAtomicNumericalOptions1D,
+    sweep_adaptive_atomic_cubature_convergence_1d,
+    sweep_atomic_quadrature_convergence_1d,
 )
 from .ptychography_ensemble_1d import (
     MultistartOptions1D,
@@ -83,27 +117,25 @@ __all__ = [
     "AtomicTemplateCertification1D",
     "GlancingDataset1D",
     "InteractionRegion1D",
-    "ReconstructionOptions1D",
     "ScanPartition1D",
     "SiliconGlancingConfig1D",
     "SiliconGlancingExperiment1D",
     "build_silicon_glancing_experiment_1d",
     "build_silicon_alignment_prior_1d",
     "build_silicon_alignment_problem_1d",
+    "build_atomistic_edit_discovery_support_1d",
+    "build_atomistic_edit_model_1d",
     "gaussian_interaction_region_1d",
     "make_glancing_scan_viewer_1d",
+    "plot_atomistic_edit_reconstruction_1d",
     "plot_experiment_overview_1d",
-    "plot_lattice_reconstruction_1d",
-    "plot_lattice_sensitivity_screen_1d",
-    "plot_reconstruction_comparison_1d",
-    "reconstruct_experiment_1d",
-    "reconstruct_lattice_multistart_experiment_1d",
-    "reconstruction_metrics_1d",
-    "save_experiment_results_1d",
-    "save_lattice_reconstruction_gif_1d",
-    "screen_lattice_reconstruction_sensitivity_1d",
     "simulate_experiment_1d",
     "stratified_scan_partition_1d",
+    "sweep_experiment_adaptive_atomic_cubature_convergence_1d",
+    "sweep_experiment_atomic_quadrature_convergence_1d",
+    "synthetic_noiseless_poisson_measurement_1d",
+    "prepare_atomistic_edit_experiment_1d",
+    "summarize_atomistic_edit_reconstruction_1d",
 ]
 
 
@@ -585,6 +617,307 @@ def _atomic_parameterization_diagnostic_metadata(
     }
 
 
+def sweep_experiment_atomic_quadrature_convergence_1d(
+    experiment: SiliconGlancingExperiment1D,
+    *,
+    order_pairs: Sequence[tuple[int, int]],
+    fractional_offsets_A: Sequence[tuple[float, float]],
+    relative_l2_tolerance: float,
+    relative_integral_tolerance: float,
+    elements: Sequence[str] = ("Si",),
+) -> AtomicQuadratureConvergenceReport1D:
+    """Run an explicit direct-quadrature sweep on production geometry.
+
+    This helper deliberately has no default order sweep: the tensor quadrature
+    can be expensive and is never run while constructing an experiment.  The
+    generic truth renderer validates element symbols, offsets, tolerances, and
+    componentwise non-decreasing even order pairs.  Its highest declared order
+    is the numerical reference.
+
+    Passing the numerical criterion remains a fail-closed discretization check,
+    not evidence that the Kirkland independent-atom potential is physically
+    correct.  The returned report binds the maintained experiment's support and
+    production-template identities and retains both sets of limitations.
+    """
+    if not isinstance(experiment, SiliconGlancingExperiment1D):
+        raise TypeError("experiment must be a SiliconGlancingExperiment1D")
+    support_contract = validate_lattice_site_support_contract_1d(
+        experiment.support_contract,
+        strict=True,
+    )
+    template = experiment.independent_kirkland_template
+    certification = experiment.template_certification
+    options = template.options
+    sampling_s_A = float(experiment.axial_sampling)
+    sampling_u_A = float(experiment.transverse_sampling)
+    if (
+        not np.isfinite(sampling_s_A)
+        or sampling_s_A <= 0.0
+        or not np.isfinite(sampling_u_A)
+        or sampling_u_A <= 0.0
+    ):
+        raise ValueError("experiment sampling must be finite and positive")
+    if (
+        float(template.sampling_s_A) != sampling_s_A
+        or float(template.sampling_u_A) != sampling_u_A
+    ):
+        raise ValueError(
+            "experiment sampling does not exactly match the production "
+            "independent atomic template"
+        )
+    certified_cutoff_A = float(certification.cutoff_A)
+    reference_cutoff_A = float(certification.reference_cutoff_A)
+    relative_tail_l2 = float(certification.relative_tail_l2)
+    cutoff_tolerance = float(certification.tolerance)
+    if (
+        not np.isfinite(certified_cutoff_A)
+        or certified_cutoff_A <= 0.0
+        or not np.isfinite(reference_cutoff_A)
+        or reference_cutoff_A < certified_cutoff_A
+        or not np.isfinite(relative_tail_l2)
+        or relative_tail_l2 < 0.0
+        or not np.isfinite(cutoff_tolerance)
+        or cutoff_tolerance <= 0.0
+        or relative_tail_l2 > cutoff_tolerance
+    ):
+        raise ValueError(
+            "experiment atomic-template cutoff certification is inconsistent"
+        )
+    if float(options.cutoff_A) != certified_cutoff_A:
+        raise ValueError(
+            "production quadrature cutoff does not exactly match the certified "
+            "atomic-template cutoff"
+        )
+    if template.trust_claim is not False:
+        raise ValueError("production independent atomic template must fail closed")
+    template_limitations = tuple(template.limitations)
+    if not template_limitations or any(
+        not isinstance(value, str) or not value for value in template_limitations
+    ):
+        raise ValueError(
+            "production independent atomic template must retain its limitations"
+        )
+
+    metadata = {
+        "workflow_helper": (
+            "sweep_experiment_atomic_quadrature_convergence_1d:v1"
+        ),
+        "experiment_support_contract_id": support_contract.contract_id,
+        "experiment_support_strict_requirements_satisfied": bool(
+            support_contract.strict_requirements_satisfied
+        ),
+        "experiment_template_sha256": template.template_sha256,
+        "experiment_template_options_sha256": options.options_sha256,
+        "experiment_template_trust_claim": False,
+        "experiment_template_trust_reason": template.trust_reason,
+        "experiment_template_limitations": list(template_limitations),
+        "production_sampling_s_A": sampling_s_A,
+        "production_sampling_u_A": sampling_u_A,
+        "production_projection_width_A": float(options.projection_width_A),
+        "certified_cutoff_A": certified_cutoff_A,
+        "cutoff_reference_A": reference_cutoff_A,
+        "cutoff_relative_tail_l2": relative_tail_l2,
+        "cutoff_tolerance": cutoff_tolerance,
+        "validation_scope": "numerical_direct_quadrature_convergence_only",
+        "workflow_limitations": [
+            (
+                "order convergence does not validate the independent-atom "
+                "potential against experiment or first principles"
+            ),
+            (
+                "the support-contract digest binds the modeled scope but does "
+                "not prove fixed-material assumptions"
+            ),
+        ],
+    }
+    return sweep_atomic_quadrature_convergence_1d(
+        elements,
+        sampling_s_A=sampling_s_A,
+        sampling_u_A=sampling_u_A,
+        base_options=options,
+        order_pairs=order_pairs,
+        fractional_offsets_A=fractional_offsets_A,
+        relative_l2_tolerance=relative_l2_tolerance,
+        relative_integral_tolerance=relative_integral_tolerance,
+        metadata=metadata,
+    )
+
+
+def _adaptive_atomic_cubature_experiment_context_1d(
+    experiment: SiliconGlancingExperiment1D,
+) -> tuple[
+    AtomicTemplateQuadratureOptions1D,
+    float,
+    float,
+    dict[str, Any],
+]:
+    """Validate and bind production atomic-template provenance.
+
+    This repeats the existing tensor-order wrapper's fail-closed experiment
+    boundary so the adaptive report is tied to the same support contract,
+    template identity, sampling, projection width, and cutoff certification.
+    The tensor and adaptive numerical convergence criteria remain separate.
+    """
+    if not isinstance(experiment, SiliconGlancingExperiment1D):
+        raise TypeError("experiment must be a SiliconGlancingExperiment1D")
+    support_contract = validate_lattice_site_support_contract_1d(
+        experiment.support_contract,
+        strict=True,
+    )
+    template = experiment.independent_kirkland_template
+    certification = experiment.template_certification
+    options = template.options
+    if not isinstance(options, AtomicTemplateQuadratureOptions1D):
+        raise TypeError(
+            "production independent atomic template options are invalid"
+        )
+    sampling_s_A = float(experiment.axial_sampling)
+    sampling_u_A = float(experiment.transverse_sampling)
+    if (
+        not np.isfinite(sampling_s_A)
+        or sampling_s_A <= 0.0
+        or not np.isfinite(sampling_u_A)
+        or sampling_u_A <= 0.0
+    ):
+        raise ValueError("experiment sampling must be finite and positive")
+    if (
+        float(template.sampling_s_A) != sampling_s_A
+        or float(template.sampling_u_A) != sampling_u_A
+    ):
+        raise ValueError(
+            "experiment sampling does not exactly match the production "
+            "independent atomic template"
+        )
+    certified_cutoff_A = float(certification.cutoff_A)
+    reference_cutoff_A = float(certification.reference_cutoff_A)
+    relative_tail_l2 = float(certification.relative_tail_l2)
+    cutoff_tolerance = float(certification.tolerance)
+    if (
+        not np.isfinite(certified_cutoff_A)
+        or certified_cutoff_A <= 0.0
+        or not np.isfinite(reference_cutoff_A)
+        or reference_cutoff_A < certified_cutoff_A
+        or not np.isfinite(relative_tail_l2)
+        or relative_tail_l2 < 0.0
+        or not np.isfinite(cutoff_tolerance)
+        or cutoff_tolerance <= 0.0
+        or relative_tail_l2 > cutoff_tolerance
+    ):
+        raise ValueError(
+            "experiment atomic-template cutoff certification is inconsistent"
+        )
+    if float(options.cutoff_A) != certified_cutoff_A:
+        raise ValueError(
+            "production quadrature cutoff does not exactly match the certified "
+            "atomic-template cutoff"
+        )
+    if template.trust_claim is not False:
+        raise ValueError("production independent atomic template must fail closed")
+    template_limitations = tuple(template.limitations)
+    if not template_limitations or any(
+        not isinstance(value, str) or not value for value in template_limitations
+    ):
+        raise ValueError(
+            "production independent atomic template must retain its limitations"
+        )
+    metadata = {
+        "workflow_helper": (
+            "sweep_experiment_adaptive_atomic_cubature_convergence_1d:v1"
+        ),
+        "experiment_support_contract_id": support_contract.contract_id,
+        "experiment_support_strict_requirements_satisfied": bool(
+            support_contract.strict_requirements_satisfied
+        ),
+        "experiment_template_sha256": template.template_sha256,
+        "experiment_template_options_sha256": options.options_sha256,
+        "experiment_template_trust_claim": False,
+        "experiment_template_trust_reason": template.trust_reason,
+        "experiment_template_limitations": list(template_limitations),
+        "production_sampling_s_A": sampling_s_A,
+        "production_sampling_u_A": sampling_u_A,
+        "production_projection_width_A": float(options.projection_width_A),
+        "certified_cutoff_A": certified_cutoff_A,
+        "cutoff_reference_A": reference_cutoff_A,
+        "cutoff_relative_tail_l2": relative_tail_l2,
+        "cutoff_tolerance": cutoff_tolerance,
+        "validation_scope": (
+            "numerical_adaptive_atomic_cubature_convergence_only"
+        ),
+        "workflow_limitations": [
+            (
+                "adaptive cubature convergence does not validate the "
+                "independent-atom potential against experiment or first "
+                "principles"
+            ),
+            (
+                "the support-contract digest binds the modeled scope but does "
+                "not prove fixed-material assumptions"
+            ),
+        ],
+    }
+    return options, sampling_s_A, sampling_u_A, metadata
+
+
+def sweep_experiment_adaptive_atomic_cubature_convergence_1d(
+    experiment: SiliconGlancingExperiment1D,
+    *,
+    tolerance_levels: Sequence[tuple[float, float]],
+    fractional_offsets_A: Sequence[tuple[float, float]],
+    elements: Sequence[str] = ("Si",),
+    base_numerical_options: DirectAtomicNumericalOptions1D | None = None,
+    relative_l2_tolerance: float = 1e-4,
+    relative_integral_tolerance: float = 1e-4,
+) -> AdaptiveAtomicCubatureConvergenceReport1D:
+    """Sweep adaptive atomic cubature on authenticated production geometry.
+
+    Tolerance levels and fractional offsets are deliberately explicit because
+    this can be an expensive validation run. The two acceptance budgets default
+    to ``1e-4``. A passing report certifies only numerical convergence of the
+    declared Kirkland cubature; physical trust remains unconditionally false.
+    """
+    options, sampling_s_A, sampling_u_A, metadata = (
+        _adaptive_atomic_cubature_experiment_context_1d(experiment)
+    )
+    report = sweep_adaptive_atomic_cubature_convergence_1d(
+        elements,
+        sampling_s_A=sampling_s_A,
+        sampling_u_A=sampling_u_A,
+        base_options=options,
+        tolerance_levels=tolerance_levels,
+        fractional_offsets_A=fractional_offsets_A,
+        base_numerical_options=base_numerical_options,
+        relative_l2_tolerance=relative_l2_tolerance,
+        relative_integral_tolerance=relative_integral_tolerance,
+        metadata=metadata,
+    )
+    if getattr(report, "trust_claim", None) is not False:
+        raise RuntimeError("adaptive cubature report must remain fail closed")
+    limitations = tuple(getattr(report, "limitations", ()))
+    if not limitations:
+        raise RuntimeError("adaptive cubature report lost its limitations")
+    report_metadata = dict(getattr(report, "metadata", {}))
+
+    def canonical_metadata_value(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return {
+                str(key): canonical_metadata_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple)):
+            return tuple(canonical_metadata_value(item) for item in value)
+        return value
+
+    for name, expected in metadata.items():
+        if canonical_metadata_value(report_metadata.get(name)) != (
+            canonical_metadata_value(expected)
+        ):
+            raise RuntimeError(
+                "adaptive cubature report lost experiment provenance field "
+                f"{name!r}"
+            )
+    return report
+
+
 def _patches_for_sites(
     site_coordinates: np.ndarray,
     template: np.ndarray,
@@ -1015,6 +1348,478 @@ def _automatic_interaction_region(
             config.beam_angle_uncertainty_deg
         ),
         mutable_scan_indices=mutable_scan_indices,
+    )
+
+
+def build_atomistic_edit_discovery_support_1d(
+    experiment: SiliconGlancingExperiment1D,
+    *,
+    surface_envelope_A: tuple[float, float],
+) -> AtomisticEditDiscoverySupport1D:
+    """Build object-free TARGET/NUISANCE support around the host surface.
+
+    This repeats the same bounded Gaussian-ray construction used by the host
+    interaction region, but clips it to the declared *surface envelope* rather
+    than to known silicon.  Consequently a physically allowed vacuum band can
+    contain adatoms and other off-lattice centres.  Training scans and nominal
+    geometry define TARGET support; held-out scans and declared geometry
+    uncertainty only enlarge the non-reportable NUISANCE support.
+
+    The result is a geometric candidate volume, not an observability
+    certificate.  No object presence, centre, radius, shape, phase, or truth
+    metadata enters this function.
+    """
+    if not isinstance(experiment, SiliconGlancingExperiment1D):
+        raise TypeError("experiment must be a SiliconGlancingExperiment1D")
+    try:
+        bottom_A, top_A = (float(value) for value in surface_envelope_A)
+    except (TypeError, ValueError) as error:
+        raise TypeError(
+            "surface_envelope_A must contain finite bottom and top bounds"
+        ) from error
+    coordinates_u = np.asarray(experiment.transverse_coordinates, dtype=float)
+    if (
+        not np.isfinite(bottom_A)
+        or not np.isfinite(top_A)
+        or bottom_A >= top_A
+        or bottom_A < coordinates_u[0]
+        or top_A > coordinates_u[-1]
+    ):
+        raise ValueError(
+            "surface_envelope_A must be finite, ordered, and inside the "
+            "simulated transverse grid"
+        )
+    config = experiment.config
+    region = gaussian_interaction_region_1d(
+        experiment.axial_coordinates,
+        experiment.transverse_coordinates,
+        experiment.scan_coordinates,
+        beam_waist_A=config.beam_waist_A,
+        beam_tilt_rad=-np.deg2rad(config.glancing_angle_deg),
+        slab_bottom_A=bottom_A,
+        slab_top_A=top_A,
+        excluded_probe_power=config.interaction_excluded_probe_power,
+        intensity_threshold=config.interaction_intensity_threshold,
+        minimum_scan_coverage=config.minimum_scan_coverage,
+        beam_position_uncertainty_A=config.beam_position_uncertainty_A,
+        beam_angle_uncertainty_rad=np.deg2rad(
+            config.beam_angle_uncertainty_deg
+        ),
+        mutable_scan_indices=experiment.training_indices,
+    )
+    target = np.array(region.reconstruction_mask, dtype=bool, copy=True)
+    nuisance = np.array(region.forward_mask, dtype=bool, copy=True) & ~target
+    # The discovery contract must guarantee that a unit atom-like kernel is
+    # never clipped by the finite simulation array.  Use the same deterministic
+    # representative-host rule as ``build_atomistic_edit_model_1d`` and remove
+    # only the numerical boundary anchors; this is not an object-shape prior.
+    patches = np.asarray(experiment.lattice_model.site_patches, dtype=np.float64)
+    starts = np.asarray(experiment.lattice_model.patch_starts, dtype=np.int64)
+    sites = np.asarray(experiment.lattice_model.site_coordinates, dtype=np.float64)
+    integrated = np.sum(patches, axis=(1, 2), dtype=np.float64)
+    representative_index = int(np.argmax(integrated))
+    site_grid_index = np.asarray(
+        [
+            (
+                sites[representative_index, 0]
+                - float(experiment.axial_coordinates[0])
+            )
+            / experiment.axial_sampling,
+            (
+                sites[representative_index, 1]
+                - float(experiment.transverse_coordinates[0])
+            )
+            / experiment.transverse_sampling,
+        ]
+    )
+    centre_index = site_grid_index - starts[representative_index]
+    start_offset = np.floor(-centre_index + 0.5).astype(np.int64)
+    rows, columns = np.indices(target.shape)
+    complete_kernel_footprint = (
+        (rows + start_offset[0] >= 0)
+        & (
+            rows + start_offset[0] + patches.shape[1] <= target.shape[0]
+        )
+        & (columns + start_offset[1] >= 0)
+        & (
+            columns + start_offset[1] + patches.shape[2] <= target.shape[1]
+        )
+    )
+    target &= complete_kernel_footprint
+    nuisance &= complete_kernel_footprint
+    if not np.any(target):
+        raise ValueError(
+            "the surface envelope has no training-supported discovery anchors "
+            "after enforcing complete atomic-kernel containment"
+        )
+    return make_atomistic_edit_discovery_support_1d(
+        experiment.axial_coordinates,
+        experiment.transverse_coordinates,
+        target,
+        nuisance,
+        surface_envelope_A=(bottom_A, top_A),
+        geometry_source_id=(
+            "gaussian_surface_adjacent_discovery:v1:"
+            f"{experiment.support_contract.contract_id}"
+        ),
+        excluded_probe_power=region.excluded_probe_power,
+        metadata={
+            "construction": "bounded Gaussian rays over declared surface envelope",
+            "candidate_support_is_observability_certificate": False,
+            "target_source": "nominal training-only scan overlap",
+            "nuisance_source": (
+                "all-scan uncertainty-expanded forward support outside TARGET"
+            ),
+            "host_material_clipping_applied": False,
+            "finite_grid_boundary_contracted_for_full_kernel": True,
+            "representative_kernel_shape": list(patches.shape[1:]),
+            "minimum_scan_coverage": region.minimum_scan_coverage,
+            "angle_interval_deg": region.metadata["angle_interval_deg"],
+        },
+    )
+
+
+def build_atomistic_edit_model_1d(
+    experiment: SiliconGlancingExperiment1D,
+    options: AtomisticEditOptions1D,
+) -> AtomisticEditModel1D:
+    """Build the opt-in sparse-edit model from the certified finite Si host.
+
+    The addition kernel is taken from the least-truncated modeled host patch,
+    normalized to unit integral, and retains that host atom's integrated
+    scattering as the ``a=1`` scale.  This gives additions and removals one
+    common host-equivalent edit-mass unit without assigning elemental identity
+    to a fitted addition.
+    """
+    if not isinstance(experiment, SiliconGlancingExperiment1D):
+        raise TypeError("experiment must be a SiliconGlancingExperiment1D")
+    if not isinstance(options, AtomisticEditOptions1D):
+        raise TypeError("options must be an AtomisticEditOptions1D")
+    host_model = experiment.lattice_model
+    patches = np.asarray(host_model.site_patches, dtype=np.float64)
+    starts = np.asarray(host_model.patch_starts, dtype=np.int64)
+    sites = np.asarray(host_model.site_coordinates, dtype=np.float64)
+    if not len(patches):
+        raise ValueError("the finite host contains no modeled atom templates")
+    pixel_area = experiment.axial_sampling * experiment.transverse_sampling
+    integrated_scattering = np.sum(patches, axis=(1, 2), dtype=np.float64)
+    integrated_scattering *= pixel_area
+    representative_index = int(np.argmax(integrated_scattering))
+    host_integral = float(integrated_scattering[representative_index])
+    site_grid_index = np.asarray(
+        [
+            (
+                sites[representative_index, 0]
+                - float(experiment.axial_coordinates[0])
+            )
+            / experiment.axial_sampling,
+            (
+                sites[representative_index, 1]
+                - float(experiment.transverse_coordinates[0])
+            )
+            / experiment.transverse_sampling,
+        ]
+    )
+    centre_index = site_grid_index - starts[representative_index]
+    projection_width_A = float(
+        experiment.independent_kirkland_template.options.projection_width_A
+    )
+    kernel = make_atomistic_edit_kernel_1d(
+        patches[representative_index],
+        axial_sampling_A=experiment.axial_sampling,
+        transverse_sampling_A=experiment.transverse_sampling,
+        host_equivalent_integrated_scattering=host_integral,
+        centre_index=centre_index,
+        parameterization_id="Lobato finite-projection Si host-equivalent:v1",
+        cutoff_A=experiment.template_certification.cutoff_A,
+        projection_width_A=projection_width_A,
+        maximum_boundary_mass_fraction=max(
+            1e-12,
+            4.0 * experiment.template_certification.relative_tail_l2,
+        ),
+        normalization_tolerance=1e-10,
+        metadata={
+            "species_interpretation": "host-equivalent scattering only",
+            "source_site_index": representative_index,
+            "source_selection": "maximum integrated modeled host patch",
+            "template_tail_certification": (
+                experiment.template_certification.relative_tail_l2
+            ),
+            "elemental_identity_inferred": False,
+        },
+    )
+    return make_atomistic_edit_model_1d(
+        host_model,
+        experiment.axial_coordinates,
+        experiment.transverse_coordinates,
+        kernel,
+        options,
+        deformation_parameter_count=int(
+            np.prod(
+                (
+                    len(host_model.control_coordinates_s),
+                    len(host_model.control_coordinates_u),
+                    2,
+                )
+            )
+        ),
+        metadata={
+            "scope": "sideview_2d_sparse_atomistic_edits",
+            "spatial_dimension": 2,
+            "host_experiment_support_contract_id": (
+                experiment.support_contract.contract_id
+            ),
+            "structurally_trusted": False,
+            "energy_envelope_enabled": False,
+        },
+    )
+
+
+def _atomistic_experiment_geometry_id_1d(
+    experiment: SiliconGlancingExperiment1D,
+) -> str:
+    """Digest the truth-free acquisition geometry used by the AE adapter."""
+    digest = hashlib.sha256()
+    arrays = {
+        "input_probes": experiment.input_probes,
+        "window_starts": experiment.window_starts,
+        "propagation_kernel": experiment.propagation_kernel,
+        "scan_coordinates": experiment.scan_coordinates,
+        "axial_coordinates": experiment.axial_coordinates,
+        "transverse_coordinates": experiment.transverse_coordinates,
+        "detector_angles": experiment.detector_angles,
+        "training_indices": experiment.training_indices,
+        "validation_indices": experiment.validation_indices,
+        "audit_indices": experiment.audit_indices,
+        "guard_indices": experiment.guard_indices,
+    }
+    for name in sorted(arrays):
+        value = np.ascontiguousarray(np.asarray(arrays[name]))
+        header = (
+            f"{name}\0{value.dtype.str}\0{','.join(map(str, value.shape))}\0"
+        ).encode("utf-8")
+        digest.update(len(header).to_bytes(8, "big"))
+        digest.update(header)
+        payload = value.tobytes(order="C")
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    scalars = (
+        int(experiment.window_length),
+        float(experiment.axial_sampling),
+        float(experiment.transverse_sampling),
+        float(experiment.config.energy_eV),
+    )
+    payload = repr(scalars).encode("ascii")
+    digest.update(len(payload).to_bytes(8, "big"))
+    digest.update(payload)
+    return digest.hexdigest()
+
+
+def _explicit_detector_mask_1d(mask: Any, shape: tuple[int, int]) -> np.ndarray:
+    value = np.asarray(mask)
+    if value.dtype != np.bool_:
+        raise TypeError("detector_valid_mask must be Boolean")
+    if value.shape == (shape[1],):
+        value = np.broadcast_to(value[None, :], shape)
+    elif value.shape != shape:
+        raise ValueError(
+            "detector_valid_mask must have detector shape or scan-by-detector shape"
+        )
+    if not np.all(np.any(value, axis=1)):
+        raise ValueError("every scan must contain at least one valid detector pixel")
+    return np.array(value, dtype=bool, copy=True)
+
+
+def synthetic_noiseless_poisson_measurement_1d(
+    experiment: SiliconGlancingExperiment1D,
+    scan: GlancingScan1D,
+    objective: PtychographyObjective1D,
+    *,
+    detector_valid_mask: Any,
+    calibration_id: str = "synthetic_noiseless_fft_poisson:v1",
+) -> PtychographyMeasurement1D:
+    """Convert synthetic FFT intensities to noiseless calibrated counts.
+
+    This is an explicitly synthetic-only adapter.  It draws no random counts,
+    fits no signal scale, accepts no truth container, and copies no truth or
+    generator fields from ``scan.metadata``.  The declared objective supplies
+    the complete dose calibration; invalid detector values are replaced before
+    conversion and never enter the measurement likelihood.
+    """
+    if not isinstance(experiment, SiliconGlancingExperiment1D):
+        raise TypeError("experiment must be a SiliconGlancingExperiment1D")
+    if not isinstance(scan, GlancingScan1D):
+        raise TypeError(
+            "scan must be a GlancingScan1D; synthetic truth containers are not "
+            "accepted by this calibration boundary"
+        )
+    # Reuse the maintained fail-closed coordinate, detector, and split checks
+    # without launching an inverse method.
+    reconstruct_experiment_1d(experiment, scan, methods=())
+    shape = (len(experiment.window_starts), len(experiment.detector_angles))
+    valid = _explicit_detector_mask_1d(detector_valid_mask, shape)
+    if scan.detector_valid_mask is not None:
+        declared = _explicit_detector_mask_1d(scan.detector_valid_mask, shape)
+        if not np.array_equal(valid, declared):
+            raise ValueError(
+                "explicit detector_valid_mask conflicts with the scan mask"
+            )
+    validate_ptychography_objective_1d(objective, n_scans=shape[0])
+    if objective.kind != "poisson_deviance":
+        raise ValueError(
+            "synthetic noiseless Poisson conversion requires "
+            "objective.kind='poisson_deviance'"
+        )
+    intensities = np.asarray(scan.intensities)
+    selected = intensities[valid]
+    if (
+        np.iscomplexobj(intensities)
+        or np.any(~np.isfinite(selected))
+        or np.any(selected < 0.0)
+    ):
+        raise ValueError(
+            "synthetic FFT intensities must be finite and non-negative at "
+            "valid detector pixels"
+        )
+    sanitized = np.where(valid, intensities, 0.0)
+    signal = ptychography_expected_signal_electrons_1d(
+        sanitized,
+        experiment.input_probes,
+        objective,
+    )
+    if not isinstance(calibration_id, str) or not calibration_id.strip():
+        raise ValueError("calibration_id must be a non-empty string")
+    measurement = PtychographyMeasurement1D(
+        calibrated_signal_electrons=signal,
+        observed_total_electrons=signal,
+        valid_mask=jnp.asarray(valid),
+        calibrated_dark_electrons_per_pixel=jnp.zeros_like(signal),
+        calibrated_read_noise_std_electrons=jnp.zeros_like(signal),
+        calibration_id=calibration_id,
+        metadata=MappingProxyType(
+            {
+                "schema": "synthetic_noiseless_fft_poisson_measurement_1d:v1",
+                "synthetic_only": True,
+                "random_counts_drawn": False,
+                "relative_signal_scale_fitted": False,
+                "truth_fields_accepted": False,
+                "experiment_geometry_id": (
+                    _atomistic_experiment_geometry_id_1d(experiment)
+                ),
+                "host_support_contract_id": (
+                    experiment.support_contract.contract_id
+                ),
+            }
+        ),
+    )
+    validate_ptychography_measurement_1d(measurement)
+    return measurement
+
+
+def prepare_atomistic_edit_experiment_1d(
+    experiment: SiliconGlancingExperiment1D,
+    measurement: PtychographyMeasurement1D,
+    objective: PtychographyObjective1D,
+    options: AtomisticEditOptions1D,
+    *,
+    surface_envelope_A: tuple[float, float],
+) -> PreparedAtomisticEditReconstruction1D:
+    """Prepare the opt-in AE method without reading synthetic truth.
+
+    ``surface_envelope_A`` is mandatory and object-free.  The supplied options
+    must bind exactly the discovery contract rebuilt from that envelope; this
+    prevents a caller from silently substituting an object-shaped support.
+    The experiment's validation, audit, and guard sets are delegated verbatim,
+    and the solver derives the complementary training set before this helper
+    verifies it against the experiment declaration.
+    """
+    if not isinstance(experiment, SiliconGlancingExperiment1D):
+        raise TypeError("experiment must be a SiliconGlancingExperiment1D")
+    if not isinstance(options, AtomisticEditOptions1D):
+        raise TypeError("options must be an AtomisticEditOptions1D")
+    validate_ptychography_measurement_1d(measurement)
+    validate_ptychography_objective_1d(
+        objective, n_scans=len(experiment.window_starts)
+    )
+    discovery = build_atomistic_edit_discovery_support_1d(
+        experiment,
+        surface_envelope_A=surface_envelope_A,
+    )
+    supplied_discovery = options.discovery_support
+    if not isinstance(supplied_discovery, AtomisticEditDiscoverySupport1D):
+        raise TypeError(
+            "options.discovery_support must be an "
+            "AtomisticEditDiscoverySupport1D"
+        )
+    if (
+        supplied_discovery.contract_id != discovery.contract_id
+        or supplied_discovery.surface_envelope_A != discovery.surface_envelope_A
+    ):
+        raise ValueError(
+            "options.discovery_support does not match the geometry-derived "
+            "support for the explicit surface_envelope_A"
+        )
+    model = build_atomistic_edit_model_1d(
+        experiment,
+        dataclass_replace(options, discovery_support=discovery),
+    )
+    geometry_id = _atomistic_experiment_geometry_id_1d(experiment)
+    measurement_metadata = dict(measurement.metadata)
+    declared_geometry_id = measurement_metadata.get("experiment_geometry_id")
+    if declared_geometry_id is not None and declared_geometry_id != geometry_id:
+        raise ValueError("measurement experiment_geometry_id does not match geometry")
+    declared_support_id = measurement_metadata.get("host_support_contract_id")
+    if (
+        declared_support_id is not None
+        and declared_support_id != experiment.support_contract.contract_id
+    ):
+        raise ValueError(
+            "measurement host_support_contract_id does not match experiment"
+        )
+    prepared = prepare_atomistic_edit_reconstruction_1d(
+        model,
+        experiment.input_probes,
+        experiment.window_starts,
+        experiment.window_length,
+        experiment.propagation_kernel,
+        experiment.axial_sampling,
+        experiment.config.energy_eV,
+        measurement,
+        objective,
+        validation_indices=np.asarray(experiment.validation_indices),
+        audit_indices=np.asarray(experiment.audit_indices),
+        excluded_indices=np.asarray(experiment.guard_indices),
+    )
+    for name in (
+        "training_indices",
+        "validation_indices",
+        "audit_indices",
+        "excluded_indices",
+    ):
+        experiment_name = "guard_indices" if name == "excluded_indices" else name
+        if not np.array_equal(
+            np.asarray(getattr(prepared, name)),
+            np.asarray(getattr(experiment, experiment_name)),
+        ):
+            raise ValueError(
+                "the AE solver partition does not exactly match experiment."
+                f"{experiment_name}"
+            )
+    metadata = {
+        **dict(prepared.metadata),
+        "workflow_adapter": "prepare_atomistic_edit_experiment_1d:v1",
+        "experiment_geometry_id": geometry_id,
+        "host_support_contract_id": experiment.support_contract.contract_id,
+        "discovery_contract_id": discovery.contract_id,
+        "atomistic_edit_support_contract_id": model.support_contract.contract_id,
+        "atomistic_edit_model_id": model.model_id,
+        "surface_envelope_A": list(discovery.surface_envelope_A),
+        "partition_source": "experiment_geometry_only_exact",
+        "truth_fields_read": False,
+    }
+    return dataclass_replace(
+        prepared,
+        metadata=MappingProxyType(metadata),
     )
 
 
@@ -2721,6 +3526,666 @@ def _target_structural_potentials_1d(
         du=float(target_model.transverse_sampling),
     )
     return np.asarray(truth), np.asarray(recovered), target, target_support
+
+
+def _require_atomistic_target_binding_1d(
+    experiment: SiliconGlancingExperiment1D,
+    prepared: PreparedAtomisticEditReconstruction1D,
+    result: AtomisticEditReconstruction1D | None = None,
+) -> None:
+    """Fail closed before assigning any AE output a TARGET label."""
+    if not isinstance(experiment, SiliconGlancingExperiment1D):
+        raise TypeError("experiment must be a SiliconGlancingExperiment1D")
+    if not isinstance(prepared, PreparedAtomisticEditReconstruction1D):
+        raise TypeError(
+            "prepared must be a PreparedAtomisticEditReconstruction1D"
+        )
+    model = prepared.model
+    host_contract = validate_lattice_site_support_contract_1d(
+        model.host_model.support_contract,
+        strict=True,
+    )
+    experiment_contract = validate_lattice_site_support_contract_1d(
+        experiment.support_contract,
+        strict=True,
+    )
+    if (
+        host_contract.contract_id != experiment_contract.contract_id
+        or model.support_contract.host_support_contract_id
+        != experiment_contract.contract_id
+    ):
+        raise ValueError(
+            "atomistic model/support contract does not match the experiment; "
+            "TARGET-labelled output is forbidden"
+        )
+    if (
+        model.support_contract.discovery_contract_id
+        != model.options.discovery_support.contract_id
+        or model.support_contract.kernel_id != model.addition_kernel.kernel_id
+    ):
+        raise ValueError(
+            "atomistic edit support does not match its discovery/kernel IDs"
+        )
+    exact_model_arrays = (
+        (model.host_model.reference_potential, experiment.lattice_model.reference_potential),
+        (model.host_model.site_coordinates, experiment.lattice_model.site_coordinates),
+        (model.host_model.site_patches, experiment.lattice_model.site_patches),
+        (model.host_model.patch_starts, experiment.lattice_model.patch_starts),
+        (model.axial_coordinates_A, experiment.axial_coordinates),
+        (model.transverse_coordinates_A, experiment.transverse_coordinates),
+    )
+    if any(
+        not np.array_equal(np.asarray(actual), np.asarray(expected))
+        for actual, expected in exact_model_arrays
+    ):
+        raise ValueError(
+            "atomistic model arrays do not match the maintained experiment"
+        )
+    expected_probe = np.asarray(experiment.input_probes)
+    if expected_probe.ndim == 1:
+        expected_probe = np.broadcast_to(
+            expected_probe,
+            np.asarray(prepared.probe_rows).shape,
+        )
+    exact_geometry_arrays = (
+        (prepared.probe_rows, expected_probe),
+        (prepared.window_starts, experiment.window_starts),
+        (prepared.propagation_kernel, experiment.propagation_kernel),
+    )
+    if any(
+        not np.array_equal(np.asarray(actual), np.asarray(expected))
+        for actual, expected in exact_geometry_arrays
+    ) or (
+        int(prepared.window_length) != int(experiment.window_length)
+        or float(prepared.slice_thickness_A) != float(experiment.axial_sampling)
+        or float(prepared.energy_eV) != float(experiment.config.energy_eV)
+    ):
+        raise ValueError(
+            "prepared acquisition geometry does not match the experiment"
+        )
+    expected_metadata = {
+        "experiment_geometry_id": _atomistic_experiment_geometry_id_1d(experiment),
+        "host_support_contract_id": experiment_contract.contract_id,
+        "discovery_contract_id": model.options.discovery_support.contract_id,
+        "atomistic_edit_support_contract_id": model.support_contract.contract_id,
+        "atomistic_edit_model_id": model.model_id,
+    }
+    for name, expected in expected_metadata.items():
+        if prepared.metadata.get(name) != expected:
+            raise ValueError(
+                f"prepared {name} is missing or inconsistent; TARGET-labelled "
+                "output is forbidden"
+            )
+    if result is not None:
+        if not isinstance(result, AtomisticEditReconstruction1D):
+            raise TypeError("result must be an AtomisticEditReconstruction1D")
+        if (
+            result.prepared_problem_id != prepared.reconstruction_problem_id
+            or result.reconstructor_id != prepared.reconstructor_id
+        ):
+            raise ValueError(
+                "atomistic result does not belong to the prepared problem"
+            )
+
+
+def _target_addition_influence_mask_1d(
+    model: AtomisticEditModel1D,
+) -> np.ndarray:
+    anchors = np.asarray(model.support_contract.target_discovery_mask, dtype=bool)
+    n_s, n_u = anchors.shape
+    centre = np.asarray(model.addition_kernel.centre_index, dtype=float)
+    start_s, start_u = np.floor(-centre + 0.5).astype(np.int64)
+    patch_s, patch_u = model.addition_kernel.unit_integrated_values.shape
+    max_s = start_s + patch_s - 1
+    max_u = start_u + patch_u - 1
+    low_s = np.clip(np.arange(n_s) - max_s, 0, n_s)
+    high_s = np.clip(np.arange(n_s) - start_s + 1, 0, n_s)
+    low_u = np.clip(np.arange(n_u) - max_u, 0, n_u)
+    high_u = np.clip(np.arange(n_u) - start_u + 1, 0, n_u)
+    prefix = np.pad(anchors.astype(np.int64), ((1, 0), (1, 0)))
+    prefix = np.cumsum(np.cumsum(prefix, axis=0), axis=1)
+    result = (
+        prefix[np.ix_(high_s, high_u)]
+        - prefix[np.ix_(low_s, high_u)]
+        - prefix[np.ix_(high_s, low_u)]
+        + prefix[np.ix_(low_s, low_u)]
+    ) > 0
+    if np.any(result & ~np.asarray(model.support_contract.addition_influence_mask)):
+        raise ValueError(
+            "TARGET addition influence is not contained by the edit contract"
+        )
+    return result
+
+
+def _target_only_atomistic_edit_state_1d(
+    model: AtomisticEditModel1D,
+    state: AtomisticEditState1D,
+) -> AtomisticEditState1D:
+    """Reset non-reportable removal/addition slots to the reference state.
+
+    Host controls are deliberately retained here: they are shared parameters,
+    and zeroing them would also erase the displacement of TARGET sites.  The
+    TARGET renderer below transfers those controls to individual host sites and
+    applies only the TARGET-site deformation deltas.
+    """
+    validate_atomistic_edit_state_1d(model, state)
+    host_contract = validate_lattice_site_support_contract_1d(
+        model.host_model.support_contract,
+        strict=True,
+    )
+    modeled = np.asarray(host_contract.modeled_site_indices, dtype=np.int64)
+    local_roles = np.asarray(host_contract.site_role_codes, dtype=np.int8)[modeled]
+    expected_sites = np.asarray(host_contract.all_site_coordinates)[modeled]
+    if (
+        local_roles.shape != (len(model.host_model.site_coordinates),)
+        or not np.array_equal(
+            expected_sites,
+            np.asarray(model.host_model.site_coordinates),
+        )
+    ):
+        raise ValueError(
+            "host site ordering does not match the material-support contract"
+        )
+    removal_indices = np.asarray(state.host_removal_indices, dtype=np.int64)
+    removal_active = np.asarray(state.host_removal_active, dtype=bool)
+    removal_target = (
+        local_roles[removal_indices] == int(LatticeSiteRole1D.TARGET)
+    )
+    display_removal_active = removal_active & removal_target
+    extra_roles = np.asarray(atomistic_edit_addition_roles_1d(model, state))
+    extra_active = np.asarray(state.extra_active, dtype=bool)
+    display_extra_active = extra_active & (
+        extra_roles == int(LatticeSiteRole1D.TARGET)
+    )
+    return dataclass_replace(
+        state,
+        host_removal_fractions=jnp.where(
+            jnp.asarray(display_removal_active),
+            jnp.asarray(state.host_removal_fractions),
+            0.0,
+        ),
+        host_removal_active=jnp.asarray(display_removal_active),
+        extra_position_offsets_A=jnp.where(
+            jnp.asarray(display_extra_active)[:, None],
+            jnp.asarray(state.extra_position_offsets_A),
+            0.0,
+        ),
+        extra_scattering_equivalents=jnp.where(
+            jnp.asarray(display_extra_active),
+            jnp.asarray(state.extra_scattering_equivalents),
+            0.0,
+        ),
+        extra_active=jnp.asarray(display_extra_active),
+    )
+
+
+def _render_target_only_atomistic_edit_potential_1d(
+    experiment: SiliconGlancingExperiment1D,
+    model: AtomisticEditModel1D,
+    state: AtomisticEditState1D,
+) -> Array:
+    """Render pristine host plus only reportable TARGET structural deltas.
+
+    Smooth controls are shared by TARGET and NUISANCE sites during inference.
+    For reporting, the controls are first interpolated at every host site, then
+    only TARGET-site patch translations/removals are scattered into the
+    pristine reference.  This retains TARGET strain without allowing a
+    NUISANCE-site displacement delta to leak through an overlapping patch.
+    TARGET additions are rendered separately and added to that host view.
+    """
+    display_state = _target_only_atomistic_edit_state_1d(model, state)
+    target_model, target_sites = _target_only_lattice_model_1d(
+        experiment,
+        model.host_model,
+    )
+
+    controls = jnp.asarray(display_state.host_displacement_controls)
+    all_site_displacements = lattice_site_displacements_1d(
+        jnp.asarray(model.host_model.site_coordinates),
+        controls,
+        jnp.asarray(model.host_model.control_coordinates_s),
+        jnp.asarray(model.host_model.control_coordinates_u),
+    )
+    removal_indices = np.asarray(
+        display_state.host_removal_indices, dtype=np.int64
+    )
+    removal_active = np.asarray(
+        display_state.host_removal_active, dtype=bool
+    )
+    removal_fractions = np.asarray(
+        display_state.host_removal_fractions, dtype=float
+    )
+    dense_removals = np.zeros(len(model.host_model.site_coordinates), dtype=float)
+    np.add.at(
+        dense_removals,
+        removal_indices[removal_active],
+        removal_fractions[removal_active],
+    )
+    target_host = render_lattice_site_potential_from_displacements_1d(
+        target_model,
+        jnp.asarray(dense_removals[target_sites], dtype=controls.dtype),
+        all_site_displacements[target_sites],
+    )
+
+    additions_only_state = dataclass_replace(
+        display_state,
+        host_removal_fractions=jnp.zeros_like(
+            display_state.host_removal_fractions
+        ),
+        host_removal_active=jnp.zeros_like(
+            display_state.host_removal_active, dtype=bool
+        ),
+        host_displacement_controls=jnp.zeros_like(
+            display_state.host_displacement_controls
+        ),
+    )
+    reference = jnp.asarray(model.host_model.reference_potential)
+    target_addition_delta = (
+        render_atomistic_edit_potential_1d(model, additions_only_state)
+        - reference
+    )
+    return target_host + target_addition_delta
+
+
+def _atomistic_target_view_arrays_1d(
+    experiment: SiliconGlancingExperiment1D,
+    prepared: PreparedAtomisticEditReconstruction1D,
+    state: AtomisticEditState1D,
+    *,
+    truth_state: AtomisticEditState1D | None = None,
+) -> tuple[np.ndarray, np.ndarray | None, np.ndarray]:
+    _require_atomistic_target_binding_1d(experiment, prepared)
+    model = prepared.model
+    host_contract = validate_lattice_site_support_contract_1d(
+        model.host_model.support_contract,
+        strict=True,
+    )
+    reportable = np.asarray(host_contract.target_influence_mask, dtype=bool) | (
+        _target_addition_influence_mask_1d(model)
+    )
+    if np.any(reportable & ~np.asarray(model.support_contract.total_influence_mask)):
+        raise ValueError("reportable influence leaves the authenticated support")
+    recovered = np.asarray(
+        _render_target_only_atomistic_edit_potential_1d(
+            experiment, model, state
+        )
+    )
+    recovered = np.where(reportable, recovered, np.nan)
+    truth = None
+    if truth_state is not None:
+        truth = np.asarray(
+            _render_target_only_atomistic_edit_potential_1d(
+                experiment, model, truth_state
+            )
+        )
+        truth = np.where(reportable, truth, np.nan)
+    return recovered, truth, reportable
+
+
+def plot_atomistic_edit_reconstruction_1d(
+    experiment: SiliconGlancingExperiment1D,
+    prepared: PreparedAtomisticEditReconstruction1D,
+    result: AtomisticEditReconstruction1D | AtomisticEditState1D,
+    *,
+    truth_state: AtomisticEditState1D | None = None,
+    truth_potential: Any | None = None,
+):
+    """Plot only contract-bound TARGET influence, optionally beside truth.
+
+    NUISANCE additions, removals, and host-site deformation deltas are reset to
+    the pristine host before rendering. Pixels outside the union of
+    authenticated TARGET host and TARGET-discovery influence are NaN/masked.
+    Supplying a truth state uses the identical filtering and renderer.
+    Alternatively, ``truth_potential`` accepts a private full-grid synthetic
+    potential and applies only the same TARGET display mask. It is a
+    post-selection crop, not a claim that nuisance structure was decomposed or
+    reset in the supplied truth; the two truth inputs are mutually exclusive.
+    """
+    import matplotlib.pyplot as plt
+
+    if isinstance(result, AtomisticEditReconstruction1D):
+        _require_atomistic_target_binding_1d(experiment, prepared, result)
+        state = result.debiased_state
+    elif isinstance(result, AtomisticEditState1D):
+        _require_atomistic_target_binding_1d(experiment, prepared)
+        state = result
+    else:
+        raise TypeError(
+            "result must be an AtomisticEditReconstruction1D or "
+            "AtomisticEditState1D"
+        )
+    if truth_state is not None and truth_potential is not None:
+        raise ValueError("truth_state and truth_potential are mutually exclusive")
+    recovered, truth, reportable = _atomistic_target_view_arrays_1d(
+        experiment,
+        prepared,
+        state,
+        truth_state=truth_state,
+    )
+    if truth_potential is not None:
+        supplied_truth = np.asarray(truth_potential)
+        if supplied_truth.shape != reportable.shape or np.iscomplexobj(
+            supplied_truth
+        ):
+            raise ValueError(
+                "truth_potential must be a real array matching the specimen grid"
+            )
+        if np.any(~np.isfinite(supplied_truth[reportable])):
+            raise ValueError(
+                "truth_potential must be finite inside TARGET influence"
+            )
+        truth = np.where(reportable, supplied_truth, np.nan)
+    s_A = np.asarray(experiment.axial_coordinates, dtype=float)
+    u_A = np.asarray(experiment.transverse_coordinates, dtype=float)
+    selected_s = s_A[np.any(reportable, axis=1)]
+    selected_u = u_A[np.any(reportable, axis=0)]
+    extent = [selected_s[0], selected_s[-1], selected_u[0], selected_u[-1]]
+    arrays = [recovered] if truth is None else [truth, recovered]
+    if truth is None:
+        titles = ["Reference + TARGET edit/deformation deltas"]
+    else:
+        truth_title = (
+            "Reference + truth TARGET edit/deformation deltas"
+            if truth_state is not None
+            else "Private full truth (TARGET support crop)"
+        )
+        titles = [
+            truth_title,
+            "Reference + TARGET edit/deformation deltas",
+        ]
+    finite_values = np.concatenate(
+        [value[np.isfinite(value)] for value in arrays]
+    )
+    vmax = float(np.percentile(finite_values, 99.5))
+    if not np.isfinite(vmax) or vmax <= 0.0:
+        vmax = max(float(np.max(np.abs(finite_values))), 1.0)
+    cmap = plt.get_cmap("magma").copy()
+    cmap.set_bad("white")
+    figure, axes = plt.subplots(
+        1,
+        len(arrays),
+        figsize=(5.2 * len(arrays), 3.7),
+        constrained_layout=True,
+        squeeze=False,
+    )
+    for axis, values, title in zip(axes[0], arrays, titles):
+        image = axis.imshow(
+            values.T,
+            origin="lower",
+            aspect="auto",
+            extent=[s_A[0], s_A[-1], u_A[0], u_A[-1]],
+            cmap=cmap,
+            vmin=0.0,
+            vmax=vmax,
+        )
+        axis.set(
+            title=title,
+            xlabel="s (A)",
+            ylabel="u (A)",
+            xlim=extent[:2],
+            ylim=extent[2:],
+        )
+        figure.colorbar(image, ax=axis, label="projected potential")
+    return figure
+
+
+def _piecewise_bilinear_displacement_gradients_1d(
+    site_coordinates_A: Any,
+    displacement_controls_A: Any,
+    control_coordinates_s_A: Any,
+    control_coordinates_u_A: Any,
+) -> np.ndarray:
+    """Evaluate the exact local gradient of the bilinear control interpolant.
+
+    The returned array uses ``gradient[site, component, coordinate]`` with
+    component/coordinate order ``(s, u)``. A singleton control axis represents
+    a constant field and therefore has zero derivative along that axis.
+    """
+    sites = np.asarray(site_coordinates_A, dtype=float)
+    controls = np.asarray(displacement_controls_A, dtype=float)
+    controls_s = np.asarray(control_coordinates_s_A, dtype=float)
+    controls_u = np.asarray(control_coordinates_u_A, dtype=float)
+    expected_shape = (controls_s.size, controls_u.size, 2)
+    if sites.ndim != 2 or sites.shape[1] != 2:
+        raise ValueError("site_coordinates_A must have shape (n_site, 2)")
+    if controls.shape != expected_shape:
+        raise ValueError(
+            f"displacement_controls_A must have shape {expected_shape}"
+        )
+
+    def cell(coordinates: np.ndarray, value: float) -> tuple[int, float, bool]:
+        if coordinates.size == 1:
+            return 0, 0.0, False
+        inside = bool(coordinates[0] <= value <= coordinates[-1])
+        clipped = float(np.clip(value, coordinates[0], coordinates[-1]))
+        lower = int(
+            np.clip(
+                np.searchsorted(coordinates, clipped, side="right") - 1,
+                0,
+                coordinates.size - 2,
+            )
+        )
+        fraction = (clipped - coordinates[lower]) / (
+            coordinates[lower + 1] - coordinates[lower]
+        )
+        return lower, float(fraction), inside
+
+    gradients = np.zeros((sites.shape[0], 2, 2), dtype=float)
+    for site_index, (site_s, site_u) in enumerate(sites):
+        lower_s, fraction_s, inside_s = cell(controls_s, float(site_s))
+        lower_u, fraction_u, inside_u = cell(controls_u, float(site_u))
+        if controls_s.size > 1 and inside_s:
+            if controls_u.size > 1:
+                difference_s = (
+                    (1.0 - fraction_u)
+                    * (controls[lower_s + 1, lower_u] - controls[lower_s, lower_u])
+                    + fraction_u
+                    * (
+                        controls[lower_s + 1, lower_u + 1]
+                        - controls[lower_s, lower_u + 1]
+                    )
+                )
+            else:
+                difference_s = controls[lower_s + 1, 0] - controls[lower_s, 0]
+            gradients[site_index, :, 0] = difference_s / (
+                controls_s[lower_s + 1] - controls_s[lower_s]
+            )
+        if controls_u.size > 1 and inside_u:
+            if controls_s.size > 1:
+                difference_u = (
+                    (1.0 - fraction_s)
+                    * (controls[lower_s, lower_u + 1] - controls[lower_s, lower_u])
+                    + fraction_s
+                    * (
+                        controls[lower_s + 1, lower_u + 1]
+                        - controls[lower_s + 1, lower_u]
+                    )
+                )
+            else:
+                difference_u = controls[0, lower_u + 1] - controls[0, lower_u]
+            gradients[site_index, :, 1] = difference_u / (
+                controls_u[lower_u + 1] - controls_u[lower_u]
+            )
+    return gradients
+
+
+def summarize_atomistic_edit_reconstruction_1d(
+    experiment: SiliconGlancingExperiment1D,
+    prepared: PreparedAtomisticEditReconstruction1D,
+    result: AtomisticEditReconstruction1D,
+) -> Mapping[str, Any]:
+    """Return a compact contract-checked AE fit and stopping summary."""
+    _require_atomistic_target_binding_1d(experiment, prepared, result)
+    model = prepared.model
+    state = result.debiased_state
+    validate_atomistic_edit_state_1d(model, state)
+    host_contract = validate_lattice_site_support_contract_1d(
+        model.host_model.support_contract,
+        strict=True,
+    )
+    modeled = np.asarray(host_contract.modeled_site_indices, dtype=np.int64)
+    host_roles = np.asarray(host_contract.site_role_codes, dtype=np.int8)[modeled]
+    removal_active = np.asarray(state.host_removal_active, dtype=bool) & (
+        np.asarray(state.host_removal_fractions) > 0.0
+    )
+    removal_indices = np.asarray(state.host_removal_indices, dtype=np.int64)
+    removal_fractions = np.asarray(state.host_removal_fractions, dtype=float)
+    host_sites = np.asarray(model.host_model.site_coordinates, dtype=float)
+    removals = []
+    for slot in np.flatnonzero(removal_active):
+        site = int(removal_indices[slot])
+        role = LatticeSiteRole1D(int(host_roles[site])).name.lower()
+        removals.append(
+            {
+                "slot": int(slot),
+                "host_site_index": site,
+                "position_A": host_sites[site].tolist(),
+                "vacancy_fraction": float(removal_fractions[slot]),
+                "role": role,
+            }
+        )
+    extra_active = np.asarray(state.extra_active, dtype=bool) & (
+        np.asarray(state.extra_scattering_equivalents) > 0.0
+    )
+    extra_positions = np.asarray(
+        atomistic_edit_addition_positions_1d(model, state), dtype=float
+    )
+    extra_masses = np.asarray(
+        state.extra_scattering_equivalents, dtype=float
+    )
+    extra_roles = np.asarray(atomistic_edit_addition_roles_1d(model, state))
+    additions = []
+    for slot in np.flatnonzero(extra_active):
+        additions.append(
+            {
+                "slot": int(slot),
+                "position_A": extra_positions[slot].tolist(),
+                "host_equivalent_scattering": float(extra_masses[slot]),
+                "role": LatticeSiteRole1D(int(extra_roles[slot])).name.lower(),
+            }
+        )
+    edits_by_role = {}
+    edit_counts_by_role = {}
+    for role in ("target", "nuisance"):
+        role_removals = [item for item in removals if item["role"] == role]
+        role_additions = [item for item in additions if item["role"] == role]
+        edits_by_role[role] = {
+            "host_removals": role_removals,
+            "extra_centres": role_additions,
+        }
+        edit_counts_by_role[role] = {
+            "host_removals": len(role_removals),
+            "extra_centres": len(role_additions),
+            "total_active_edits": len(role_removals) + len(role_additions),
+        }
+
+    target_site_mask = host_roles == int(LatticeSiteRole1D.TARGET)
+    target_site_indices = np.flatnonzero(target_site_mask)
+    controls = np.asarray(state.host_displacement_controls, dtype=float)
+    all_site_displacements = np.asarray(
+        lattice_site_displacements_1d(
+            host_sites,
+            controls,
+            np.asarray(model.host_model.control_coordinates_s, dtype=float),
+            np.asarray(model.host_model.control_coordinates_u, dtype=float),
+        ),
+        dtype=float,
+    )
+    target_coordinates = host_sites[target_site_mask]
+    target_displacements = all_site_displacements[target_site_mask]
+    displacement_gradients = _piecewise_bilinear_displacement_gradients_1d(
+        target_coordinates,
+        controls,
+        model.host_model.control_coordinates_s,
+        model.host_model.control_coordinates_u,
+    )
+    infinitesimal_strain = 0.5 * (
+        displacement_gradients
+        + np.swapaxes(displacement_gradients, 1, 2)
+    )
+
+    selected_point = result.path_points[result.selected_path_index]
+    kkt = result.selected_kkt
+    return MappingProxyType(
+        {
+            "active_parameter_count": atomistic_edit_active_parameter_count_1d(
+                model, state
+            ),
+            "selected_edit_penalty": float(result.selected_edit_penalty),
+            "converged": bool(result.converged),
+            "stop_reason": result.stop_reason,
+            "kkt": {
+                "scope": kkt.certificate_scope,
+                "satisfied": bool(kkt.satisfied),
+                "maximum_dormant_violation": float(
+                    kkt.maximum_dormant_violation
+                ),
+                "active_projected_gradient_norm": float(
+                    kkt.active_projected_gradient_norm
+                ),
+                "continuous_birth_kkt_evaluated": bool(
+                    kkt.continuous_birth_kkt_evaluated
+                ),
+            },
+            "capacity": {
+                "status": selected_point.capacity_status,
+                "exhausted": bool(result.capacity_exhausted),
+                "maximum_host_removals": model.options.max_host_removals,
+                "maximum_extra_centres": model.options.max_extra_centres,
+            },
+            "count_deviance": {
+                "validation": float(result.debiased_validation_count_deviance),
+                "audit": (
+                    None
+                    if result.debiased_audit_count_deviance is None
+                    else float(result.debiased_audit_count_deviance)
+                ),
+                "audit_used_for_selection": False,
+            },
+            "host_removals": removals,
+            "extra_centres": additions,
+            "edits_by_role": edits_by_role,
+            "edit_counts_by_role": edit_counts_by_role,
+            "target_site_displacements": {
+                "host_site_indices": target_site_indices.tolist(),
+                "site_coordinates_A": target_coordinates.tolist(),
+                "vectors_A": target_displacements.tolist(),
+                "displaced_site_coordinates_A": (
+                    target_coordinates + target_displacements
+                ).tolist(),
+            },
+            "derived_target_strain": {
+                "scope": "pristine TARGET host-site coordinates",
+                "representation": (
+                    "infinitesimal symmetric strain from the exact local "
+                    "gradient of the piecewise-bilinear displacement-control "
+                    "interpolant"
+                ),
+                "gradient_convention": (
+                    "gradient[component, coordinate] = partial u_component / "
+                    "partial x_coordinate; component order is (s, u)"
+                ),
+                "host_site_indices": target_site_indices.tolist(),
+                "site_coordinates_A": target_coordinates.tolist(),
+                "displacement_gradient": displacement_gradients.tolist(),
+                "strain_tensor": infinitesimal_strain.tolist(),
+                "components": {
+                    "epsilon_ss": infinitesimal_strain[:, 0, 0].tolist(),
+                    "epsilon_uu": infinitesimal_strain[:, 1, 1].tolist(),
+                    "epsilon_su": infinitesimal_strain[:, 0, 1].tolist(),
+                },
+                "units": "dimensionless",
+            },
+            "host_displacement_controls_A": np.asarray(
+                state.host_displacement_controls, dtype=float
+            ).tolist(),
+            "model_id": model.model_id,
+            "support_contract_id": model.support_contract.contract_id,
+            "experiment_geometry_id": prepared.metadata[
+                "experiment_geometry_id"
+            ],
+        }
+    )
 
 
 def reconstruction_metrics_1d(

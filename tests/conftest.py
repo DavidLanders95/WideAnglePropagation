@@ -145,8 +145,8 @@ def au_potential_wk(au_atoms):
     """Potential array (V/Å) and slice thickness from Weickenmeier-Kohl parametrization."""
     jnp = pytest.importorskip("jax.numpy")
     cupy = pytest.importorskip("cupy")
-    from tests.wk_parametrization import make_wk_parametrization
-    wk_param = make_wk_parametrization()
+    wk_module = pytest.importorskip("tests.wk_parametrization")
+    wk_param = wk_module.make_wk_parametrization()
     pot_obj, slice_dz = _make_abtem_potential(au_atoms, wk_param)
     pot_array = jnp.array(cupy.asnumpy(pot_obj.build(lazy=False).array / slice_dz))
     return pot_array, slice_dz

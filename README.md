@@ -6,49 +6,24 @@ and second-order Klein-Gordon propagation.
 
 ## What Is Included
 
-- `wide_angle_propagation/propagation_methods.py`: public propagation kernels
-  and simulation loops.
-- `wide_angle_propagation/notebook_utils.py`: beam/amplitude utilities, plotting
-  helpers, and compact result-file helpers used by the notebooks.
-- `wide_angle_propagation/ptychography_1d.py`: focused helpers for masked
-  pixelwise and physics-informed lattice-site reconstruction, together with
-  truth-free calibrated count objectives, non-pickled result persistence, and
-  selected-scan side-view caches for one-dimensional glancing-incidence scans.
-- `wide_angle_propagation/ptychography_support_contract_1d.py`: immutable,
-  digest-bound TARGET/NUISANCE/fixed/below-budget site classification that
-  prevents illuminated exterior material from being silently treated as
-  known pristine or exposed as recovered structure.
-- `wide_angle_propagation/ptychography_atomic_validation_1d.py`: direct
-  Kirkland Si voxel quadrature, exact subpixel template caching, and
-  provenance-bound Lobato/Kirkland numerical comparisons that deliberately
-  make no experimental-validity claim.
-- `wide_angle_propagation/ptychography_alignment_1d.py`: truth-isolated,
-  coarse-to-fine global alignment, complete-slab candidate rebuilding,
-  training/validation data isolation, validation-equivalence summaries, and
-  digest-revalidated evidence archives and aligned reconstruction entry points.
-- `wide_angle_propagation/ptychography_diagnostics_1d.py`: truth-free,
-  dose-scaled local sensitivity diagnostics with explicitly conservative
-  interpretation.
-- `wide_angle_propagation/ptychography_observability_1d.py`: gauge-free dense
-  reference calculations and a bounded, selected-site matrix-free
-  Poisson-Fisher/PCG diagnostic with explicit or calibration-bound low-rank
-  scan/probe/detector nuisance projection.
-- `wide_angle_propagation/ptychography_stochastic_observability_1d.py`:
-  callback-based Gaussian screening of all physical-output covariance and
-  Fisher-null leakage with simultaneous Monte Carlo bounds and fail-closed
-  solver/resource accounting.
-- `wide_angle_propagation/ptychography_benchmarks_1d.py`: reproducible,
-  truth-isolated detector and forward-model mismatch sweeps with sourced
-  acceptance criteria and digest-bound reports.
-- `wide_angle_propagation/ptychography_ensemble_1d.py`: multistart basin,
-  ambiguity, compact persistence, and trust-gate summaries.
-- `wide_angle_propagation/ptychography_workflow_1d.py`: concise experiment,
-  reconstruction-comparison, plotting, contract-bound TARGET-only per-update
-  GIF (streaming through FFmpeg when available), and interactive-viewer API
-  used by the glancing-incidence ptychography notebook.
-- `scripts/benchmark_ptychography_1d.py`: synchronized CPU/GPU performance
-  harness for the reusable prepared lattice-site runtime.
-- `tests/`: regression and behavior tests for the propagation methods.
+- `wide_angle_propagation/propagation_methods.py`: propagation kernels and
+  simulation loops.
+- `wide_angle_propagation/ptychography_atomistic_workflow_1d.py`: the compact
+  silicon reconstruction interface. It fits a deformable known host plus sparse
+  removals and positive continuous additions, reports TQDM progress, plots only
+  authenticated TARGET influence, summarizes active edits, and saves replayable
+  non-pickled archives.
+- `wide_angle_propagation/ptychography_atomistic_edit_*.py`: specialist model,
+  solver, persistence, synthetic-case, and benchmark internals. Normal users do
+  not need to assemble these objects directly.
+- `wide_angle_propagation/ptychography_support_contract_1d.py`: the immutable
+  TARGET/NUISANCE/fixed support boundary used to prevent unsupported structure
+  from being displayed as a reconstruction.
+- `notebooks/nine_atom_atomistic_edit_ptychography_1d.ipynb`: a fully executed,
+  CPU-sized teaching reconstruction.
+- `notebooks/sideview_glancing_ptychography_1d.ipynb`: the maintained large
+  glancing-incidence experiment and bounded sparse-edit workflow.
+- `tests/`: propagation, inverse-model, solver, persistence, and notebook gates.
 - `notebooks/figure_generation/01_axel_lubk_verification.ipynb`: Au [100]
   beam-amplitude verification against the full KG ODE reference.
 - `notebooks/figure_generation/02_converge_probe_si.ipynb`: Si CBED
@@ -81,31 +56,32 @@ The current scientific limitations, validation gates, and implementation
 sequence for the glancing ptychography prototype are tracked in
 [`docs/ptychography_robustness.md`](docs/ptychography_robustness.md).
 
-## Ptychography Performance Benchmark
+## Sparse Silicon Reconstruction
 
-Run a small CPU harness check with:
+The high-level inverse API requires an explicit, pre-calibrated decreasing
+edit-penalty path; it intentionally has no guess based on synthetic truth:
 
-```bash
-python scripts/benchmark_ptychography_1d.py \
-  --quick --device cpu --updates 2 --starts 1 \
-  --output benchmark_quick.json
+```python
+from wide_angle_propagation.ptychography_atomistic_workflow_1d import (
+    SiliconAtomisticEditConfig1D,
+    reconstruct_silicon_atomistic_edits_1d,
+)
+
+run = reconstruct_silicon_atomistic_edits_1d(
+    experiment,
+    calibrated_measurement,
+    count_objective,
+    config=SiliconAtomisticEditConfig1D(
+        edit_penalty_path=(1000.0, 300.0, 100.0),
+    ),
+)
 ```
 
-Omit `--quick` to use the exact default geometry from the maintained
-ptychography notebook. A reference GPU run is, for example:
-
-```bash
-python scripts/benchmark_ptychography_1d.py \
-  --device gpu --precision float64 --updates 500 --starts 5 \
-  --output benchmark_notebook_gpu.json
-```
-
-The JSON separates one-time geometry construction, data simulation, and eager
-prepared-runtime compilation from every optimizer start. All timed device
-results are synchronized, update-rate scopes are recorded explicitly, and JAX
-preallocation is disabled before JAX is imported. The `--quick` result is an
-installation/harness diagnostic and is not comparable with notebook-geometry
-performance.
+This answers a conditional question: given independently known silicon host
+geometry and calibration, which sparse atomic changes are required by the
+counts? It is not an open-world chemistry or crystal-structure solver. See the
+robustness specification and the nine-atom notebook before using the large
+side-view case.
 
 ## Minimal Usage
 
@@ -141,7 +117,7 @@ pytest
 ```
 
 `scripts/check_static.py` validates package syntax, exported names, and the
-three maintained notebooks without importing the GPU/scientific runtime stack.
+maintained notebooks without importing the GPU/scientific runtime stack.
 Use `--enforce-clean-notebooks` when you want saved notebook outputs to fail
 the check. The pytest suite requires JAX, and some integration tests and
 notebooks also require GPU dependencies (`cupy`, JAX with the appropriate

@@ -20,11 +20,17 @@ dependencies.
 
 - `sideview_glancing_incidence_example.ipynb`: reference 1D sideview geometry
   and comparison of propagation approximations.
+- `nine_atom_atomistic_edit_ptychography_1d.ipynb`: executed CPU teaching case
+  with a synthetic nine-site educational host, one vacancy, one continuous
+  addition, weak strain, TQDM progress, and explicit stopping evidence. It
+  exercises the inverse model without claiming a certified silicon kernel.
 - `sideview_glancing_ptychography_1d.ipynb`: 30 keV, 2 degree silicon
-  ptychography prototype with overlapping Fresnel scans, direct recovery of an
-  unconstrained 2D potential patch in a geometric scanned-beam region, held-out validation, and
-  stored interactive side-view diagnostics. Full simulation and reconstruction
-  are disabled by default because the atomistic case is intended for a GPU.
+  ptychography workflow with overlapping Fresnel scans, automatic interaction
+  support, a deformable known host, sparse atomic removals and continuous
+  positive additions. It includes held-out validation, TARGET-only plots, a
+  structural-event reconstruction GIF, and authenticated result replay. The
+  enabled bounded large-specimen smoke run is intended for a GPU and does not
+  constitute structural acceptance.
 
 ## Data And Outputs
 

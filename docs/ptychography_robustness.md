@@ -1,384 +1,359 @@
-# Ptychography robustness roadmap
+# Sparse atomistic-edit ptychography
 
-This document records the evidence and acceptance gates for turning the current
-matched synthetic reconstruction into a method that can be evaluated for
-experimental use. A low diffraction residual is necessary, but it is not a
-structural validation criterion by itself.
+This document is the specification and trust checklist for the physics-based
+side-view reconstruction. There is one user-facing specimen model: a known,
+deformable reference crystal plus sparse atomic removals and positive
+off-crystal scattering centres. The reference-crystal renderer remains an
+internal building block, not a second reconstruction method.
 
-## Current evidence
+The governing principle is:
 
-The saved 750-update notebook result reached a validation amplitude loss of
-approximately `1.47e-4`, while the synthetic-truth metrics remained poor:
+> Find the smallest data-supported change to the known host, keep every atom
+> inside a broad physics-defined admissibility envelope, and report ambiguity
+> whenever the acquisition cannot localize the change.
 
-- vacancy F1: `0.353`;
-- displacement RMSE: `0.201 A`;
-- potential NRMSE in the mutable region: `0.494`;
-- eight displacement controls at their `+/-0.5 A` bounds;
-- best validation checkpoint at the final update.
+## 1. Is this the right model?
 
-The result is therefore a low-residual, structurally non-identifiable solution,
-not evidence that the optimizer merely needed more updates.
+It is a good primary model when all of the following are credible before
+reconstruction:
 
-## 1. Interaction volume and atomic templates
+- one crystalline host species dominates the illuminated volume;
+- approximate pose, surface location, sampling, probe and detector calibration
+  are independently known;
+- departures from the host are sparse relative to the illuminated crystal;
+- the desired result is defect support, displacement and host-equivalent added
+  scattering, not automatic chemical identification.
 
-Implemented:
+The known host is a strong prior, but it is not the defect answer. Starting
+from a pristine host is fair only when registration and material identity come
+from calibration or a truth-free search. Defect locations, counts and shapes
+must never cross the reconstruction boundary.
 
-- derive the forward interaction volume from probe coordinates, angle, waist,
-  an excluded Gaussian-power budget, and geometry uncertainty;
-- propagate beam-position and angle uncertainty as a spatially local envelope
-  of bounded rays rather than applying the maximum path-length margin to every
-  specimen pixel; reject angle intervals that reach a surface-parallel ray;
-- require nominal overlap from training scans for the active-site volume, so
-  validation and held-out geometry cannot create trainable specimen values;
-- distinguish the uncertainty-expanded forward volume, pixel support,
-  active-site support, and rendered lattice-potential influence halo;
-- classify every catalogued lattice site with a digest-bound material-support
-  contract. A site center in the nominal training-only update mask is a
-  reportable `TARGET`; a non-target padded atomic patch that intersects the
-  uncertainty-expanded forward mask is an optimized, non-reportable
-  `NUISANCE`; explicitly fixed sites require provenance; below-budget sites
-  are labelled as such; unresolved forward-relevant sites fail strict
-  preparation;
-- bind all-site coordinates, center indices, padded footprints, masks, roles,
-  provenance, budgets, and exact parameter counts into the support-contract
-  SHA-256 and prepared reconstruction problem ID. Results and non-pickled
-  archives retain the modeled TARGET/NUISANCE partition, bind the typed
-  fully-parameterized-material flag into version-2 support evidence, and
-  reject inconsistent fields or metadata on load. Legacy version-1 metadata
-  cannot promote that flag and is loaded fail-closed;
-- treat a fixed-material provenance string as an assertion record, not proof.
-  Only a scope with no unverified `FIXED_KNOWN` sites removes exterior material
-  from the observability missing-scope list or satisfies the ensemble material
-  trust flag;
-- keep nuisance vacancies and the shared smooth displacement field in the
-  forward fit while default metrics, structural plots, consensus calls, and
-  reconstruction GIFs expose only TARGET sites. The full fitted potential is
-  retained as a labelled forward-model diagnostic;
-- require an exact support-contract ID and ordered role match before any
-  TARGET-labelled plot or GIF. Current global-alignment candidates rebuild the
-  complete slab but do not yet carry candidate-specific material contracts,
-  so they remain available as untrusted forward-model diagnostics and are not
-  animated as recovered TARGET structure;
-- render the finite reference slab from explicit sites while retaining atomic
-  potential tails across the material/vacuum boundary;
-- select or reject the Si template cutoff against a larger common-grid
-  reference, then compare the complete finite slab for the selected defect
-  case and both signs of the maximum allowed displacement; the acceptance
-  test uses the worst individual scan rather than only an aggregate error;
-- directly tensor-integrate the Kirkland Si radial potential over specimen
-  pixels and the finite projection width without abTEM's potential builder,
-  projection integrals, or image interpolation. Compare it with the production
-  Lobato template using immutable provenance/content digests, then propagate a
-  selected Kirkland-template alternative specimen and report aggregate and
-  worst-scan amplitude NRMSE. This has no acceptance threshold, is excluded
-  from cutoff certification, and remains structurally untrusted because the
-  IAM parameterization is not experimental evidence and accumulation,
-  displacement rendering, and propagation are still shared;
-- compute dose-scaled local Poisson-Fisher blocks with stochastic error checks
-  as a necessary site-sensitivity screen;
-- compute a dense SVD calculation of the ideal-model local expected
-  Poisson-Fisher approximation for small reference problems, including
-  explicit row-space estimability tests;
-- apply the same gauge-free parameterization through a scan-batched,
-  matrix-free JVP/VJP Fisher operator for at most 32 explicitly selected sites,
-  with exact low-rank nuisance projection, audited zero-start PCG, and an
-  exhaustive dense-SVD oracle for small problems. This phase is a bounded
-  exact-follow-up foundation;
-- screen every physical vacancy/displacement output with factorized Gaussian
-  detector probes and separate Gaussian null probes. The prepared adapter uses
-  the same Jacobian and nuisance projector, reports simultaneous chi-square
-  marginal bounds conditional on accepted PCG solves, preserves every solver
-  diagnostic, enforces hard resource budgets, and can only nominate sites for
-  the exact selected-site method;
-- bind matrix-free ideal-Poisson information to the exact prepared Poisson
-  dose, fixed signal scale, dark level, numerical floor, validity mask, and
-  calibration identifier. Gaussian/read-noise objectives, nonconstant dose or
-  dark fields that the scalar operator cannot represent, and conflicting
-  caller count models fail closed. Legacy amplitude problems are labelled as
-  hypothetical count analyses;
-- verify that the stored potential, vacancy fractions, displacement controls,
-  rigid displacement, and displaced site coordinates describe one renderer-
-  consistent reconstruction before computing matrix-free information.
+This is not an open-world structure solver. It becomes inappropriate for an
+unknown phase, a mostly amorphous specimen, large unmodelled charge transfer,
+dense reconstruction-wide disorder, or an unknown host orientation. Those
+cases need a broader specimen model rather than more aggressive optimization.
 
-Still required:
+Lennard--Jones is not used. It is a configurational-energy model and is not an
+electron-scattering potential; it is also a poor default for covalent silicon.
+The forward model instead uses validated atomic electrostatic kernels. A
+material energy model may later act only as a one-sided exclusion envelope.
 
-- perform an explicit direct-quadrature order-convergence sweep on the
-  production sampling and validate atomic potentials against independent
-  experimental or first-principles evidence. The Kirkland/Lobato comparison
-  detects numerical/parameterization sensitivity but is not an independent
-  physical validation;
-- validate or expand the assumed Si site inventory. Interstitials,
-  substitutions, adatoms, steps, amorphous material, and unknown chemistry are
-  not represented by the lattice support contract and must remain rejected or
-  structurally untrusted;
-- benchmark the prepared all-site stochastic screen on the maintained geometry,
-  add compact digest-bound persistence, and define a conservative nomination
-  policy from its covariance/null intervals. A stochastic result never directly
-  establishes observability or structural trust; nominated sites still require
-  the exact selected-site method, which deliberately rejects requests above 32;
-- extend the package-owned calibrated nuisance constructor beyond its current
-  common scan-origin, probe shift/tilt/width, and detector
-  frequency/gain/dark directions to per-scan geometry, partial coherence,
-  detector nonlinearity/point spread, and out-of-lattice illuminated exterior
-  material. Neither the generated nor arbitrary low-rank tangent can establish
-  that the nuisance scope is complete;
-- extend the local ray envelope to uncertain surface height/topography rather
-  than treating the surface plane as exactly known.
+## 2. Specimen representation
 
-Acceptance gates:
+The specimen is
 
-- every appreciably illuminated atom is known fixed, active, nuisance, or
-  explicitly rejected;
-- potential values outside the influence halo are invariant for all allowed
-  site parameters;
-- template potential and worst-scan amplitude errors pass configured budgets
-  for surface, bulk, boundary, subpixel, and maximum-displacement cases.
+\[
+X=X_0(\mathbf u)\ominus X_-\oplus X_+,
+\]
 
-On the maintained geometry, the reportable structure contains 3,607 target
-vacancies plus 936 shared displacement controls: 4,543 structural quantities,
-or 56.8 times fewer than the 257,909 mutable pixels. The complete safe inverse
-problem also profiles 1,497 nuisance vacancies, giving 6,040 optimized
-parameters and a 42.7-times total reduction. The earlier 50-times *total*
-target is therefore not met once every forward-relevant exterior site receives
-an independent guard occupancy. Those nuisance variables must not be omitted
-from the honest optimization count; recovering a 50-times total reduction
-would require a separately validated grouped/sparse nuisance model rather than
-silent truncation or a pristine assertion.
+with projected potential
 
-## 2. Optimization and stopping
+\[
+V_X(\mathbf r)=
+\sum_{i=1}^{N_h}(1-b_i)
+v_h\!\left(\mathbf r-\mathbf R_i^0-\mathbf u(\mathbf R_i^0)\right)
++\sum_{j=1}^{K_+}a_jv_{\rm eff}(\mathbf r-\mathbf x_j).
+\]
 
-Implemented:
+Here:
 
-- distinguish numerical convergence from exhaustion of the update budget;
-- target-loss and joint loss-plateau/parameter-step stopping;
-- non-finite diagnostic failures;
-- gradient, normalized-step, and active-bound histories;
-- render the specimen once per validation checkpoint rather than once per
-  evaluation batch;
-- compile the complete gradient, Adam, and projection training step;
-- remove the constant-control gauge by separating the equal-site-mean active
-  translation from zero-mean residual displacement controls;
-- use separate learning-rate scales and translation, vacancy, residual, and
-  joint optimization stages;
-- reserve distributed geometry-only audit blocks, optional neighboring guard
-  scans, and exclude both from every reconstruction method;
-- select multistart basins using validation loss before examining audit loss;
-- retain compact site-parameter checkpoints and animate every update beside
-  like-for-like truth only inside contract-bound TARGET influence support;
-  prefer the streaming FFmpeg writer for the 501-frame notebook animation and
-  expose stride, DPI, and writer controls, with a portable but memory-heavier
-  Pillow fallback;
-- summarize all statistically equivalent low-loss starts with equal-weight
-  intervals, a real medoid representative, ambiguity calls, and conservative
-  trust flags;
-- prevent a provenance-free Boolean sensitivity mask from unlocking structural
-  trust; the positive gate requires typed marginalized-observability reports
-  for every accepted optimizer basin.
-- prepare and eagerly compile one fixed-shape reconstruction problem, then
-  reuse those executables with fresh optimizer and random states across
-  deterministic multistart runs.
+- \(X_0\) is the declared finite host crystal;
+- \(b_i\in[0,1]\) removes scattering from an active host site;
+- \(\mathbf u\) is a smooth, bounded host displacement field;
+- \(\mathbf x_j\) is a continuous side-view addition position;
+- \(a_j\in[0,a_{\max}]\) is positive host-equivalent integrated scattering.
 
-Still required:
+The first implementation deliberately does not infer element labels for added
+centres. A substitution is a host removal plus a nearby positive addition. A
+vacancy, adatom, interstitial, missing row and irregular cluster all use the
+same representation; no object class, radius, centre, boundary or phase label
+is supplied.
 
-- implement true global specimen/scan registration; the present translation
-  moves active sites relative to the fixed exterior and is deliberately labeled
-  with that limited scope;
-- add a full-batch polishing stage and starts that span the still-missing
-  global specimen/scan registration parameters;
-- projected-gradient/KKT stopping and momentum handling at active bounds.
+For the maintained two-dimensional problem, the active structural count is
 
-Acceptance gates:
+\[
+P_{\rm structure}=P_{\rm deformation}+K_-+3K_+.
+\]
 
-- an improving run that reaches its update budget reports `converged=False`;
-- plateau stopping requires stable physical parameters as well as stable loss;
-- multiple starts agree within stated uncertainty on identifiable benchmarks;
-- ambiguous low-loss solutions are reported as ambiguous, not selected as a
-  trusted structure.
+Fixed-capacity arrays are compilation resources. Reported parameter counts use
+active edits, not capacity.
 
-## 3. Realistic initialization
+## 3. Interaction and discovery volume
 
-The reconstruction must not receive the generating registration or strain.
-The intended initialization workflow is a bounded coarse search over surface
-height, lattice origin, orientation, and lattice scale, followed by continuous
-registration refinement. Vacancy fractions and zero-mean residual displacement then
-start from zero. Independent high-frequency random strain is no longer used by
-the notebook default. A bounded global registration search remains required.
+The user does not draw an update rectangle. Geometry constructs the support
+from scan coordinates, probe waist, glancing angle, declared position/angle
+uncertainty, surface envelope and an excluded Gaussian-power budget.
 
-The first truth-isolated global initializer is implemented. It generates a
-deterministic, termination-balanced Sobol catalog over canonical axial phase,
-in-section rotation, and lattice scale; copies only a geometry-stratified
-training screen and complete validation rows into the selection boundary; and
-reports paired-validation equivalence rather than breaking a tie with audit
-data. Surface height, common probe shift, scan-origin error, and axial lattice
-phase are recognized as one gauge combination in this geometry and must not be
-fitted independently. A differentiable control-space projection can remove
-translation, in-section rotation, and isotropic dilation from residual strain.
+The support contract distinguishes:
 
-Every termination/phase/rotation/scale candidate rebuilds all fixed and
-variable atoms, the finite pristine reference, site patches, controls, and
-influence support. Candidates are ranked on training data, only a deterministic
-shortlist reaches full validation, and the selected model can be passed directly
-to a prepared local reconstruction with the similarity gauge enforced. The
-notebook exposes this path behind `RUN_GLOBAL_ALIGNMENT` because the complete-
-slab catalog is intentionally more expensive than the controlled matched-model
-benchmark.
+- **TARGET**: nominal training illumination supports reconstruction and public
+  structural reporting;
+- **NUISANCE**: uncertainty-expanded or held-out illumination can scatter from
+  the location, so it is fitted but never reported as recovered structure;
+- **fixed/below budget**: material is retained only with explicit provenance or
+  a declared excluded-power approximation;
+- **unresolved**: a forward-relevant location without a valid role; preparation
+  fails closed.
 
-The current initializer still fixes the calibrated probe, angle, and scan
-geometry. It now follows the coarse Sobol level with deterministic bounded
-phase/rotation/log-scale stencils around the training-ranked frontier; only the
-final shortlist reaches validation. Alignment evidence can be saved atomically
-in a non-pickled, SHA-256-bound archive. Loading requires the exact raw scan and
-forward-problem IDs, rebuilds every shortlisted complete slab, and recomputes
-its training and validation losses. Continuous probe tilt/waist refinement and
-reconstruction across every validation-equivalent global model remain required.
-Alignment summaries are therefore explicitly marked structurally untrusted.
+Training scans alone define TARGET support. Validation and audit geometry never
+create trainable specimen values. Atomic influence halos are included in the
+forward model even where the atom centre lies outside the reportable mask.
 
-## 4. Experimental trust ladder
+The discovery boundary is hard. An active continuous centre is accepted only
+when its complete interpolation cell lies in TARGET/NUISANCE support and its
+continuous transverse coordinate remains inside the surface envelope. This
+constraint is enforced for every ablation, including the edit-only arm.
 
-Implemented foundations:
+Atomic templates require complete finite-grid containment. The current direct
+Kirkland truth renderer uses a factorized finite-voxel integral: Gaussian terms
+are analytic error-function products and Yukawa terms reduce to one adaptive
+vector quadrature. Tensor quadrature remains a numerical diagnostic, not the
+accepted near-core truth path.
 
-- propagate an explicit Boolean detector-validity mask through pixel and
-  lattice objectives, minibatches, validation, held-out audit evaluation,
-  prepared-problem hashes, and non-pickled result archives;
-- replace invalid values before evaluating square roots, so masked saturation
-  sentinels or non-finite values have zero loss and gradient contribution;
-- fail closed when a fitted or assessed scan has no valid detector pixels;
-- retain the normalized-amplitude objective for legacy non-negative intensity
-  data and label it explicitly as neither a Poisson nor a read-noise
-  likelihood;
-- provide a truth-free calibrated measurement container that carries
-  dark-subtracted signal, total electron-equivalent observations, validity,
-  calibrated dark and read-noise arrays, and a calibration identifier;
-- convert forward-model FFT intensities to expected signal electrons using the
-  declared per-pattern dose and incident-probe norm, with a fixed relative
-  signal scale that is never fitted during reconstruction;
-- support an ideal-Poisson deviance for non-negative total electron-equivalent
-  observations and a heteroscedastic Gaussian approximation for calibrated
-  dark-subtracted data with declared read noise. The latter is not described
-  as the exact Poisson--Gaussian convolution;
-- bind the objective, dose, calibration arrays, validity mask, and calibration
-  identifier into the prepared-problem digest and non-pickled result archive;
-- adapt synthetic detector-benchmark output through a narrow boundary that
-  deliberately omits truth, random seeds, raw ADU values, saturation causes,
-  and generating detector parameters.
+## 4. Objective and physical prior
 
-Required benchmark levels are:
+The default Level-1 objective is
 
-1. matched noiseless unit tests;
-2. truth generated by an independent forward implementation;
-3. Poisson dose sweeps and detector gain, dark, saturation, masking, background,
-   and read-noise perturbations;
-4. probe, scan-position, registration, angle, lattice, potential-model, and
-   slab mismatch sweeps;
-5. out-of-model substitutions, interstitials, adatoms, steps, and exterior
-   defects;
-6. pristine negative controls, multiple starts, and blocked spatial test data;
-7. repeated calibration and specimen measurements.
+\[
+\mathcal J_0=
+D_{\rm Poisson}\!\left[Y\middle\|\mathcal F_{\rm MS}(V_X,\eta)\right]
++\lambda_{\rm edit}\left(\sum_i b_i+\sum_j a_j\right)
++\frac{1}{2\sigma_\epsilon^2}\mathbf u^\mathsf TL_{\rm el}\mathbf u
++R_{\rm hc}(X).
+\]
 
-A result is structurally trustworthy only when numerical convergence,
-observability, independent-start agreement, residual calibration, and the
-relevant mismatch benchmark all pass. The currently implemented dense report
-holds probe, scan, detector, and exterior-material nuisance parameters fixed.
-The matrix-free phase can profile either an explicit detector-space tangent or
-a package-generated, calibration-bound tangent for common scan-origin, probe,
-and detector directions. The generated profile is differentiated from the
-exact prepared model in the same whitened count observable, but it still cannot
-prove that the experimental nuisance scope is complete. Package-produced
-reports therefore deliberately cannot unlock the structural-trust gate yet. A
-declared calibration Boolean and identifier are retained as provenance but do
-not set the calibrated-noise trust flag without typed calibration evidence.
+Each term has one role:
 
-The calibrated objectives are an implementation boundary, not a validation
-claim. In particular, the present Poisson deviance accepts calibrated
-electron-equivalent totals and does not enforce a raw integer-count contract;
-the Gaussian read-noise objective is an approximation; detector gain and
-background are fixed calibration inputs rather than fitted nuisances; and the
-pixel reconstruction remains on the legacy amplitude objective. Structural
-trust therefore remains false until independent calibration, dose/noise
-coverage, residual calibration, and mismatch benchmarks pass. A future exact
-count path must bind the raw-count acquisition contract, while a future
-read-noise path must either validate the approximation over the operating
-range or use a numerically stable Poisson--Gaussian convolution.
+- the calibrated Poisson count likelihood and multislice propagator contain the
+  measurement physics;
+- atomic kernels map coordinates to electrostatic potential;
+- one edit-mass penalty asks for the smallest host-equivalent change;
+- weak symmetric strain discourages unsupported high-frequency deformation;
+- a steep hard-core barrier excludes atomic overlap.
 
-## 5. Package design
+Hard-core pair weights vanish with occupancy. Extra--extra terms use the
+normalized product of their masses; host--extra terms use \((1-b_i)a_j\).
+Dormant centres therefore exert no force, and a fully removed host may be
+replaced at the same site.
 
-The target package separates measured data, geometry, specimen priors,
-rendering, forward simulation, objectives, optimization, diagnostics,
-synthetic benchmarks, I/O, and plotting. Experimental datasets must not require
-truth fields. Saved results need a schema version, model and input hashes,
-software provenance, device, precision, and enough specimen information to
-rerender checkpoints independently.
+The edit penalty is the only statistical structural regularization strength.
+Its decreasing path must be frozen before inspecting recovered structure,
+using pristine controls or held-out count prediction.
 
-## 6. Performance
+### Optional energy envelope
 
-Correctness benchmarks are frozen before performance changes. GPU profiling
-must report compilation time, steady-state updates per second, validation time,
-serialization time, and peak device memory with explicit synchronization.
-Next priorities are compact delta rendering, cached reference transmission,
-on-device batch generation, fixed-shape compiled evaluation, and explicit
-precision/device policies. CPU correctness tests and scheduled GPU science and
-performance tests are both required.
+A chemistry-specific interatomic potential is not part of Level 1. It may be
+tested only when its surfaces, defects, strain and cross-species environments
+are validated. The allowed form is one-sided:
 
-The synchronized harness runs the current workflow and prepared API directly:
+\[
+R_E(X)=\sum_i\operatorname{softplus}\!\left(
+\frac{e_i-e_{i,\rm allow}}{\Delta e_i}
+\right)^2.
+\]
 
-```bash
-python scripts/benchmark_ptychography_1d.py \
-  --device gpu --precision float64 --updates 500 --starts 5 \
-  --output benchmark_notebook_gpu.json
-```
+Below the allowed energy it should be nearly flat. It must be rejected if it
+erases a count-supported metastable defect or improves its own energy while
+worsening held-out prediction.
 
-Its JSON distinguishes one-time build, simulation, and eager preparation from
-per-start run and optimization times, records the exact scope of each
-updates/s value, and reports JAX allocator memory statistics where the backend
-provides them. `--quick --device cpu --updates 2 --starts 1` is available as a
-non-comparable harness smoke test.
+## 5. Reconstruction algorithm
 
-A synchronized float64 run on an NVIDIA A100 80 GB PCIe on 2026-07-11 used the
-exact default notebook geometry, two starts of 20 updates, and a validation
-interval of 10. It measured 20.08 s for experiment construction, 69.52 s for
-the synthetic dataset and cutoff stress checks, 13.01 s for eager preparation,
-and 26.33 s and 21.94 s for the two starts. Aggregate optimization-phase
-throughput was 0.838 updates/s and the process-cumulative JAX allocator peak
-was 4.87 GB. This is a short, evaluation-heavy end-to-end reference, not an
-extrapolated 500-update completion time; in particular, it must not be compared
-with an isolated renderer or train-step kernel rate.
+The active-set solver is intentionally understandable:
 
-After restricting non-authoritative training-loss history to 32 fixed,
-geometry-stratified scans, the identical synchronized protocol measured 19.33 s
-for construction, 68.23 s for simulation, 12.84 s for preparation, and 19.39 s
-and 13.01 s for its two starts. Aggregate optimization-phase throughput was
-1.257 updates/s, 50.1% above the 0.838 updates/s full-training-diagnostic
-reference, with the same 4.87 GB process-cumulative allocator peak. Each run
-used 96 training-diagnostic scan evaluations instead of 729, while complete
-validation still selected checkpoints and the final full 243-scan training loss
-was recomputed. The first start includes residual one-time execution costs, so
-both per-start phase timings and the aggregate are retained in the JSON.
+1. start from the deformed host with an empty edit set;
+2. differentiate the full-training count objective with respect to potential;
+3. correlate that adjoint with the atomic kernel over the discovery grid and
+   score host removals and paired replacements;
+4. birth the largest penalized KKT violation;
+5. jointly refine active masses, continuous positions, removals and host
+   deformation through the full multislice model;
+6. re-anchor continuous centres, prune zero edits and merge only numerical
+   duplicates inside one declared resolution element;
+7. stop when proposal-grid dormant directions and active projected gradients
+   satisfy their declared tolerances;
+8. select a point on the frozen decreasing-penalty path using validation counts;
+9. freeze support/positions and debias amplitudes without the edit penalty;
+10. inspect audit counts only after selection.
 
-The complete support-contract implementation increases the maintained problem
-from 3,607 TARGET sites to 5,104 modeled sites: 3,607 reportable TARGET sites
-and 1,497 profiled NUISANCE sites. A subsequent 20-update, two-start float64
-run measured 20.59 s for construction, 81.50 s for simulation, 19.76 s for
-preparation, and 19.13 s and 13.18 s for its two starts. Its synchronized
-optimization-phase throughput was 1.270 updates/s and its process-cumulative
-JAX allocator peak was 6.55 GB. Thus the optimizer rate was effectively
-unchanged while the modeled-site count grew by 41.5%; memory increased by
-34.5%, and the larger finite specimen made build and simulation more
-expensive. This comparison is indicative rather than controlled: the two runs
-used different JAX environments, the A100 was shared, both worktrees were
-dirty, and allocator peaks are process-cumulative. The JSON report and exact
-environment metadata remain the authoritative record for any controlled
-regression claim.
+The KKT certificate currently covers the declared proposal grid, not all
+continuous birth positions. Capacity exhaustion, unresolved duplicates,
+non-finite values and incomplete debiasing fail closed.
 
-Next priorities are compact delta rendering, cached reference transmission,
-on-device batch generation, and scheduled GPU science/performance regression
-runs.
+TQDM reports active-set progress. An optional truth-free callback emits
+immutable states at meaningful structural events: initialization, refinement,
+birth, polish, completed penalty level and debias. These events drive the
+reconstruction GIF; they are not mislabelled as every Adam sub-update.
 
-The prepared runner now supports a fixed geometry-stratified training-loss
-diagnostic subset. The maintained workflow requests 32 scans when a validation
-split exists; complete validation remains authoritative for checkpoint
-selection, stopping, and basin comparison, and an exact full-training loss is
-recomputed from the selected final prediction. Coarse synchronized phase
-timings and scan/batch evaluation counts are included in result metadata and
-the benchmark JSON. This reduces diagnostic forward work without changing the
-optimizer updates or validation trajectory; a no-validation problem
-automatically falls back to complete training evaluation.
+Training derivatives are accumulated deterministically over bounded scan
+batches. Each batch contributes its unnormalized Poisson deviance and the
+solver divides by the valid-pixel count over the complete training split; the
+prior is added exactly once. This is an exact full-training gradient with lower
+peak memory, not stochastic minibatch optimization.
+
+Multiple starts vary only bounded host controls and begin with empty edits.
+Validation selects the candidate before audit evaluation. Disagreement among
+validation-equivalent starts is reported as structural ambiguity.
+
+## 6. Runtime contract and easy-use API
+
+The material-specific run configuration may contain only:
+
+- removal/addition capacities;
+- one-centre scattering bound;
+- minimum admissible separation;
+- expected RMS host strain;
+- an explicit frozen edit-penalty path;
+- vacuum discovery depth, exact scan-batch size and solver resource limits.
+
+It must not contain object existence, count, position, radius, shape, phase,
+composition or synthetic truth.
+
+The normal entry point is
+`reconstruct_silicon_atomistic_edits_1d(experiment, measurement, objective,
+config=...)`. `SiliconAtomisticEditConfig1D` holds the policy above and requires
+the penalty path explicitly. `plot_silicon_atomistic_edit_run_1d` keeps the
+TARGET display boundary, while `save_silicon_atomistic_edit_run_1d` and
+`load_silicon_atomistic_edit_run_1d` provide authenticated non-pickled replay.
+`summarize_silicon_atomistic_edit_run_1d` reports active removals, additions and
+stopping evidence without exposing the low-level assembly API. The returned
+`SiliconAtomisticEditRun1D` still contains the prepared problem and the
+selected/debiased result for specialist inspection.
+
+The low-level state, proposal, certificate, truth-generator and benchmark
+types remain available from their specialist modules. They are not the normal
+user interface.
+
+## 7. Initialization and nuisance separation
+
+The inverse method starts with zero removals, zero additions and zero residual
+strain. It must not receive generating registration or strain. A real workflow
+requires a bounded truth-free search over surface height, crystal origin,
+orientation and scale before local refinement.
+
+Probe, scan, detector and coherence mismatch must not be absorbed as atoms.
+Only bounded, calibrated nuisance parameters are admissible; no free nuisance
+image or per-scan correction field is allowed. The next required physical
+extension is a common calibrated probe phase/tilt nuisance, because the current
+nuisance-only blind case otherwise fails closed without attribution evidence.
+
+## 8. Evidence and trust ladder
+
+A small residual is not structural validation. A result is trustworthy only
+when all relevant levels pass:
+
+1. renderer identity, normalization, support and gradient tests;
+2. matched noiseless recovery;
+3. independent numerical truth generation;
+4. Poisson dose and detector perturbations;
+5. probe/scan/registration/potential/slab mismatch;
+6. pristine controls, blocked spatial audit and multiple starts;
+7. acquisition-bound observability and depth response;
+8. repeated calibration and experimental measurements.
+
+Saved evidence must reproduce the model, acquisition, partition, path states,
+objective terms, KKT/capacity status and debiased specimen without pickle.
+Software/device/precision fields are provenance, not trust flags.
+
+## 9. Required blind cases
+
+One immutable public reconstruction schema and one selection rule are used for:
+
+1. pristine host;
+2. one vacancy;
+3. one off-crystal addition;
+4. one substitution generated with a different atomic kernel;
+5. one irregular finite cluster without object metadata;
+6. one strained/metastable defect;
+7. nuisance-only probe/scan/coherence mismatch;
+8. one depth-unresolved addition.
+
+Run edit-only and Level-1 arms for every case. The energy-envelope arm remains
+blocked until chemistry is justified. Private truth and audit counts are opened
+only after every selection callback returns.
+
+The current case generators validate schema isolation and synthetic physics,
+but the complete real-solver matrix has not yet established all recovery gates.
+In particular, nuisance attribution and acquisition-derived depth intervals are
+still missing; asserted uncertainty scalars do not count as observability.
+
+## 10. Current implementation evidence
+
+As of 2026-07-12:
+
+- zero edits reproduce the finite host exactly;
+- unit vacancies/additions, permutation/dormancy, support and finite-difference
+  gradients are tested;
+- the continuous discovery boundary is enforced during validation and
+  backtracking in both solver arms;
+- objective components, births, pruning, merging, proposal-grid KKT, frozen
+  path selection and fixed-support debias are implemented;
+- fixed-shape compiled objectives are reused across topology and penalty changes;
+- exact deterministic scan batching keeps the maintained side-view gradient
+  below accelerator memory limits without changing its full-training value;
+  proposal/KKT and archive replay use the same recorded batching contract;
+- the renderer transpose is factorized into a batched potential adjoint,
+  bounded local atomic-patch contractions, an analytic control-grid transpose
+  and local continuous-addition derivatives; dormant-grid hard-core checks use
+  bounded-radius spatial queries rather than candidate-by-host tensors;
+- authenticated AE-1 and complete AE-2 archives replay without pickle;
+- direct Si/Ge finite-voxel cubature passes the declared \(10^{-4}\) production
+  convergence budgets, and an independent 3-D cubature audit agreed within
+  \(2.93\times10^{-8}\) over tested voxels;
+- the maintained side-view notebook executed end to end on an A100 with exact
+  16-scan accumulation: all eleven code cells completed, seven truth-free
+  structural events produced the TARGET-view GIF, and the 54 MiB archive
+  reloaded with matching problem/model identities;
+- that deliberately tiny bounded smoke stopped honestly with
+  `regularization_path_incomplete`, no defect calls and no promotion claim; it
+  reports the fitted TARGET displacement and strain field rather than treating
+  a low count residual as defect recovery;
+- the final CPU regression passed 421 tests, with two optional
+  Weickenmeier--Kohl paper comparisons skipped because their local
+  parametrization helper is absent; static checks, focused Ruff checks and
+  whitespace validation also passed.
+
+The numerical atomic integration is converged, but this is not experimental or
+first-principles validation. Both numerical paths use independent-atom
+Kirkland parameters, and downstream propagation is shared.
+
+## 11. Promotion gates
+
+Promote a result only when:
+
+- pristine data yield a stable empty edit set;
+- nuisance-only mismatch does not become atoms or vacancies;
+- isolated edits localize only to acquisition-supported resolution;
+- irregular added mass is stable without object metadata;
+- supported metastable strain survives the prior;
+- Level 1 reduces overlaps/rough strain without degrading held-out counts;
+- validation-equivalent starts agree or ambiguity is explicit;
+- no depth feature is narrower than its measured response interval;
+- active count is below a dense free-potential representation;
+- every archive rerenders the specimen and reproduces objective components.
+
+These gates are not all passed. The method is implemented and suitable for
+controlled synthetic development, but not yet certified for experimental
+structural claims.
+
+## 12. Non-goals
+
+Do not add an object-specific nanoparticle/inclusion class, shape or radius
+prior, phase field, total variation, free residual potential, learned denoiser,
+large species dictionary, molecular-dynamics relaxation, large per-scan
+nuisance field, or atom-count claim below information-supported resolution
+unless a frozen failed benchmark identifies that exact missing ingredient.
+
+## 13. Notebooks
+
+- `nine_atom_atomistic_edit_ptychography_1d.ipynb` is the executable,
+  specialist-internals teaching example: nine synthetic known sites,
+  empty-host identity, one vacancy, one off-grid addition, weak strain,
+  objective terms, count-only boundary and a tiny active-set reconstruction.
+  Normal silicon runs use the compact material-specific facade.
+- `sideview_glancing_ptychography_1d.ipynb` is the maintained geometry workflow:
+  automatic interaction support, calibrated AE configuration, TQDM, stopping
+  evidence, TARGET-only reconstruction/evolution, and authenticated archive.
+
+The side-view notebook labels bounded smoke runs as mechanics demonstrations;
+they are not acceptance evidence for the complex truth case.

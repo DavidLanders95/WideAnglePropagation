@@ -27,6 +27,27 @@ PYTHON_FILES = [
     ROOT / "wide_angle_propagation" / "ptychography_1d.py",
     ROOT
     / "wide_angle_propagation"
+    / "ptychography_atomistic_edit_1d.py",
+    ROOT
+    / "wide_angle_propagation"
+    / "ptychography_atomistic_edit_solver_1d.py",
+    ROOT
+    / "wide_angle_propagation"
+    / "ptychography_atomistic_edit_io_1d.py",
+    ROOT
+    / "wide_angle_propagation"
+    / "ptychography_atomistic_workflow_1d.py",
+    ROOT
+    / "wide_angle_propagation"
+    / "ptychography_atomistic_edit_benchmarks_1d.py",
+    ROOT
+    / "wide_angle_propagation"
+    / "ptychography_atomistic_edit_silicon_cases_1d.py",
+    ROOT
+    / "wide_angle_propagation"
+    / "ptychography_atomistic_truth_1d.py",
+    ROOT
+    / "wide_angle_propagation"
     / "ptychography_atomic_validation_1d.py",
     ROOT / "wide_angle_propagation" / "ptychography_alignment_1d.py",
     ROOT / "wide_angle_propagation" / "ptychography_diagnostics_1d.py",
@@ -40,6 +61,7 @@ PYTHON_FILES = [
 ]
 TARGET_NOTEBOOKS = [
     ROOT / "notebooks" / "sideview_glancing_incidence_example.ipynb",
+    ROOT / "notebooks" / "nine_atom_atomistic_edit_ptychography_1d.ipynb",
     ROOT / "notebooks" / "sideview_glancing_ptychography_1d.ipynb",
     ROOT / "notebooks" / "figure_generation" / "01_axel_lubk_verification.ipynb",
     ROOT / "notebooks" / "figure_generation" / "02_converge_probe_si.ipynb",
@@ -50,12 +72,12 @@ TARGET_NOTEBOOKS = [
 
 def parse_python_files() -> None:
     for path in PYTHON_FILES:
-        ast.parse(path.read_text(), filename=str(path))
+        ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         print(f"{path.relative_to(ROOT)}: ast ok")
 
 
 def assert_exports_exist(path: Path) -> None:
-    module = ast.parse(path.read_text(), filename=str(path))
+    module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     defined = set()
     exported = None
 
@@ -83,7 +105,7 @@ def assert_exports_exist(path: Path) -> None:
 
 def parse_target_notebooks(*, require_no_outputs: bool = False) -> None:
     for path in TARGET_NOTEBOOKS:
-        notebook = json.loads(path.read_text())
+        notebook = json.loads(path.read_text(encoding="utf-8"))
         output_cells = 0
 
         for index, cell in enumerate(notebook["cells"]):
@@ -130,6 +152,41 @@ def main(argv: list[str] | None = None) -> None:
         / "ptychography_support_contract_1d.py"
     )
     assert_exports_exist(ROOT / "wide_angle_propagation" / "ptychography_1d.py")
+    assert_exports_exist(
+        ROOT
+        / "wide_angle_propagation"
+        / "ptychography_atomistic_edit_1d.py"
+    )
+    assert_exports_exist(
+        ROOT
+        / "wide_angle_propagation"
+        / "ptychography_atomistic_edit_solver_1d.py"
+    )
+    assert_exports_exist(
+        ROOT
+        / "wide_angle_propagation"
+        / "ptychography_atomistic_edit_io_1d.py"
+    )
+    assert_exports_exist(
+        ROOT
+        / "wide_angle_propagation"
+        / "ptychography_atomistic_workflow_1d.py"
+    )
+    assert_exports_exist(
+        ROOT
+        / "wide_angle_propagation"
+        / "ptychography_atomistic_edit_benchmarks_1d.py"
+    )
+    assert_exports_exist(
+        ROOT
+        / "wide_angle_propagation"
+        / "ptychography_atomistic_edit_silicon_cases_1d.py"
+    )
+    assert_exports_exist(
+        ROOT
+        / "wide_angle_propagation"
+        / "ptychography_atomistic_truth_1d.py"
+    )
     assert_exports_exist(
         ROOT
         / "wide_angle_propagation"
