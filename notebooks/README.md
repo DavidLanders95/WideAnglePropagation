@@ -18,19 +18,21 @@ dependencies.
 
 ## Glancing-Incidence Workflows
 
-- `sideview_glancing_incidence_example.ipynb`: reference 1D sideview geometry
-  and comparison of propagation approximations.
-- `nine_atom_atomistic_edit_ptychography_1d.ipynb`: executed CPU teaching case
-  with a synthetic nine-site educational host, one vacancy, one continuous
-  addition, weak strain, TQDM progress, and explicit stopping evidence. It
-  exercises the inverse model without claiming a certified silicon kernel.
+- `sideview_glancing_incidence_example.ipynb`: restored classic Fresnel
+  side-view from commit `ca0b395`, showing the 100 nm by 20 nm pristine Si
+  slab with atom markers, exit-column intensity, and positive-angle far field.
+- `sideview_glancing_silicon_viewer_1d.ipynb`: minimal interactive reference
+  showing a 30 keV, 2 degree beam moving through a pristine, unstrained silicon
+  slab. It contains no defects or reconstruction machinery.
 - `sideview_glancing_ptychography_1d.ipynb`: 30 keV, 2 degree silicon
-  ptychography workflow with overlapping Fresnel scans, automatic interaction
-  support, a deformable known host, sparse atomic removals and continuous
-  positive additions. It includes held-out validation, TARGET-only plots, a
-  structural-event reconstruction GIF, and authenticated result replay. The
-  enabled bounded large-specimen smoke run is intended for a GPU and does not
-  constitute structural acceptance.
+  free-atom reconstruction of one calibrated pristine surface row. It includes
+  the forward side viewer, 16 uniform non-lattice candidates, fixed known
+  exterior silicon, held-out validation, a reconstruction animation, and a
+  truth/reconstruction side-view comparison. It does not claim recovery of the
+  deeper slab.
+- `nine_atom_free_atom_ptychography_1d.ipynb`: gated free-atom experiment in
+  which 24 uniform candidates must recover a nine-atom irregular Si cluster
+  before the method is promoted to the large side-view geometry.
 
 ## Data And Outputs
 

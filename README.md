@@ -6,24 +6,17 @@ and second-order Klein-Gordon propagation.
 
 ## What Is Included
 
-- `wide_angle_propagation/propagation_methods.py`: propagation kernels and
-  simulation loops.
-- `wide_angle_propagation/ptychography_atomistic_workflow_1d.py`: the compact
-  silicon reconstruction interface. It fits a deformable known host plus sparse
-  removals and positive continuous additions, reports TQDM progress, plots only
-  authenticated TARGET influence, summarizes active edits, and saves replayable
-  non-pickled archives.
-- `wide_angle_propagation/ptychography_atomistic_edit_*.py`: specialist model,
-  solver, persistence, synthetic-case, and benchmark internals. Normal users do
-  not need to assemble these objects directly.
-- `wide_angle_propagation/ptychography_support_contract_1d.py`: the immutable
-  TARGET/NUISANCE/fixed support boundary used to prevent unsupported structure
-  from being displayed as a reconstruction.
-- `notebooks/nine_atom_atomistic_edit_ptychography_1d.ipynb`: a fully executed,
-  CPU-sized teaching reconstruction.
-- `notebooks/sideview_glancing_ptychography_1d.ipynb`: the maintained large
-  glancing-incidence experiment and bounded sparse-edit workflow.
-- `tests/`: propagation, inverse-model, solver, persistence, and notebook gates.
+- `wide_angle_propagation/propagation_methods.py`: public propagation kernels
+  and simulation loops.
+- `wide_angle_propagation/notebook_utils.py`: beam/amplitude utilities, plotting
+  helpers, and compact result-file helpers used by the notebooks.
+- `wide_angle_propagation/ptychography_1d.py`: focused helpers for masked
+  pixelwise-potential reconstruction and selected-scan side-view caches in
+  synthetic one-dimensional glancing-incidence scans.
+- `wide_angle_propagation/ptychography_atoms_1d.py`: a deliberately small
+  free-atom reconstruction with movable positions, continuous occupancies,
+  short-range repulsion, and an optional weak cohesion experiment.
+- `tests/`: regression and behavior tests for the propagation methods.
 - `notebooks/figure_generation/01_axel_lubk_verification.ipynb`: Au [100]
   beam-amplitude verification against the full KG ODE reference.
 - `notebooks/figure_generation/02_converge_probe_si.ipynb`: Si CBED
@@ -52,36 +45,8 @@ The optional glancing-incidence reconstruction workflow uses Optax:
 python -m pip install -e ".[dev,ptychography]"
 ```
 
-The current scientific limitations, validation gates, and implementation
-sequence for the glancing ptychography prototype are tracked in
-[`docs/ptychography_robustness.md`](docs/ptychography_robustness.md).
-
-## Sparse Silicon Reconstruction
-
-The high-level inverse API requires an explicit, pre-calibrated decreasing
-edit-penalty path; it intentionally has no guess based on synthetic truth:
-
-```python
-from wide_angle_propagation.ptychography_atomistic_workflow_1d import (
-    SiliconAtomisticEditConfig1D,
-    reconstruct_silicon_atomistic_edits_1d,
-)
-
-run = reconstruct_silicon_atomistic_edits_1d(
-    experiment,
-    calibrated_measurement,
-    count_objective,
-    config=SiliconAtomisticEditConfig1D(
-        edit_penalty_path=(1000.0, 300.0, 100.0),
-    ),
-)
-```
-
-This answers a conditional question: given independently known silicon host
-geometry and calibration, which sparse atomic changes are required by the
-counts? It is not an open-world chemistry or crystal-structure solver. See the
-robustness specification and the nine-atom notebook before using the large
-side-view case.
+The deliberately limited free-atom experiment and its promotion gate are
+described in [`docs/ptychography_robustness.md`](docs/ptychography_robustness.md).
 
 ## Minimal Usage
 
