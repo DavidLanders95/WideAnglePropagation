@@ -19,6 +19,13 @@ PYTHON_FILES = [
     ROOT / "wide_angle_propagation" / "__init__.py",
     ROOT / "wide_angle_propagation" / "propagation_methods.py",
     ROOT / "wide_angle_propagation" / "notebook_utils.py",
+    ROOT / "scripts" / "plot_au_cbed_convergence.py",
+    ROOT / "scripts" / "plot_si_cbed.py",
+    ROOT / "scripts" / "benchmark_propagation_timing.py",
+    ROOT / "scripts" / "run_au_cbed_convergence.py",
+    ROOT / "scripts" / "run_au_ode_slice_convergence.py",
+    ROOT / "scripts" / "run_au_ode_wpm_convergence.py",
+    ROOT / "scripts" / "run_si_cbed_convergence.py",
 ]
 TARGET_NOTEBOOKS = [
     ROOT / "notebooks" / "figure_generation" / "01_axel_lubk_verification.ipynb",

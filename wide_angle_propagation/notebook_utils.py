@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -134,11 +135,19 @@ def relative_rmse(values, reference) -> float:
 
 def simulate_fresnel_as_exit_only(potential, wave, propagation_kernel_, slice_thickness, energy):
     """Run Fresnel/AS multislice propagation and return only the exit wave."""
-    wavefront = wave
-    for potential_slice in potential:
+    if potential.shape[0] == 0:
+        return wave
+    wave = jnp.asarray(
+        wave,
+        dtype=jnp.result_type(wave, propagation_kernel_, potential, 1j),
+    )
+
+    def step(wavefront, potential_slice):
         wavefront = wavefront * _slice_phase_grating(potential_slice, slice_thickness, energy)
         wavefront = fourier_propagate(wavefront, propagation_kernel_)
-    return wavefront
+        return wavefront, None
+
+    return jax.lax.scan(step, wave, potential)[0]
 
 
 def simulate_wpm_exit_only(
@@ -149,10 +158,15 @@ def simulate_wpm_exit_only(
     sampling: Sampling,
     n_bins: int = 128,
     power_spacing: float = 2.0,
+    bin_batch_size: int | None = None,
 ):
     """Run WPM multislice propagation and return only the exit wave."""
-    wavefront = wave
-    for potential_slice in potential:
+    if potential.shape[0] == 0:
+        return wave
+    target_dtype = jnp.complex128 if jax.config.x64_enabled else jnp.complex64
+    wave = jnp.asarray(wave, dtype=target_dtype)
+
+    def step(wavefront, potential_slice):
         refractive_index = electron_refractive_index(potential_slice, energy)
         wavefront, _, _, _ = wpm_step_adaptive(
             wavefront,
@@ -162,8 +176,11 @@ def simulate_wpm_exit_only(
             sampling,
             n_bins=n_bins,
             power_spacing=power_spacing,
+            bin_batch_size=bin_batch_size,
         )
-    return wavefront
+        return wavefront, None
+
+    return jax.lax.scan(step, wave, potential)[0]
 
 
 def diffraction_angle_axes_mrad(ny: int, nx: int, sampling, wavelength):

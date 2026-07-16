@@ -97,10 +97,10 @@ def paper_beam_0_28_kg_ms():
 # Crystal & potential fixtures
 # ---------------------------------------------------------------------------
 
-AU_LATTICE_PARAM = 4.076
+AU_LATTICE_PARAM = 4.08
 AU_ENERGY = 300e3
 AU_GPTS = (128, 128)
-AU_N_SLICES_PER_CELL = 2
+AU_N_SLICES_PER_CELL = 128
 
 
 @pytest.fixture(scope="session")
@@ -124,7 +124,7 @@ def _make_abtem_potential(atoms, parametrization="lobato"):
         atoms,
         gpts=AU_GPTS,
         slice_thickness=slice_dz,
-        projection="infinite",
+        projection="finite",
         parametrization=parametrization,
     )
     return pot, slice_dz
@@ -132,22 +132,10 @@ def _make_abtem_potential(atoms, parametrization="lobato"):
 
 @pytest.fixture(scope="session")
 def au_potential_lobato(au_atoms):
-    """Potential array (V/Å) and slice thickness from Lobato parametrization."""
+    """Slice-averaged potential (V) and thickness for the Lobato model."""
     jnp = pytest.importorskip("jax.numpy")
     cupy = pytest.importorskip("cupy")
     pot_obj, slice_dz = _make_abtem_potential(au_atoms, "lobato")
-    pot_array = jnp.array(cupy.asnumpy(pot_obj.build(lazy=False).array / slice_dz))
-    return pot_array, slice_dz
-
-
-@pytest.fixture(scope="session")
-def au_potential_wk(au_atoms):
-    """Potential array (V/Å) and slice thickness from Weickenmeier-Kohl parametrization."""
-    jnp = pytest.importorskip("jax.numpy")
-    cupy = pytest.importorskip("cupy")
-    from tests.wk_parametrization import make_wk_parametrization
-    wk_param = make_wk_parametrization()
-    pot_obj, slice_dz = _make_abtem_potential(au_atoms, wk_param)
     pot_array = jnp.array(cupy.asnumpy(pot_obj.build(lazy=False).array / slice_dz))
     return pot_array, slice_dz
 

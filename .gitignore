@@ -35,8 +35,11 @@ jax_ptychography/
 *.venv
 venv/
 *.npz
+!notebooks/verification/results/*.npz
+!notebooks/cbed/results/si111_cbed_convergence.npz
+!notebooks/cbed/results/au100_cbed_convergence_*.npz
 
-# Generated paper artifacts (LaTeX build outputs and PDFs)
+# Generated paper artifacts (LaTeX build outputs and raster previews)
 Paper/*.aux
 Paper/*.bbl
 Paper/*.blg
@@ -46,7 +49,7 @@ Paper/*.log
 Paper/*.out
 Paper/*.spl
 Paper/*.synctex*
-Paper/figures/
+Paper/figures/**/*.png
 archive/delete_candidates_*/latex_build_artifacts/**/*
 
 # Executed notebook artifacts and temporary notebook files

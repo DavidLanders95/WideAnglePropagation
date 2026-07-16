@@ -22,6 +22,36 @@ and second-order Klein-Gordon propagation.
 
 See `notebooks/README.md` for notebook run notes and output locations.
 
+## Publication Workflows
+
+The standalone drivers are the authoritative workflows for the quantitative
+results and paper figures:
+
+```bash
+jupyter nbconvert --to notebook --execute --inplace \
+  notebooks/figure_generation/01_axel_lubk_verification.ipynb
+python scripts/run_au_ode_slice_convergence.py --slices-per-cell 64
+python scripts/run_au_ode_slice_convergence.py --slices-per-cell 512
+python scripts/run_au_ode_wpm_convergence.py
+python scripts/run_si_cbed_convergence.py
+python scripts/plot_si_cbed.py notebooks/cbed/results/si111_cbed_convergence.npz
+python scripts/run_au_cbed_convergence.py
+python scripts/plot_au_cbed_convergence.py \
+  notebooks/cbed/results/au100_cbed_convergence_s64_g2048.npz
+python scripts/benchmark_propagation_timing.py
+```
+
+The simulation drivers record the physical setup, numerical discretisation,
+package versions, precision, convergence settings, and norm diagnostics in the
+saved result archives. The CBED drivers require a CUDA-capable JAX/CuPy/abTEM
+environment and substantial GPU memory.
+
+The timing driver records raw synchronized wall times, summary statistics, and
+hardware and software metadata in
+`notebooks/cbed/results/au100_propagation_timing_g2048.json`. Its default
+publication workload excludes potential generation and first-call JAX
+compilation from the reported propagation times.
+
 ## Installation
 
 From a local checkout:
@@ -67,7 +97,7 @@ pytest
 ```
 
 `scripts/check_static.py` validates package syntax, exported names, and the
-three maintained notebooks without importing the GPU/scientific runtime stack.
+four maintained notebooks without importing the GPU/scientific runtime stack.
 Use `--enforce-clean-notebooks` when you want saved notebook outputs to fail
 the check. The pytest suite requires JAX, and some integration tests and
 notebooks also require GPU dependencies (`cupy`, JAX with the appropriate

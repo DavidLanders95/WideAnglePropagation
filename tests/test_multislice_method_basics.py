@@ -13,10 +13,15 @@ pytest.importorskip("ase")
 jax.config.update("jax_enable_x64", True)
 
 from wide_angle_propagation.propagation_methods import (
+    _slice_phase_grating,
     simulate_fresnel_as,
     simulate_wpm,
     fresnel_propagation_kernel,
     angular_spectrum_propagation_kernel,
+    electron_refractive_index,
+    electron_refractive_index_squared,
+    electron_rest_energy,
+    energy2wavelength,
     transverse_frequency_squared,
 )
 from tests.conftest import beam_amplitude_normalized
@@ -102,6 +107,52 @@ class TestConstantPotential:
     """Uniform potential produces a known global phase shift."""
 
     V_CONST = 20.0  # Volts
+
+    def test_kg_index_squared_matches_energy_ratio(self):
+        potential = jnp.asarray([-20.0, 0.0, 20.0, 20_000.0])
+        rest_energy = electron_rest_energy()
+        total_energy = rest_energy + ENERGY
+        expected = (
+            (total_energy + potential) ** 2 - rest_energy**2
+        ) / (total_energy**2 - rest_energy**2)
+
+        actual = electron_refractive_index_squared(potential, ENERGY)
+        np.testing.assert_allclose(
+            np.asarray(actual), np.asarray(expected), rtol=2e-15, atol=2e-15
+        )
+
+        np.testing.assert_allclose(
+            np.asarray(electron_refractive_index(potential, ENERGY) ** 2),
+            np.asarray(actual),
+            rtol=2e-15,
+            atol=2e-15,
+        )
+
+    def test_phase_grating_uses_paraxial_kg_interaction(self):
+        potential = jnp.asarray([[20_000.0]], dtype=jnp.float64)
+        thickness = 0.5
+        wavelength = energy2wavelength(ENERGY)
+        refractive_index = electron_refractive_index(potential, ENERGY)
+
+        expected = jnp.exp(
+            1j
+            * jnp.pi
+            * (refractive_index**2 - 1.0)
+            * thickness
+            / wavelength
+        )
+        actual = _slice_phase_grating(potential, thickness, ENERGY)
+
+        np.testing.assert_allclose(np.asarray(actual), np.asarray(expected), rtol=1e-13)
+
+        eikonal_phase = jnp.exp(
+            2j
+            * jnp.pi
+            * (refractive_index - 1.0)
+            * thickness
+            / wavelength
+        )
+        assert not np.allclose(np.asarray(actual), np.asarray(eikonal_phase), rtol=1e-6)
 
     def test_fresnel_constant_v(self):
         pot = _make_constant_potential(self.V_CONST)

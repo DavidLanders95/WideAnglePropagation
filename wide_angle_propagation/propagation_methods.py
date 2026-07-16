@@ -22,6 +22,7 @@ __all__ = [
     "angular_spectrum_propagation_kernel",
     "diffraction_intensity",
     "electron_refractive_index",
+    "electron_refractive_index_squared",
     "electron_rest_energy",
     "energy2wavelength",
     "fourier_propagate",
@@ -60,20 +61,25 @@ def energy2wavelength(energy: float):
     )
 
 
-def electron_refractive_index(potential, energy):
-    """Return electron refractive index from electrostatic potential in Volts."""
+def electron_refractive_index_squared(potential, energy):
+    """Return the Klein--Gordon electron refractive index squared.
+
+    ``potential`` is the electrostatic potential in volts and ``energy`` is the
+    incident kinetic energy in electronvolts.  For an electron, a positive
+    electrostatic potential raises the local kinetic energy from ``E`` to
+    ``E + potential`` in this eV/volt convention.
+    """
     E0 = electron_rest_energy()
     E = energy
+    denominator = E * (E + 2.0 * E0)
+    linear = 2.0 * (E + E0) * potential / denominator
+    quadratic = potential**2 / denominator
+    return 1.0 + linear + quadratic
 
-    # Convert electrostatic potential (V) -> potential energy V (eV)
-    # Electron charge is negative, V_potential_energy = -1 * V_electrostatic
-    V = -potential
-    EminusV = E - V
 
-    numerator = 2 * EminusV * E0 + EminusV**2
-    denominator = 2 * E * E0 + E**2
-
-    return jnp.sqrt(numerator / denominator)
+def electron_refractive_index(potential, energy):
+    """Return the Klein--Gordon electron refractive index."""
+    return jnp.sqrt(electron_refractive_index_squared(potential, energy))
 
 
 # =============================================================================
@@ -202,12 +208,15 @@ def wpm_step_adaptive(
     ps: Sampling,
     n_bins: int = 256,
     power_spacing: float = 2.0,
+    bin_batch_size: int | None = None,
 ):
     """Run one adaptive-binned WPM propagation step."""
     if n_bins < 2:
         raise ValueError("n_bins must be at least 2")
     if power_spacing <= 0:
         raise ValueError("power_spacing must be positive")
+    if bin_batch_size is not None and bin_batch_size < 1:
+        raise ValueError("bin_batch_size must be positive when provided")
 
     ny, nx = wave.shape
     wavelength = energy2wavelength(energy)
@@ -218,8 +227,6 @@ def wpm_step_adaptive(
 
     n_min, n_max = n_map.min(), n_map.max()
     n_refs = get_polynomial_bins(n_min, n_max, n_bins, power=power_spacing)
-
-    ref_fields = wpm_propagation_kernel_vmap(Ek, n_refs, k0, k_perp2, dz)
 
     # Find the bin indices for every pixel
     idx_R = jnp.searchsorted(n_refs, n_map)
@@ -233,19 +240,75 @@ def wpm_step_adaptive(
     w_raw = (n_map - n_L) / jnp.where(denom == 0, 1.0, denom)
     w = smoothstep(w_raw)
 
-    field_L = jnp.take_along_axis(ref_fields, idx_L[None, ...], axis=0).squeeze()
-    field_R = jnp.take_along_axis(ref_fields, idx_R[None, ...], axis=0).squeeze()
+    if bin_batch_size is None or bin_batch_size >= n_bins:
+        ref_fields = wpm_propagation_kernel_vmap(Ek, n_refs, k0, k_perp2, dz)
+        field_L = jnp.take_along_axis(
+            ref_fields, idx_L[None, ...], axis=0
+        )[0]
+        field_R = jnp.take_along_axis(
+            ref_fields, idx_R[None, ...], axis=0
+        )[0]
+        new_wave = (1 - w) * field_L + w * field_R
+    else:
+        # Accumulate the two selected bin fields in small batches. This is
+        # algebraically identical to gathering from the full propagated bank,
+        # but bounds peak memory for large transverse grids.
+        n_padded = (
+            (n_bins + bin_batch_size - 1) // bin_batch_size
+        ) * bin_batch_size
+        n_refs_padded = jnp.pad(
+            n_refs,
+            (0, n_padded - n_bins),
+            mode="edge",
+        )
+        reference_batches = n_refs_padded.reshape(-1, bin_batch_size)
+        index_batches = jnp.arange(n_padded).reshape(-1, bin_batch_size)
 
-    new_wave = (1 - w) * field_L + w * field_R
+        def accumulate_batch(accumulated_wave, batch):
+            reference_batch, index_batch = batch
+            batch_fields = wpm_propagation_kernel_vmap(
+                Ek, reference_batch, k0, k_perp2, dz
+            )
+            batch_indices = index_batch[:, None, None]
+            left_mask = batch_indices == idx_L[None, ...]
+            right_mask = batch_indices == idx_R[None, ...]
+            batch_weights = (
+                left_mask * (1.0 - w)[None, ...]
+                + right_mask * w[None, ...]
+            )
+            accumulated_wave = accumulated_wave + jnp.sum(
+                batch_weights * batch_fields,
+                axis=0,
+            )
+            return accumulated_wave, None
+
+        accumulator_dtype = (
+            jnp.complex128 if jax.config.x64_enabled else jnp.complex64
+        )
+        new_wave, _ = jax.lax.scan(
+            accumulate_batch,
+            jnp.zeros(wave.shape, dtype=accumulator_dtype),
+            (reference_batches, index_batches),
+        )
 
     return new_wave, w, idx_L, n_refs
 
 
 def _slice_phase_grating(potential_slice, slice_thickness, energy):
-    """Return exact phase grating from the slice refractive index."""
+    """Return the paraxial KG transmission function for one potential slice.
+
+    Applying the slowly varying-envelope approximation to
+
+        nabla^2 psi + (2*pi*k0)^2 n^2 psi = 0
+
+    gives the interaction phase ``pi*k0*(n^2 - 1)*dz``.  This retains the
+    quadratic-potential term in the Klein--Gordon refractive index.  Linearising
+    ``n^2`` in the electrostatic potential recovers the conventional
+    ``exp(i*sigma*V_projected)`` transmission function.
+    """
     wavelength = energy2wavelength(energy)
-    n_slice = electron_refractive_index(potential_slice, energy)
-    phase = 2 * jnp.pi * (n_slice - 1) * slice_thickness / wavelength
+    n_squared = electron_refractive_index_squared(potential_slice, energy)
+    phase = jnp.pi * (n_squared - 1.0) * slice_thickness / wavelength
     return jnp.exp(1j * phase)
 
 
@@ -298,6 +361,7 @@ def simulate_wpm(
     sampling: Sampling,
     n_bins: int = 128,
     power_spacing: float = 2.0,
+    bin_batch_size: int | None = None,
 ):
     """Simulate multislice propagation with adaptive-binned WPM."""
     wavefront = probe
@@ -313,6 +377,7 @@ def simulate_wpm(
             sampling,
             n_bins=n_bins,
             power_spacing=power_spacing,
+            bin_batch_size=bin_batch_size,
         )
         wavefronts.append(wavefront)
 
@@ -321,7 +386,10 @@ def simulate_wpm(
     return exit_wave, diffraction_pattern, _stack_wavefronts_or_empty(wavefronts, probe)
 
 
-simulate_wpm_jit = jax.jit(simulate_wpm, static_argnames=("n_bins", "power_spacing"))
+simulate_wpm_jit = jax.jit(
+    simulate_wpm,
+    static_argnames=("n_bins", "power_spacing", "bin_batch_size"),
+)
 
 
 def _kg_full_ode_rhs(t, y, args):
@@ -356,7 +424,7 @@ def _kg_forward_vacuum_phi(psi, k0, k_perp_sq):
 def _stack_refractive_index_squared(potential, energy, k0):
     """Return ``k0^2 n^2`` in cycles-squared units for every potential slice."""
     return jnp.stack([
-        k0**2 * electron_refractive_index(potential_slice, energy) ** 2
+        k0**2 * electron_refractive_index_squared(potential_slice, energy)
         for potential_slice in potential
     ])
 

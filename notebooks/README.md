@@ -4,6 +4,11 @@ These are the maintained notebooks for reproducing the main examples and
 figures. Run them from the repository root after installing the package and GPU
 dependencies.
 
+The notebooks provide explanatory and interactive versions of the workflows.
+For the exact quantitative values and final publication figures, use the
+standalone drivers listed under **Publication Workflows** in the repository
+`README.md`.
+
 ## Figure Generation Workflows
 
 - `figure_generation/01_axel_lubk_verification.ipynb`: Au [100] plane-wave

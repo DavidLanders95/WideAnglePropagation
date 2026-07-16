@@ -1,7 +1,9 @@
 """Au(100) paper benchmark tests for maintained propagation methods.
 
-Reference: Rother & Scheerschmidt (2009), doi:10.1016/j.ultramic.2008.08.008
-Figure 3: Au 300 kV, beam amplitudes vs crystal thickness.
+The geometry follows the Au 300 kV example of Rother & Scheerschmidt (2009),
+doi:10.1016/j.ultramic.2008.08.008. These tests check internal consistency for
+the maintained finite-projection Lobato model; they are not regressions against
+the paper's scattering-factor parametrisation.
 
 These tests require GPU (cupy + abTEM) for potential generation.
 Marked @pytest.mark.slow for tests that take >30 seconds.
@@ -82,54 +84,6 @@ def _run_thickness_sweep_realspace(pot_array, slice_dz, sampling, n_cells=26):
 def lobato_sweep(au_potential_lobato, au_sampling):
     pot_array, slice_dz = au_potential_lobato
     return _run_thickness_sweep_realspace(pot_array, slice_dz, au_sampling, n_cells=26)
-
-
-@pytest.fixture(scope="module")
-def wk_sweep(au_potential_wk, au_sampling):
-    pot_array, slice_dz = au_potential_wk
-    return _run_thickness_sweep_realspace(pot_array, slice_dz, au_sampling, n_cells=26)
-
-
-# ---------------------------------------------------------------------------
-# Tests: Multislice vs paper KG MS curve
-# ---------------------------------------------------------------------------
-
-@pytest.mark.slow
-class TestMSvsPaperKGMS:
-    """Angular spectrum MS beams should match the paper's KG MS curves within 5%."""
-
-    TOLERANCE = 0.05
-
-    def test_as_beam_00_wk(self, wk_sweep, paper_beam_0_0_kg_ms):
-        x = np.arange(26, dtype=float)
-        computed = wk_sweep["as_00"]
-        reference = paper_beam_0_0_kg_ms(x)
-
-        mask = x >= 1
-        rel_errors = np.abs(computed[mask] - reference[mask]) / np.maximum(reference[mask], 1e-6)
-        max_err = np.max(rel_errors)
-        assert max_err < self.TOLERANCE, (
-            f"AS MS [0,0] WK vs paper KG MS: max rel error = {max_err:.3f}"
-        )
-
-    def test_as_beam_028_wk(self, wk_sweep, paper_beam_0_28_kg_ms):
-        """AS MS beam [0,28] trend should qualitatively match the paper's KG MS.
-
-        The absolute amplitudes for high-angle beams are very small (~0.01)
-        and highly sensitive to the exact scattering parametrization, so we
-        use an absolute tolerance rather than a strict relative threshold.
-        """
-        x = np.arange(26, dtype=float)
-        computed = wk_sweep["as_028"]
-        reference = paper_beam_0_28_kg_ms(x)
-
-        mask = x >= 3
-        abs_errors = np.abs(computed[mask] - reference[mask])
-        max_abs_err = np.max(abs_errors)
-        # Absolute tolerance: 0.01 is the typical scale of this beam's amplitude
-        assert max_abs_err < 0.015, (
-            f"AS MS [0,28] WK vs paper KG MS: max abs error = {max_abs_err:.4f}"
-        )
 
 
 # ---------------------------------------------------------------------------
