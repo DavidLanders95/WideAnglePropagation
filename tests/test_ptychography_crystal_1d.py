@@ -1,4 +1,8 @@
-"""Tests for sparse crystalline-host defect ptychography."""
+"""Tests for four-parameter JAX crystalline-host registration."""
+
+import ast
+import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -12,501 +16,470 @@ jax.config.update("jax_enable_x64", True)
 from wide_angle_propagation.propagation_methods import (  # noqa: E402
     fresnel_propagation_kernel_1d,
 )
-from wide_angle_propagation.ptychography_1d import simulate_glancing_scan_1d  # noqa: E402
+from wide_angle_propagation.ptychography_1d import (  # noqa: E402
+    simulate_glancing_scan_1d,
+)
+from wide_angle_propagation import ptychography_crystal_1d as crystal_module  # noqa: E402
 from wide_angle_propagation.ptychography_crystal_1d import (  # noqa: E402
-    CrystallineDefectReconstruction1D,
-    build_diamond_neighbor_graph_1d,
-    keating_lattice_energy_1d,
-    load_crystalline_defect_reconstruction_1d,
-    make_crystalline_defect_model_1d,
+    CrystallineHostModel1D,
+    CrystallineRegistrationParameters1D,
+    CrystallineRegistrationResult1D,
+    _balanced_amplitude_loss_1d,
     make_crystalline_host_model_1d,
-    reconstruct_crystalline_defects_1d,
-    reconstruct_crystalline_host_1d,
-    render_crystalline_defects_1d,
+    register_crystalline_host_1d,
     render_crystalline_host_1d,
-    save_crystalline_defect_reconstruction_1d,
     transform_crystalline_host_1d,
 )
 
 
-def _tetrahedron(bond_length=2.35):
-    directions = np.asarray(
-        [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]], dtype=float
-    ) / np.sqrt(3.0)
-    return jnp.asarray(np.vstack([np.zeros(3), bond_length * directions]))
-
-
-def test_sparse_graph_and_keating_invariances():
-    positions = _tetrahedron()
-    bonds, angles = build_diamond_neighbor_graph_1d(positions, bond_cutoff_A=2.5)
-    assert bonds.shape == (4, 2)
-    assert angles.shape == (6, 3)
-    occupancies = jnp.ones(5)
-    probabilities = jax.nn.one_hot(jnp.zeros(5, dtype=jnp.int32), 2)
-    lengths = jnp.asarray([[2.35, 2.40], [2.40, 2.45]])
-
-    ideal = keating_lattice_energy_1d(
-        positions, occupancies, probabilities, bonds, angles, lengths
-    )
-    translated = keating_lattice_energy_1d(
-        positions + jnp.asarray([4.0, -2.0, 1.0]),
-        occupancies,
-        probabilities,
-        bonds,
-        angles,
-        lengths,
-    )
-    theta = 0.37
-    rotation = jnp.asarray(
-        [[jnp.cos(theta), -jnp.sin(theta), 0.0],
-         [jnp.sin(theta), jnp.cos(theta), 0.0],
-         [0.0, 0.0, 1.0]]
-    )
-    rotated = keating_lattice_energy_1d(
-        positions @ rotation.T, occupancies, probabilities, bonds, angles, lengths
-    )
-    perturbed = positions.at[1, 0].add(0.25)
-    strained = keating_lattice_energy_1d(
-        perturbed, occupancies, probabilities, bonds, angles, lengths
-    )
-
-    assert float(ideal) < 1e-12
-    np.testing.assert_allclose(translated, ideal, atol=1e-12)
-    np.testing.assert_allclose(rotated, ideal, atol=1e-12)
-    assert float(strained) > float(ideal) + 1e-5
-
-
-def test_vacancy_gates_its_elastic_terms():
-    positions = _tetrahedron()
-    bonds, angles = build_diamond_neighbor_graph_1d(positions, bond_cutoff_A=2.5)
-    probabilities = jax.nn.one_hot(jnp.zeros(5, dtype=jnp.int32), 2)
-    lengths = jnp.asarray([[2.35, 2.40], [2.40, 2.45]])
-    vacancy = jnp.ones(5).at[1].set(0.0)
-    displaced_vacancy = positions.at[1].add(jnp.asarray([3.0, 1.0, -2.0]))
-    reference = keating_lattice_energy_1d(
-        positions, vacancy, probabilities, bonds, angles, lengths
-    )
-    actual = keating_lattice_energy_1d(
-        displaced_vacancy, vacancy, probabilities, bonds, angles, lengths
-    )
-    np.testing.assert_allclose(actual, reference, atol=1e-12)
-
-
-def test_neighbor_graph_storage_scales_linearly_for_a_chain():
-    positions = np.zeros((1000, 3), dtype=float)
-    positions[:, 0] = np.arange(1000)
-    bonds, angles = build_diamond_neighbor_graph_1d(
-        positions, bond_cutoff_A=1.01
-    )
-    assert bonds.shape[0] == 999
-    assert angles.shape[0] == 998
-    assert bonds.size + angles.size < 6 * len(positions)
-
-
-def test_host_transform_is_exactly_frozen_outside_illumination_support():
-    reference = jnp.asarray(
-        [[0.0, 2.0, 0.0], [2.0, 3.0, -1.0], [4.0, 4.0, -2.0]]
-    )
-    weights = jnp.asarray([1.0, 0.5, 0.0])
-    fully_transformed = transform_crystalline_host_1d(
-        reference,
-        jnp.asarray([0.7, -0.3]),
-        jnp.asarray([[0.01, 0.02], [-0.01, -0.02]]),
-        jnp.asarray(0.05),
-        jnp.asarray([[0.1, 0.2], [-0.2, 0.1], [0.3, -0.1]]),
-    )
-    masked = transform_crystalline_host_1d(
-        reference,
-        jnp.asarray([0.7, -0.3]),
-        jnp.asarray([[0.01, 0.02], [-0.01, -0.02]]),
-        jnp.asarray(0.05),
-        jnp.asarray([[0.1, 0.2], [-0.2, 0.1], [0.3, -0.1]]),
-        weights,
-    )
-
-    np.testing.assert_allclose(masked[0], fully_transformed[0], atol=1e-12)
-    np.testing.assert_allclose(masked[2], reference[2], atol=1e-12)
-    expected_middle = reference[1] + 0.5 * (fully_transformed[1] - reference[1])
-    np.testing.assert_allclose(masked[1], expected_middle, atol=1e-12)
-    np.testing.assert_allclose(masked[:, 1], reference[:, 1], atol=1e-12)
-
-
 def _small_model():
     sampling = 0.25
-    s = jnp.arange(49) * sampling
-    u = (jnp.arange(49) - 24) * sampling
+    s = jnp.arange(65) * sampling
+    u = (jnp.arange(65) - 32) * sampling
     relative = (jnp.arange(9) - 4) * sampling
     grid_s, grid_u = jnp.meshgrid(relative, relative, indexing="ij")
-    template = jnp.exp(-0.5 * (grid_s**2 + grid_u**2) / 0.22**2)
-    templates = jnp.stack([template, 1.7 * template])
-    host = jnp.asarray([[3.0, 0.0, -0.5], [5.35, 0.0, -0.5], [7.7, 0.0, -0.5]])
-    adatoms = jnp.asarray([[5.0, 1.0], [7.0, 1.0]])
-    return make_crystalline_defect_model_1d(
+    template = jnp.exp(-0.5 * (grid_s**2 + grid_u**2) / 0.28**2)
+    host = jnp.asarray(
+        [
+            [2.5, 0.0, -1.5],
+            [4.7, 1.0, 0.4],
+            [7.2, -0.5, -2.0],
+            [9.8, 2.0, 1.2],
+            [12.5, -1.5, -0.4],
+            [14.0, 0.3, 2.0],
+        ]
+    )
+    return make_crystalline_host_model_1d(
         s,
         u,
-        templates,
-        ("Si", "Ge"),
+        template,
         host,
-        jnp.asarray([[1.0, 10.0], [-2.0, 2.0]]),
-        adatoms,
-        jnp.asarray([[1.0, 10.0], [0.0, 2.0]]),
-        species_bond_lengths_A=jnp.asarray([[2.35, 2.40], [2.40, 2.45]]),
-        bond_cutoff_A=2.6,
-        host_maximum_displacement_A=1.0,
-        adatom_maximum_displacement_A=0.75,
+        axial_period_A=4.0,
+        metadata={"host": "asymmetric test crystal"},
     )
 
 
-def test_model_validates_and_stores_site_update_weights():
-    base = _small_model()
-    weights = np.asarray([1.0, 0.25, 0.0])
-    model = make_crystalline_host_model_1d(
-        base.axial_coordinates,
-        base.transverse_coordinates,
-        base.species_templates[0],
-        base.host_reference_positions_3d,
-        jnp.asarray([[1.0, 10.0], [-2.0, 2.0]]),
-        host_update_weights=weights,
-        bond_cutoff_A=2.6,
-    )
-    np.testing.assert_allclose(model.host_update_weights, weights)
-
-    with pytest.raises(ValueError, match="one value per host site"):
-        make_crystalline_host_model_1d(
-            base.axial_coordinates,
-            base.transverse_coordinates,
-            base.species_templates[0],
-            base.host_reference_positions_3d,
-            jnp.asarray([[1.0, 10.0], [-2.0, 2.0]]),
-            host_update_weights=[1.0, 0.0],
-            bond_cutoff_A=2.6,
-        )
-
-
-def test_mixed_rendering_and_all_defect_gradients_are_finite():
+def test_model_is_a_true_lean_host_type_and_validates_inputs():
     model = _small_model()
-    n_host = model.host_reference_positions_3d.shape[0]
-    host_species_logits = jnp.zeros((n_host, 2))
-    adatom_species_logits = jnp.zeros((2, 2))
-    values = {
-        # The final host moves just beyond the specimen grid while its template
-        # still overlaps it. Boundary templates must remain renderable.
-        "translation": jnp.asarray([5.0, -0.05]),
-        "strain": jnp.asarray([[0.005, 0.0], [0.0, -0.004]]),
-        "rotation": jnp.asarray(0.01),
-        "displacements": jnp.zeros((n_host, 2)),
-        "host_occupancies": jnp.asarray([1.0, 0.8, 1.0]),
-        "host_species_logits": host_species_logits,
-        "adatom_positions": model.adatom_initial_positions,
-        "adatom_occupancies": jnp.asarray([0.4, 0.1]),
-        "adatom_species_logits": adatom_species_logits,
-    }
+    assert isinstance(model, CrystallineHostModel1D)
+    assert model.reference_positions_3d.shape == (6, 3)
+    assert model.axial_period_A == 4.0
 
-    def objective(parameters):
-        host_positions = transform_crystalline_host_1d(
-            model.host_reference_positions_3d,
-            parameters["translation"],
-            parameters["strain"],
-            parameters["rotation"],
-            parameters["displacements"],
+    with pytest.raises(ValueError, match="uniformly increasing"):
+        make_crystalline_host_model_1d(
+            [0.0, 0.5, 1.1],
+            model.transverse_coordinates,
+            model.atom_template,
+            model.reference_positions_3d,
+            axial_period_A=4.0,
         )
-        potential = render_crystalline_defects_1d(
-            model,
-            host_positions,
-            parameters["host_occupancies"],
-            jax.nn.softmax(parameters["host_species_logits"], axis=-1),
-            parameters["adatom_positions"],
-            parameters["adatom_occupancies"],
-            jax.nn.softmax(parameters["adatom_species_logits"], axis=-1),
+    with pytest.raises(ValueError, match="inside the specimen grid"):
+        make_crystalline_host_model_1d(
+            model.axial_coordinates,
+            model.transverse_coordinates,
+            model.atom_template,
+            model.reference_positions_3d.at[0, 0].set(-2.0),
+            axial_period_A=4.0,
         )
-        weights = jnp.linspace(0.2, 1.3, potential.size).reshape(potential.shape)
+    with pytest.raises(ValueError, match="positive and finite"):
+        make_crystalline_host_model_1d(
+            model.axial_coordinates,
+            model.transverse_coordinates,
+            model.atom_template,
+            model.reference_positions_3d,
+            axial_period_A=0.0,
+        )
+
+
+def test_transform_identity_known_values_and_latent_y_invariance():
+    reference = jnp.asarray(
+        [[0.0, 2.0, -1.0], [2.0, 3.0, 0.0], [4.0, 4.0, 1.0]]
+    )
+    identity = transform_crystalline_host_1d(reference, 0.0, 0.0, 0.0, 0.0)
+    np.testing.assert_allclose(identity, reference, atol=1e-12)
+
+    transformed = transform_crystalline_host_1d(
+        reference,
+        axial_phase_A=0.7,
+        surface_offset_A=-0.2,
+        rotation_rad=jnp.pi / 2,
+        axial_strain=0.1,
+    )
+    projected = np.asarray(reference)[:, [0, 2]]
+    center = projected.mean(axis=0)
+    relative = projected - center
+    relative[:, 0] *= 1.1
+    rotation = np.asarray([[0.0, -1.0], [1.0, 0.0]])
+    expected_projected = relative @ rotation.T + center + [0.7, -0.2]
+    np.testing.assert_allclose(transformed[:, [0, 2]], expected_projected, atol=1e-12)
+    np.testing.assert_allclose(transformed[:, 1], reference[:, 1], atol=0.0)
+
+
+def test_render_is_jittable_and_has_finite_four_parameter_gradients():
+    model = _small_model()
+
+    def objective(values):
+        positions = transform_crystalline_host_1d(
+            model.reference_positions_3d,
+            values[0],
+            values[1],
+            values[2],
+            values[3],
+        )
+        potential = render_crystalline_host_1d(model, positions)
+        grid_s, grid_u = jnp.meshgrid(
+            model.axial_coordinates,
+            model.transverse_coordinates,
+            indexing="ij",
+        )
+        weights = jnp.sin(0.17 * grid_s + 0.31 * grid_u)
         return jnp.sum(potential * weights)
 
-    potential_value = objective(values)
-    gradients = jax.grad(objective)(values)
-    assert float(potential_value) > 0.0
-    for gradient in jax.tree.leaves(gradients):
-        assert np.all(np.isfinite(np.asarray(gradient)))
+    values = jnp.asarray([0.2, -0.1, 0.005, 0.002])
+    value, gradients = jax.jit(jax.value_and_grad(objective))(values)
+    assert np.isfinite(float(value))
+    assert np.all(np.isfinite(np.asarray(gradients)))
+    assert np.all(np.abs(np.asarray(gradients)) > 1e-8)
 
 
-def test_compact_joint_solver_reduces_held_out_loss():
-    model = _small_model()
-    host_positions = model.host_reference_positions_3d
-    host_occupancies = jnp.ones(3)
-    host_species = jax.nn.one_hot(jnp.asarray([0, 1, 0]), 2)
-    adatom_positions = model.adatom_initial_positions
-    adatom_occupancies = jnp.asarray([1.0, 0.0])
-    adatom_species = jax.nn.one_hot(jnp.asarray([0, 0]), 2)
-    truth = render_crystalline_defects_1d(
-        model,
-        host_positions,
-        host_occupancies,
-        host_species,
-        adatom_positions,
-        adatom_occupancies,
-        adatom_species,
+def test_balanced_loss_normalizes_bands_independently_and_ignores_padding():
+    measured = jnp.asarray([[4.0, 1.0, 9.0, 16.0], [1.0, 4.0, 4.0, 1.0]])
+    predicted = jnp.asarray([[1.0, 4.0, 9.0, 25.0], [4.0, 1.0, 9.0, 1.0]])
+    scan_weights = jnp.ones(2)
+    reflected = jnp.asarray([False, False, True, True])
+    actual = _balanced_amplitude_loss_1d(
+        predicted,
+        measured,
+        scan_weights,
+        reflected,
+        whole_detector_weight=0.5,
     )
-    energy = 5e3
-    sampling = 0.25
-    n_u = truth.shape[1]
+    amplitude_error = (np.sqrt(np.asarray(predicted)) - np.sqrt(np.asarray(measured))) ** 2
+    all_loss = amplitude_error.sum() / np.asarray(measured).sum()
+    reflected_loss = amplitude_error[:, 2:].sum() / np.asarray(measured)[:, 2:].sum()
+    np.testing.assert_allclose(actual, 0.5 * (all_loss + reflected_loss), rtol=1e-10)
+
+    padded = _balanced_amplitude_loss_1d(
+        jnp.pad(predicted, ((0, 1), (0, 0))),
+        jnp.pad(measured, ((0, 1), (0, 0))),
+        jnp.asarray([1.0, 1.0, 0.0]),
+        reflected,
+        whole_detector_weight=0.5,
+    )
+    np.testing.assert_allclose(padded, actual, atol=1e-12)
+
+
+def _registration_problem(*, truth_parameters=None):
+    model = _small_model()
+    truth = truth_parameters or CrystallineRegistrationParameters1D(
+        axial_phase_A=0.35,
+        surface_offset_A=-0.16,
+        rotation_rad=np.deg2rad(0.28),
+        axial_strain=-0.004,
+    )
+    truth_positions = transform_crystalline_host_1d(
+        model.reference_positions_3d,
+        truth.axial_phase_A,
+        truth.surface_offset_A,
+        truth.rotation_rad,
+        truth.axial_strain,
+    )
+    truth_potential = render_crystalline_host_1d(model, truth_positions)
     u = model.transverse_coordinates
-    probe_centers = np.linspace(-1.0, 1.0, 9)
+    centers = np.linspace(-3.0, 3.0, 9)
     probes = jnp.stack(
-        [jnp.exp(-0.5 * ((u - center) / 0.9) ** 2) for center in probe_centers]
+        [
+            jnp.exp(-0.5 * ((u - center) / 1.2) ** 2)
+            * jnp.exp(1j * (0.04 + 0.01 * index) * u)
+            for index, center in enumerate(centers)
+        ]
     ).astype(jnp.complex128)
     starts = jnp.zeros(len(probes), dtype=jnp.int32)
-    kernel = fresnel_propagation_kernel_1d(n_u, sampling, sampling, energy)
-    measured = simulate_glancing_scan_1d(
-        truth, probes, starts, truth.shape[0], kernel, sampling, energy
+    energy = 5e3
+    sampling = 0.25
+    kernel = fresnel_propagation_kernel_1d(
+        truth_potential.shape[1], sampling, sampling, energy
     )
-    result = reconstruct_crystalline_defects_1d(
-        model,
+    measured = simulate_glancing_scan_1d(
+        truth_potential,
         probes,
         starts,
-        truth.shape[0],
+        truth_potential.shape[0],
         kernel,
         sampling,
         energy,
-        measured,
-        validation_indices=[0, 4, 8],
-        updates=80,
-        stage_global_end=5,
-        stage_host_end=15,
-        stage_defect_end=25,
-        minibatch_size=3,
-        validation_interval=10,
-        evaluation_batch_size=3,
-        keating_weight=0.0,
-        host_occupancy_weight=0.0,
-        substitution_weight=0.0,
-        adatom_weight=0.0,
-        displacement_weight=0.0,
-        binary_weight=0.0,
-        entropy_weight=0.0,
-        repulsion_weight=0.0,
-        seed=3,
     )
-    history = np.asarray(result.validation_loss_history)
-    assert np.nanmin(history[1:]) < history[0]
-    assert result.host_species_probabilities.shape == (3, 2)
-    assert result.adatom_species_probabilities.shape == (2, 2)
+    detector_angles = jnp.linspace(-40.0, 40.0, truth_potential.shape[1])
+    return model, truth, probes, starts, kernel, measured, detector_angles
 
 
-def test_pristine_host_wrapper_fixes_species_occupancy_and_empty_adatoms():
-    defect_model = _small_model()
-    model = make_crystalline_host_model_1d(
-        defect_model.axial_coordinates,
-        defect_model.transverse_coordinates,
-        defect_model.species_templates[0],
-        defect_model.host_reference_positions_3d,
-        jnp.asarray([[1.0, 10.0], [-2.0, 2.0]]),
-        equilibrium_bond_length_A=2.35,
-        host_update_weights=jnp.asarray([1.0, 0.0, 0.0]),
-        bond_cutoff_A=2.6,
+def test_padded_batch_objective_matches_one_unpadded_batch():
+    model, _, probes, starts, kernel, measured, detector_angles = (
+        _registration_problem(
+            truth_parameters=CrystallineRegistrationParameters1D()
+        )
     )
-    truth_positions = transform_crystalline_host_1d(
-        model.host_reference_positions_3d,
-        jnp.asarray([0.2, -0.1]),
-        jnp.zeros((2, 2)),
-        jnp.asarray(0.0),
-        jnp.zeros((3, 2)),
-        model.host_update_weights,
-    )
-    truth = render_crystalline_host_1d(
-        model, truth_positions
-    )
-    probes = jnp.stack(
-        [jnp.exp(-0.5 * ((model.transverse_coordinates - center) / 0.9) ** 2)
-         for center in np.linspace(-1.0, 1.0, 7)]
-    ).astype(jnp.complex128)
-    starts = jnp.zeros(len(probes), dtype=jnp.int32)
-    kernel = fresnel_propagation_kernel_1d(truth.shape[1], 0.25, 0.25, 5e3)
-    measured = simulate_glancing_scan_1d(
-        truth, probes, starts, truth.shape[0], kernel, 0.25, 5e3
-    )
-    result = reconstruct_crystalline_host_1d(
+    common = (
         model,
         probes,
         starts,
-        truth.shape[0],
+        measured.shape[1],
         kernel,
         0.25,
         5e3,
         measured,
-        validation_indices=[0, 3, 6],
-        updates=4,
-        stage_global_end=4,
-        stage_host_end=4,
-        stage_defect_end=4,
-        minibatch_size=2,
-        validation_interval=2,
-        keating_weight=0.0,
-        enable_host_displacements=False,
+        detector_angles,
     )
-    np.testing.assert_allclose(result.host_occupancies, 1.0)
-    np.testing.assert_allclose(result.host_species_probabilities, 1.0)
-    assert result.host_species_probabilities.shape == (3, 1)
-    assert result.adatom_positions.shape == (0, 2)
-    assert result.adatom_occupancies.shape == (0,)
+    settings = dict(
+        reflected_angle_bounds_mrad=(0.0, 35.0),
+        specular_angle_bounds_mrad=(10.0, 30.0),
+        phase_grid_points=5,
+        updates=1,
+    )
+    padded = register_crystalline_host_1d(
+        *common, batch_size=4, **settings
+    )
+    unpadded = register_crystalline_host_1d(
+        *common, batch_size=len(probes), **settings
+    )
     np.testing.assert_allclose(
-        result.host_positions_3d[1:],
-        model.host_reference_positions_3d[1:],
-        atol=0.0,
+        padded.phase_grid_objective,
+        unpadded.phase_grid_objective,
+        rtol=2e-12,
+        atol=2e-14,
+    )
+    np.testing.assert_allclose(
+        padded.initial_objective, unpadded.initial_objective, atol=2e-14
     )
 
 
-def _isolated_defect_result(*, host_occupancies, host_labels, adatom_occupancies,
-                            enable_host_occupancies, enable_substitutions,
-                            enable_adatoms, updates=260):
-    model = _small_model()
-    host_species = jax.nn.one_hot(jnp.asarray(host_labels), 2)
-    adatom_species = jax.nn.one_hot(jnp.asarray([0, 0]), 2)
-    truth = render_crystalline_defects_1d(
-        model,
-        model.host_reference_positions_3d,
-        jnp.asarray(host_occupancies),
-        host_species,
-        model.adatom_initial_positions,
-        jnp.asarray(adatom_occupancies),
-        adatom_species,
+def test_phase_grid_selects_the_correct_periodic_basin():
+    model, truth, probes, starts, kernel, measured, detector_angles = (
+        _registration_problem()
     )
-    u = model.transverse_coordinates
-    probes = jnp.stack(
-        [jnp.exp(-0.5 * ((u - center) / 0.9) ** 2)
-         for center in np.linspace(-1.0, 1.0, 13)]
-    ).astype(jnp.complex128)
-    starts = jnp.zeros(len(probes), dtype=jnp.int32)
-    kernel = fresnel_propagation_kernel_1d(truth.shape[1], 0.25, 0.25, 5e3)
-    measured = simulate_glancing_scan_1d(
-        truth, probes, starts, truth.shape[0], kernel, 0.25, 5e3
+    initial = CrystallineRegistrationParameters1D(
+        axial_phase_A=-0.9,
+        surface_offset_A=truth.surface_offset_A,
+        rotation_rad=truth.rotation_rad,
+        axial_strain=truth.axial_strain,
     )
-    return reconstruct_crystalline_defects_1d(
+    result = register_crystalline_host_1d(
         model,
         probes,
         starts,
-        truth.shape[0],
+        measured.shape[1],
         kernel,
         0.25,
         5e3,
         measured,
-        validation_indices=[0, 6, 12],
-        updates=updates,
-        stage_global_end=0,
-        stage_host_end=0,
-        stage_defect_end=40,
-        minibatch_size=5,
-        validation_interval=20,
-        evaluation_batch_size=3,
-        keating_weight=0.0,
-        host_occupancy_weight=0.0,
-        substitution_weight=0.0,
-        adatom_weight=0.0,
-        displacement_weight=0.0,
-        binary_weight=1e-3,
-        entropy_weight=1e-3,
-        repulsion_weight=0.0,
-        initial_host_occupancy=1.0,
-        initial_host_si_probability=0.95,
-        enable_global_transform=False,
-        enable_host_displacements=False,
-        enable_host_occupancies=enable_host_occupancies,
-        enable_substitutions=enable_substitutions,
-        enable_adatoms=enable_adatoms,
-        seed=2,
+        detector_angles,
+        initial_parameters=initial,
+        reflected_angle_bounds_mrad=(0.0, 35.0),
+        specular_angle_bounds_mrad=(10.0, 30.0),
+        batch_size=4,
+        phase_grid_points=17,
+        updates=1,
+    )
+    grid_spacing = model.axial_period_A / 17
+    assert (
+        abs(
+            float(result.optimization_start_parameters.axial_phase_A)
+            - truth.axial_phase_A
+        )
+        <= grid_spacing / 2
     )
 
 
-def test_isolated_ge_substitution_is_localized():
-    result = _isolated_defect_result(
-        host_occupancies=[1.0, 1.0, 1.0],
-        host_labels=[0, 1, 0],
-        adatom_occupancies=[0.0, 0.0],
-        enable_host_occupancies=False,
-        enable_substitutions=True,
-        enable_adatoms=False,
-        updates=320,
+def test_adam_deterministically_recovers_known_four_parameter_transform():
+    model, truth, probes, starts, kernel, measured, detector_angles = (
+        _registration_problem()
     )
-    ge_probability = np.asarray(result.host_species_probabilities)[:, 1]
-    assert int(np.argmax(ge_probability)) == 1
-    assert ge_probability[1] > 0.6
-
-
-def test_isolated_vacancy_is_localized():
-    result = _isolated_defect_result(
-        host_occupancies=[1.0, 0.0, 1.0],
-        host_labels=[0, 0, 0],
-        adatom_occupancies=[0.0, 0.0],
-        enable_host_occupancies=True,
-        enable_substitutions=False,
-        enable_adatoms=False,
+    initial = CrystallineRegistrationParameters1D(
+        axial_phase_A=-0.9,
+        surface_offset_A=-0.05,
+        rotation_rad=np.deg2rad(0.15),
+        axial_strain=-0.002,
     )
-    occupancy = np.asarray(result.host_occupancies)
-    assert int(np.argmin(occupancy)) == 1
-    assert occupancy[1] + 0.2 < min(occupancy[0], occupancy[2])
-
-
-def test_isolated_si_adatom_is_localized_without_false_candidate():
-    result = _isolated_defect_result(
-        host_occupancies=[1.0, 1.0, 1.0],
-        host_labels=[0, 0, 0],
-        adatom_occupancies=[1.0, 0.0],
-        enable_host_occupancies=False,
-        enable_substitutions=False,
-        enable_adatoms=True,
+    common = (
+        model,
+        probes,
+        starts,
+        measured.shape[1],
+        kernel,
+        0.25,
+        5e3,
+        measured,
+        detector_angles,
     )
-    occupancy = np.asarray(result.adatom_occupancies)
-    assert occupancy[0] > occupancy[1]
-    assert occupancy[0] > 0.3
-
-
-def test_pristine_truth_does_not_create_confident_defects():
-    result = _isolated_defect_result(
-        host_occupancies=[1.0, 1.0, 1.0],
-        host_labels=[0, 0, 0],
-        adatom_occupancies=[0.0, 0.0],
-        enable_host_occupancies=False,
-        enable_substitutions=True,
-        enable_adatoms=True,
+    settings = dict(
+        initial_parameters=initial,
+        reflected_angle_bounds_mrad=(0.0, 35.0),
+        specular_angle_bounds_mrad=(10.0, 30.0),
+        batch_size=4,
+        phase_grid_points=17,
+        updates=200,
+        learning_rate_start=5e-2,
+        learning_rate_end=1e-3,
     )
-    assert float(jnp.max(result.host_species_probabilities[:, 1])) < 0.5
-    assert float(jnp.max(result.adatom_occupancies)) < 0.5
-
-
-def test_crystalline_result_round_trip(tmp_path):
-    array = jnp.asarray([1.0, 2.0])
-    result = CrystallineDefectReconstruction1D(
-        host_positions_3d=jnp.ones((2, 3)),
-        host_occupancies=array,
-        host_species_probabilities=jnp.ones((2, 2)) / 2,
-        adatom_positions=jnp.ones((1, 2)),
-        adatom_occupancies=jnp.ones(1),
-        adatom_species_probabilities=jnp.ones((1, 2)) / 2,
-        translation=jnp.zeros(2),
-        strain=jnp.zeros((2, 2)),
-        rotation_rad=jnp.asarray(0.0),
-        potential=jnp.ones((3, 4)),
-        predicted_intensities=jnp.ones((2, 4)),
-        measured_intensities=jnp.ones((2, 4)),
-        update_history=jnp.asarray([0, 2]),
-        elapsed_time_history=array,
-        training_loss_history=array,
-        validation_loss_history=array,
-        translation_history=jnp.zeros((2, 2)),
-        strain_history=jnp.zeros((2, 2, 2)),
-        rotation_history=jnp.zeros(2),
-        host_displacement_history=jnp.zeros((2, 2, 2)),
-        host_occupancy_history=jnp.ones((2, 2)),
-        host_species_probability_history=jnp.ones((2, 2, 2)) / 2,
-        adatom_position_history=jnp.ones((2, 1, 2)),
-        adatom_occupancy_history=jnp.ones((2, 1)),
-        adatom_species_probability_history=jnp.ones((2, 1, 2)) / 2,
-        best_update=2,
-        metadata={"species_names": ["Si", "Ge"]},
+    result = register_crystalline_host_1d(*common, **settings)
+    repeated = register_crystalline_host_1d(*common, **settings)
+    np.testing.assert_array_equal(
+        result.objective_history, repeated.objective_history
     )
-    path = tmp_path / "crystal_result.npz"
-    save_crystalline_defect_reconstruction_1d(path, result)
-    loaded = load_crystalline_defect_reconstruction_1d(path)
-    np.testing.assert_allclose(loaded.host_positions_3d, result.host_positions_3d)
-    np.testing.assert_allclose(loaded.adatom_species_probabilities, result.adatom_species_probabilities)
-    assert loaded.best_update == 2
-    assert loaded.metadata == result.metadata
+    np.testing.assert_array_equal(
+        result.parameter_history, repeated.parameter_history
+    )
+    assert isinstance(result, CrystallineRegistrationResult1D)
+    assert result.metadata["n_parameters"] == 4
+    assert result.objective_history.shape == (201,)
+    assert result.parameter_history.shape == (201, 4)
+    assert bool(result.converged)
+    assert float(result.objective_history[-1]) < 0.2 * float(result.initial_objective)
+    assert abs(float(result.parameters.axial_phase_A) - truth.axial_phase_A) < 0.12
+    assert abs(float(result.parameters.surface_offset_A) - truth.surface_offset_A) < 0.12
+    assert abs(float(result.parameters.rotation_rad) - truth.rotation_rad) < np.deg2rad(0.12)
+    assert abs(float(result.parameters.axial_strain) - truth.axial_strain) < 0.002
+    scales = np.asarray([model.axial_period_A / 2, 1.0, np.deg2rad(1.0), 0.02])
+    final_values = np.asarray(
+        [
+            result.parameters.axial_phase_A,
+            result.parameters.surface_offset_A,
+            result.parameters.rotation_rad,
+            result.parameters.axial_strain,
+        ]
+    )
+    assert np.all(np.abs(final_values) <= scales)
+    recovered = np.asarray(result.host_positions_3d)
+    expected = np.asarray(
+        transform_crystalline_host_1d(
+            model.reference_positions_3d,
+            truth.axial_phase_A,
+            truth.surface_offset_A,
+            truth.rotation_rad,
+            truth.axial_strain,
+        )
+    )
+    assert np.sqrt(np.mean((recovered[:, [0, 2]] - expected[:, [0, 2]]) ** 2)) < 0.12
+
+
+def test_registration_rejects_invalid_bands_nonfinite_data_and_bounds():
+    model, _, probes, starts, kernel, measured, detector_angles = _registration_problem(
+        truth_parameters=CrystallineRegistrationParameters1D()
+    )
+    common = (
+        model,
+        probes,
+        starts,
+        measured.shape[1],
+        kernel,
+        0.25,
+        5e3,
+        measured,
+        detector_angles,
+    )
+    with pytest.raises(ValueError, match="contains no pixels"):
+        register_crystalline_host_1d(
+            *common,
+            reflected_angle_bounds_mrad=(100.0, 120.0),
+            updates=1,
+        )
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        register_crystalline_host_1d(
+            *common[:7],
+            measured.at[0, 0].set(jnp.nan),
+            detector_angles,
+            updates=1,
+        )
+    with pytest.raises(ValueError, match="finite and real"):
+        register_crystalline_host_1d(
+            *common[:-1],
+            detector_angles.at[0].set(jnp.nan),
+            updates=1,
+        )
+    with pytest.raises(ValueError, match="input_probe must be finite"):
+        register_crystalline_host_1d(
+            common[0],
+            probes.at[0, 0].set(jnp.nan),
+            *common[2:],
+            updates=1,
+        )
+    with pytest.raises(TypeError, match="must contain integers"):
+        register_crystalline_host_1d(
+            common[0], common[1], starts.astype(float), *common[3:], updates=1
+        )
+    with pytest.raises(ValueError, match="outside fit bounds"):
+        register_crystalline_host_1d(
+            *common,
+            initial_parameters=CrystallineRegistrationParameters1D(
+                surface_offset_A=1.2
+            ),
+            updates=1,
+        )
+
+
+def test_public_api_has_no_defect_persistence_or_host_aliases():
+    expected = {
+        "CrystallineHostModel1D",
+        "CrystallineRegistrationParameters1D",
+        "CrystallineRegistrationResult1D",
+        "make_crystalline_host_model_1d",
+        "register_crystalline_host_1d",
+        "render_crystalline_host_1d",
+        "transform_crystalline_host_1d",
+    }
+    assert set(crystal_module.__all__) == expected
+    removed = {
+        "CrystallineDefectModel1D",
+        "CrystallineDefectReconstruction1D",
+        "build_diamond_neighbor_graph_1d",
+        "keating_lattice_energy_1d",
+        "reconstruct_crystalline_defects_1d",
+        "reconstruct_crystalline_host_1d",
+        "save_crystalline_defect_reconstruction_1d",
+        "load_crystalline_defect_reconstruction_1d",
+    }
+    assert all(not hasattr(crystal_module, name) for name in removed)
+    source = Path(crystal_module.__file__).read_text(encoding="utf-8")
+    assert "from scipy" not in source
+    assert "import scipy" not in source
+
+
+def test_registration_notebook_is_clean_python_without_deleted_workflows():
+    notebook_path = (
+        Path(__file__).parents[1]
+        / "notebooks"
+        / "sideview_glancing_ptychography_1d.ipynb"
+    )
+    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    code = []
+    for index, cell in enumerate(notebook["cells"]):
+        if cell["cell_type"] != "code":
+            continue
+        assert not cell.get("outputs")
+        source = "".join(cell["source"])
+        source_without_magics = "\n".join(
+            line
+            for line in source.splitlines()
+            if not line.lstrip().startswith("%")
+        )
+        ast.parse(source_without_magics, filename=f"notebook cell {index}")
+        code.append(source)
+    joined = "\n".join(code)
+    removed_workflow_names = {
+        "CrystallineDefect",
+        "keating_lattice_energy_1d",
+        "reconstruct_crystalline_host_1d",
+        "save_crystalline_defect_reconstruction_1d",
+        "load_crystalline_defect_reconstruction_1d",
+        "validation_indices",
+        "training_indices",
+        "host_update_weights",
+        "local_displacement",
+        "cKDTree",
+        "FuncAnimation",
+        "dataset_path",
+        "reconstruction_path",
+    }
+    assert all(name not in joined for name in removed_workflow_names)
+    assert "scipy" not in joined.lower()
+    assert ".gif" not in joined.lower()

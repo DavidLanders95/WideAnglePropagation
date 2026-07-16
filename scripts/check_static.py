@@ -38,12 +38,12 @@ TARGET_NOTEBOOKS = [
 
 def parse_python_files() -> None:
     for path in PYTHON_FILES:
-        ast.parse(path.read_text(), filename=str(path))
+        ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         print(f"{path.relative_to(ROOT)}: ast ok")
 
 
 def assert_exports_exist(path: Path) -> None:
-    module = ast.parse(path.read_text(), filename=str(path))
+    module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     defined = set()
     exported = None
 
@@ -71,7 +71,7 @@ def assert_exports_exist(path: Path) -> None:
 
 def parse_target_notebooks(*, require_no_outputs: bool = False) -> None:
     for path in TARGET_NOTEBOOKS:
-        notebook = json.loads(path.read_text())
+        notebook = json.loads(path.read_text(encoding="utf-8"))
         output_cells = 0
 
         for index, cell in enumerate(notebook["cells"]):

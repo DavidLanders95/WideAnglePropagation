@@ -25,11 +25,11 @@ dependencies.
   showing a 30 keV, 2 degree beam moving through a pristine, unstrained silicon
   slab. It contains no defects or reconstruction machinery.
 - `sideview_glancing_ptychography_1d.ipynb`: 30 keV, 2 degree silicon
-  free-atom reconstruction of one calibrated pristine surface row. It includes
-  the forward side viewer, 16 uniform non-lattice candidates, fixed known
-  exterior silicon, held-out validation, a reconstruction animation, and a
-  truth/reconstruction side-view comparison. It does not claim recovery of the
-  deeper slab.
+  registration over the complete 1000 Å by 50 Å pristine slab. It regenerates
+  all 41 synthetic scans, independently constructs the diamond host, and fits
+  only axial phase, surface offset, in-plane rotation, and axial strain using a
+  compiled JAX/Optax objective. Every scan is fitted; the reported detector
+  errors are fit metrics, not held-out results.
 - `nine_atom_free_atom_ptychography_1d.ipynb`: gated free-atom experiment in
   which 24 uniform candidates must recover a nine-atom irregular Si cluster
   before the method is promoted to the large side-view geometry.
@@ -39,9 +39,8 @@ dependencies.
 - Input crystal data lives in `notebooks/data/`.
 - Generated compact simulation caches and notebook figures are written under
   `notebooks/cbed/results/` and `notebooks/verification/figures/`.
-- Glancing ptychography datasets and reconstructions are written under
-  `notebook_results/sideview_glancing_ptychography_1d/` only after
-  its opt-in execution flags are enabled.
+- The crystal-registration notebook always recomputes its synthetic data and
+  fit and does not write data or reconstruction files.
 - Paper-ready exports are written under `Paper/figures/` when the save flags in
   each notebook are enabled.
 

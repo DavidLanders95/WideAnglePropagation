@@ -1,47 +1,32 @@
-"""Crystalline host plus sparse substitution/adatom ptychography in 1D.
+"""Four-parameter crystalline-host registration for glancing ptychography.
 
-The diffraction forward model remains two-dimensional in ``(s, u)``.  Elastic
-regularization is evaluated on latent three-dimensional host coordinates
-``(s, y, u)`` so diamond-Si bond lengths and tetrahedral angles are retained.
+The diffraction model remains two-dimensional in ``(s, u)`` while host sites
+retain latent three-dimensional coordinates ``(s, y, u)``.  Registration fits
+only axial phase, surface-normal offset, in-plane rotation, and axial strain.
+There are no per-site, occupancy, species, or off-lattice variables.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import json
 import operator
-from pathlib import Path
-from time import perf_counter
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-from scipy.spatial import cKDTree
 
-from .propagation_methods import energy2wavelength
-from .ptychography_1d import normalized_amplitude_loss_1d, simulate_glancing_scan_1d
-from .ptychography_atoms_1d import (
-    FreeAtomModel1D,
-    render_species_mixture_atoms_1d,
-)
+from .ptychography_1d import simulate_glancing_scan_1d
+from .propagation_methods import interaction_constant
 
 
 __all__ = [
-    "CrystallineDefectModel1D",
-    "CrystallineDefectReconstruction1D",
     "CrystallineHostModel1D",
-    "CrystallineHostReconstruction1D",
-    "build_diamond_neighbor_graph_1d",
-    "keating_lattice_energy_1d",
-    "load_crystalline_defect_reconstruction_1d",
-    "make_crystalline_defect_model_1d",
+    "CrystallineRegistrationParameters1D",
+    "CrystallineRegistrationResult1D",
     "make_crystalline_host_model_1d",
-    "reconstruct_crystalline_defects_1d",
-    "reconstruct_crystalline_host_1d",
-    "render_crystalline_defects_1d",
+    "register_crystalline_host_1d",
     "render_crystalline_host_1d",
-    "save_crystalline_defect_reconstruction_1d",
     "transform_crystalline_host_1d",
 ]
 
@@ -50,73 +35,51 @@ Array = Any
 
 
 @dataclass(frozen=True)
-class CrystallineDefectModel1D:
-    """A latent 3D crystalline host and a separate projected adatom pool.
-
-    Host coordinates use column order ``(s, y, u)``.  Species templates have
-    shape ``(n_species, template_s, template_u)``.  Bonds contain pairs and
-    angles contain ``(center, neighbor_1, neighbor_2)`` triples.
-    """
+class CrystallineHostModel1D:
+    """A single-species crystalline host on a two-dimensional potential grid."""
 
     axial_coordinates: Array
     transverse_coordinates: Array
-    species_templates: Array
-    species_names: tuple[str, ...]
-    host_reference_positions_3d: Array
-    host_bonds: Array
-    host_angles: Array
-    host_bounds: Array
-    adatom_initial_positions: Array
-    adatom_bounds: Array
-    adatom_host_pairs: Array
-    adatom_pairs: Array
-    species_bond_lengths_A: Array
-    host_update_weights: Array | None = None
-    defect_core_bounds: Array | None = None
-    fixed_potential: Array | None = None
-    host_maximum_displacement_A: float = 4.0
-    adatom_maximum_displacement_A: float = 3.0
+    atom_template: Array
+    reference_positions_3d: Array
+    axial_period_A: float
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
-class CrystallineDefectReconstruction1D:
-    """Best hybrid defect estimate and checkpoint histories."""
+class CrystallineRegistrationParameters1D:
+    """The four globally fitted crystalline-host parameters."""
 
+    axial_phase_A: Any = 0.0
+    surface_offset_A: Any = 0.0
+    rotation_rad: Any = 0.0
+    axial_strain: Any = 0.0
+
+
+@dataclass(frozen=True)
+class CrystallineRegistrationResult1D:
+    """Registered host, predictions, metrics, and complete optimizer history."""
+
+    initial_parameters: CrystallineRegistrationParameters1D
+    optimization_start_parameters: CrystallineRegistrationParameters1D
+    parameters: CrystallineRegistrationParameters1D
     host_positions_3d: Array
-    host_occupancies: Array
-    host_species_probabilities: Array
-    adatom_positions: Array
-    adatom_occupancies: Array
-    adatom_species_probabilities: Array
-    translation: Array
-    strain: Array
-    rotation_rad: Array
     potential: Array
     predicted_intensities: Array
     measured_intensities: Array
-    update_history: Array
-    elapsed_time_history: Array
-    training_loss_history: Array
-    validation_loss_history: Array
-    translation_history: Array
-    strain_history: Array
-    rotation_history: Array
-    host_displacement_history: Array
-    host_occupancy_history: Array
-    host_species_probability_history: Array
-    adatom_position_history: Array
-    adatom_occupancy_history: Array
-    adatom_species_probability_history: Array
-    best_update: int
+    detector_angles_mrad: Array
+    reflected_detector_mask: Array
+    specular_detector_mask: Array
+    phase_grid_A: Array
+    phase_grid_objective: Array
+    objective_history: Array
+    parameter_history: Array
+    initial_objective: Array
+    whole_detector_nrmse: Array
+    reflected_nrmse: Array
+    specular_nrmse: Array
+    converged: Array
     metadata: Mapping[str, Any] = field(default_factory=dict)
-
-
-# Pristine-host reconstruction uses the same storage layout while fixing all
-# occupancy, substitution, and off-lattice variables.  Public aliases keep the
-# notebook vocabulary focused on the simpler physical model.
-CrystallineHostModel1D = CrystallineDefectModel1D
-CrystallineHostReconstruction1D = CrystallineDefectReconstruction1D
 
 
 def _array(name: str, value: Any, ndim: int) -> Array:
@@ -126,1006 +89,402 @@ def _array(name: str, value: Any, ndim: int) -> Array:
     return result
 
 
-def _host_projection(reference_positions_3d: Array) -> Array:
-    return jnp.stack(
-        [reference_positions_3d[:, 0], reference_positions_3d[:, 2]], axis=-1
-    )
+def _concrete_numpy(value: Any) -> np.ndarray | None:
+    if isinstance(value, jax.core.Tracer):
+        return None
+    try:
+        return np.asarray(value)
+    except (jax.errors.ConcretizationTypeError, jax.errors.TracerArrayConversionError):
+        return None
 
 
-def build_diamond_neighbor_graph_1d(
-    reference_positions_3d: Any,
-    *,
-    bond_cutoff_A: float = 2.65,
-) -> tuple[Array, Array]:
-    """Build sparse bond pairs and tetrahedral angle triples.
-
-    The graph construction is host-side and uses a KD tree.  It therefore
-    scales with the number of physical neighbors rather than forming an
-    ``n_atom`` squared distance matrix.
-    """
-    positions = np.asarray(reference_positions_3d, dtype=float)
-    if positions.ndim != 2 or positions.shape[1] != 3 or positions.shape[0] == 0:
-        raise ValueError("reference_positions_3d must have shape (n_host, 3)")
-    if not np.all(np.isfinite(positions)):
-        raise ValueError("reference_positions_3d must be finite")
-    if not np.isfinite(bond_cutoff_A) or bond_cutoff_A <= 0.0:
-        raise ValueError("bond_cutoff_A must be positive")
-    pairs = np.asarray(
-        sorted(cKDTree(positions).query_pairs(float(bond_cutoff_A))), dtype=np.int32
-    )
-    if pairs.size == 0:
-        pairs = np.empty((0, 2), dtype=np.int32)
-    neighbors: list[list[int]] = [[] for _ in range(len(positions))]
-    for first, second in pairs:
-        neighbors[int(first)].append(int(second))
-        neighbors[int(second)].append(int(first))
-    angles = []
-    for center, local in enumerate(neighbors):
-        for first_index in range(len(local)):
-            for second_index in range(first_index + 1, len(local)):
-                angles.append((center, local[first_index], local[second_index]))
-    angle_array = np.asarray(angles, dtype=np.int32)
-    if angle_array.size == 0:
-        angle_array = np.empty((0, 3), dtype=np.int32)
-    return jnp.asarray(pairs), jnp.asarray(angle_array)
-
-
-def _possible_cross_pairs(
-    first: np.ndarray,
-    second: np.ndarray,
-    radius: float,
-) -> np.ndarray:
-    if len(first) == 0 or len(second) == 0:
-        return np.empty((0, 2), dtype=np.int32)
-    tree = cKDTree(second)
-    pairs = [
-        (first_index, second_index)
-        for first_index, point in enumerate(first)
-        for second_index in tree.query_ball_point(point, radius)
-    ]
-    return np.asarray(pairs, dtype=np.int32).reshape(-1, 2)
-
-
-def _possible_self_pairs(positions: np.ndarray, radius: float) -> np.ndarray:
-    if len(positions) < 2:
-        return np.empty((0, 2), dtype=np.int32)
-    pairs = sorted(cKDTree(positions).query_pairs(radius))
-    return np.asarray(pairs, dtype=np.int32).reshape(-1, 2)
-
-
-def make_crystalline_defect_model_1d(
-    axial_coordinates: Any,
-    transverse_coordinates: Any,
-    species_templates: Any,
-    species_names: Sequence[str],
-    host_reference_positions_3d: Any,
-    host_bounds: Any,
-    adatom_initial_positions: Any,
-    adatom_bounds: Any,
-    *,
-    species_bond_lengths_A: Any | None = None,
-    host_update_weights: Any | None = None,
-    defect_core_bounds: Any | None = None,
-    fixed_potential: Any | None = None,
-    bond_cutoff_A: float = 2.65,
-    host_maximum_displacement_A: float = 4.0,
-    adatom_maximum_displacement_A: float = 3.0,
-    repulsion_neighbor_radius_A: float = 7.0,
-    metadata: Mapping[str, Any] | None = None,
-) -> CrystallineDefectModel1D:
-    """Construct a validated model and all static sparse neighbor lists."""
-    coordinates_s = np.asarray(axial_coordinates, dtype=float)
-    coordinates_u = np.asarray(transverse_coordinates, dtype=float)
-    templates = np.asarray(species_templates)
-    names = tuple(str(name) for name in species_names)
-    host = np.asarray(host_reference_positions_3d, dtype=float)
-    host_bounds_array = np.asarray(host_bounds, dtype=float)
-    adatoms = np.asarray(adatom_initial_positions, dtype=float)
-    adatom_bounds_array = np.asarray(adatom_bounds, dtype=float)
-    if coordinates_s.ndim != 1 or coordinates_u.ndim != 1:
-        raise ValueError("specimen coordinates must be one-dimensional")
-    if templates.ndim != 3 or templates.shape[0] != len(names) or len(names) < 1:
-        raise ValueError("species templates and names do not match")
-    if len(set(names)) != len(names):
-        raise ValueError("species names must be unique")
-    if host.ndim != 2 or host.shape[1] != 3 or host.shape[0] == 0:
-        raise ValueError("host_reference_positions_3d must have shape (n, 3)")
-    if adatoms.ndim != 2 or adatoms.shape[1] != 2:
-        raise ValueError("adatom_initial_positions must have shape (n, 2)")
-    if host_bounds_array.shape != (2, 2) or adatom_bounds_array.shape != (2, 2):
-        raise ValueError("host and adatom bounds must have shape (2, 2)")
-    if np.any(host_bounds_array[:, 1] <= host_bounds_array[:, 0]) or np.any(
-        adatom_bounds_array[:, 1] <= adatom_bounds_array[:, 0]
+def _validate_uniform_coordinates(name: str, coordinates: np.ndarray) -> None:
+    if coordinates.size < 2 or not np.all(np.isfinite(coordinates)):
+        raise ValueError(f"{name} must contain at least two finite values")
+    differences = np.diff(coordinates)
+    if np.any(differences <= 0.0) or not np.allclose(
+        differences, differences[0], rtol=5e-4, atol=1e-7
     ):
-        raise ValueError("candidate bounds must have positive width")
-    projected_host = host[:, [0, 2]]
-    if host_update_weights is None:
-        update_weights = np.ones(host.shape[0], dtype=float)
-    else:
-        update_weights = np.asarray(host_update_weights, dtype=float)
-    if update_weights.shape != (host.shape[0],):
-        raise ValueError("host_update_weights must have one value per host site")
-    if not np.all(np.isfinite(update_weights)) or np.any(
-        (update_weights < 0.0) | (update_weights > 1.0)
-    ):
-        raise ValueError("host_update_weights must be finite and lie in [0, 1]")
-    if np.any(projected_host < host_bounds_array[:, 0]) or np.any(
-        projected_host > host_bounds_array[:, 1]
-    ):
-        raise ValueError("projected host sites must lie inside host_bounds")
-    if len(adatoms) and (
-        np.any(adatoms < adatom_bounds_array[:, 0])
-        or np.any(adatoms > adatom_bounds_array[:, 1])
-    ):
-        raise ValueError("adatom seeds must lie inside adatom_bounds")
-    for name, value in (
-        ("host_maximum_displacement_A", host_maximum_displacement_A),
-        ("adatom_maximum_displacement_A", adatom_maximum_displacement_A),
-        ("repulsion_neighbor_radius_A", repulsion_neighbor_radius_A),
-    ):
-        if not np.isfinite(value) or value <= 0.0:
-            raise ValueError(f"{name} must be positive")
-    if species_bond_lengths_A is None:
-        bond_lengths = np.full((len(names), len(names)), 2.3517, dtype=float)
-    else:
-        bond_lengths = np.asarray(species_bond_lengths_A, dtype=float)
-    if bond_lengths.shape != (len(names), len(names)) or not np.allclose(
-        bond_lengths, bond_lengths.T
-    ):
-        raise ValueError("species_bond_lengths_A must be a symmetric species matrix")
-    if defect_core_bounds is None:
-        core_bounds = host_bounds_array.copy()
-        core_bounds[1, 1] = max(core_bounds[1, 1], adatom_bounds_array[1, 1])
-    else:
-        core_bounds = np.asarray(defect_core_bounds, dtype=float)
-    if core_bounds.shape != (2, 2) or np.any(core_bounds[:, 1] <= core_bounds[:, 0]):
-        raise ValueError("defect_core_bounds must have shape (2, 2) and positive width")
-    bonds, angles = build_diamond_neighbor_graph_1d(
-        host, bond_cutoff_A=bond_cutoff_A
-    )
-    possible_radius = (
-        repulsion_neighbor_radius_A
-        + host_maximum_displacement_A
-        + adatom_maximum_displacement_A
-    )
-    cross = _possible_cross_pairs(adatoms, projected_host, possible_radius)
-    adatom_pairs = _possible_self_pairs(
-        adatoms, repulsion_neighbor_radius_A + 2 * adatom_maximum_displacement_A
-    )
-    return CrystallineDefectModel1D(
-        axial_coordinates=jnp.asarray(coordinates_s),
-        transverse_coordinates=jnp.asarray(coordinates_u),
-        species_templates=jnp.asarray(templates),
-        species_names=names,
-        host_reference_positions_3d=jnp.asarray(host),
-        host_bonds=bonds,
-        host_angles=angles,
-        host_bounds=jnp.asarray(host_bounds_array),
-        adatom_initial_positions=jnp.asarray(adatoms),
-        adatom_bounds=jnp.asarray(adatom_bounds_array),
-        adatom_host_pairs=jnp.asarray(cross),
-        adatom_pairs=jnp.asarray(adatom_pairs),
-        species_bond_lengths_A=jnp.asarray(bond_lengths),
-        host_update_weights=jnp.asarray(update_weights),
-        defect_core_bounds=jnp.asarray(core_bounds),
-        fixed_potential=None if fixed_potential is None else jnp.asarray(fixed_potential),
-        host_maximum_displacement_A=float(host_maximum_displacement_A),
-        adatom_maximum_displacement_A=float(adatom_maximum_displacement_A),
-        metadata=dict(metadata or {}),
-    )
+        raise ValueError(f"{name} must be uniformly increasing")
 
 
 def make_crystalline_host_model_1d(
     axial_coordinates: Any,
     transverse_coordinates: Any,
     atom_template: Any,
-    host_reference_positions_3d: Any,
-    host_bounds: Any,
+    reference_positions_3d: Any,
     *,
-    species_name: str = "Si",
-    equilibrium_bond_length_A: float = 2.3517,
-    host_update_weights: Any | None = None,
-    fixed_potential: Any | None = None,
-    bond_cutoff_A: float = 2.65,
-    host_maximum_displacement_A: float = 4.0,
+    axial_period_A: float,
     metadata: Mapping[str, Any] | None = None,
 ) -> CrystallineHostModel1D:
-    """Build a single-species crystalline host with no defect variables.
-
-    The returned model still carries empty adatom arrays so it remains
-    persistence-compatible with the more general defect reconstruction.
-    """
+    """Validate and build a fixed, single-species crystalline-host model."""
     coordinates_s = np.asarray(axial_coordinates, dtype=float)
     coordinates_u = np.asarray(transverse_coordinates, dtype=float)
     template = np.asarray(atom_template)
-    if template.ndim != 2:
-        raise ValueError("atom_template must be two-dimensional")
-    if not isinstance(species_name, str) or not species_name.strip():
-        raise ValueError("species_name must be a non-empty string")
-    if not np.isfinite(equilibrium_bond_length_A) or equilibrium_bond_length_A <= 0.0:
-        raise ValueError("equilibrium_bond_length_A must be positive")
+    positions = np.asarray(reference_positions_3d, dtype=float)
     if coordinates_s.ndim != 1 or coordinates_u.ndim != 1:
         raise ValueError("specimen coordinates must be one-dimensional")
-    specimen_bounds = np.asarray(
+    _validate_uniform_coordinates("axial_coordinates", coordinates_s)
+    _validate_uniform_coordinates("transverse_coordinates", coordinates_u)
+    if template.ndim != 2 or min(template.shape) < 3:
+        raise ValueError("atom_template must be two-dimensional with at least 3 samples")
+    if any(size % 2 == 0 for size in template.shape):
+        raise ValueError("atom_template dimensions must be odd")
+    if np.iscomplexobj(template) or not np.all(np.isfinite(template)):
+        raise ValueError("atom_template must be finite and real")
+    if positions.ndim != 2 or positions.shape[1:] != (3,) or len(positions) == 0:
+        raise ValueError("reference_positions_3d must have shape (n_host, 3)")
+    if not np.all(np.isfinite(positions)):
+        raise ValueError("reference_positions_3d must be finite")
+    projected = positions[:, [0, 2]]
+    grid_bounds = np.asarray(
         [
             [coordinates_s[0], coordinates_s[-1]],
             [coordinates_u[0], coordinates_u[-1]],
-        ],
-        dtype=float,
+        ]
     )
-    return make_crystalline_defect_model_1d(
-        coordinates_s,
-        coordinates_u,
-        template[None, ...],
-        (species_name.strip(),),
-        host_reference_positions_3d,
-        host_bounds,
-        np.empty((0, 2), dtype=float),
-        specimen_bounds,
-        species_bond_lengths_A=np.asarray([[equilibrium_bond_length_A]]),
-        host_update_weights=host_update_weights,
-        defect_core_bounds=host_bounds,
-        fixed_potential=fixed_potential,
-        bond_cutoff_A=bond_cutoff_A,
-        host_maximum_displacement_A=host_maximum_displacement_A,
-        metadata=metadata,
+    if np.any(projected < grid_bounds[:, 0]) or np.any(projected > grid_bounds[:, 1]):
+        raise ValueError("reference host positions must lie inside the specimen grid")
+    period = float(axial_period_A)
+    if not np.isfinite(period) or period <= 0.0:
+        raise ValueError("axial_period_A must be positive and finite")
+    return CrystallineHostModel1D(
+        axial_coordinates=jnp.asarray(coordinates_s),
+        transverse_coordinates=jnp.asarray(coordinates_u),
+        atom_template=jnp.asarray(template),
+        reference_positions_3d=jnp.asarray(positions),
+        axial_period_A=period,
+        metadata=dict(metadata or {}),
+    )
+
+
+def _parameters_to_array(parameters: CrystallineRegistrationParameters1D) -> Array:
+    if not isinstance(parameters, CrystallineRegistrationParameters1D):
+        raise TypeError("parameters must be CrystallineRegistrationParameters1D")
+    values = jnp.asarray(
+        [
+            parameters.axial_phase_A,
+            parameters.surface_offset_A,
+            parameters.rotation_rad,
+            parameters.axial_strain,
+        ]
+    )
+    if values.shape != (4,):
+        raise ValueError("registration parameters must be scalar values")
+    concrete = _concrete_numpy(values)
+    if concrete is not None and not np.all(np.isfinite(concrete)):
+        raise ValueError("registration parameters must be finite")
+    return values
+
+
+def _array_to_parameters(values: Any) -> CrystallineRegistrationParameters1D:
+    array = _array("parameter vector", values, 1)
+    if array.shape != (4,):
+        raise ValueError("parameter vector must have shape (4,)")
+    return CrystallineRegistrationParameters1D(
+        axial_phase_A=array[0],
+        surface_offset_A=array[1],
+        rotation_rad=array[2],
+        axial_strain=array[3],
     )
 
 
 def transform_crystalline_host_1d(
     reference_positions_3d: Any,
-    translation: Any,
-    strain: Any,
+    axial_phase_A: Any,
+    surface_offset_A: Any,
     rotation_rad: Any,
-    local_displacements: Any,
-    update_weights: Any | None = None,
+    axial_strain: Any,
 ) -> Array:
-    """Apply an in-plane transform only where site update weights permit it.
+    """Apply axial strain, rotation, and translation to every host site.
 
-    A weight of zero leaves the reference site exactly fixed, while a weight
-    of one applies the full affine and local transform.  Intermediate values
-    provide a smooth boundary around an illuminated reconstruction volume.
+    Strain and rotation act in the projected ``(s, u)`` plane about the mean
+    projected host position. The latent ``y`` coordinate is retained exactly.
     """
     reference = _array("reference_positions_3d", reference_positions_3d, 2)
-    translation_array = _array("translation", translation, 1)
-    strain_array = _array("strain", strain, 2)
-    displacements = _array("local_displacements", local_displacements, 2)
-    if reference.shape[1] != 3 or translation_array.shape != (2,):
-        raise ValueError("reference and translation shapes are invalid")
-    if strain_array.shape != (2, 2) or displacements.shape != (reference.shape[0], 2):
-        raise ValueError("strain or displacement shape is invalid")
-    weights = (
-        jnp.ones((reference.shape[0],), dtype=reference.dtype)
-        if update_weights is None
-        else _array("update_weights", update_weights, 1)
+    if reference.shape[1:] != (3,) or reference.shape[0] == 0:
+        raise ValueError("reference_positions_3d must have shape (n_host, 3)")
+    scalar_values = jnp.asarray(
+        [axial_phase_A, surface_offset_A, rotation_rad, axial_strain]
     )
-    if weights.shape != (reference.shape[0],):
-        raise ValueError("update_weights must have one value per host site")
-    projected = _host_projection(reference)
+    if scalar_values.shape != (4,):
+        raise ValueError("registration transform parameters must be scalar")
+    concrete_reference = _concrete_numpy(reference)
+    concrete_scalars = _concrete_numpy(scalar_values)
+    if concrete_reference is not None and not np.all(np.isfinite(concrete_reference)):
+        raise ValueError("reference_positions_3d must be finite")
+    if concrete_scalars is not None and not np.all(np.isfinite(concrete_scalars)):
+        raise ValueError("registration transform parameters must be finite")
+    projected = reference[:, [0, 2]]
     center = jnp.mean(projected, axis=0)
-    cosine = jnp.cos(rotation_rad)
-    sine = jnp.sin(rotation_rad)
-    rotation = jnp.asarray([[cosine, -sine], [sine, cosine]])
-    deformation = rotation @ (jnp.eye(2, dtype=projected.dtype) + strain_array)
-    transformed = (projected - center) @ deformation.T + center
-    candidate = transformed + translation_array + displacements
-    transformed = projected + weights[:, None] * (candidate - projected)
-    return reference.at[:, 0].set(transformed[:, 0]).at[:, 2].set(transformed[:, 1])
-
-
-def keating_lattice_energy_1d(
-    positions_3d: Any,
-    occupancies: Any,
-    species_probabilities: Any,
-    bonds: Any,
-    angles: Any,
-    species_bond_lengths_A: Any,
-    *,
-    stretch_weight: float = 1.0,
-    bend_weight: float = 1.0,
-) -> Array:
-    """Return occupancy-gated sparse bond-stretch and tetrahedral-angle energy."""
-    positions = _array("positions_3d", positions_3d, 2)
-    occupancy = _array("occupancies", occupancies, 1)
-    probabilities = _array("species_probabilities", species_probabilities, 2)
-    bond_indices = _array("bonds", bonds, 2).astype(jnp.int32)
-    angle_indices = _array("angles", angles, 2).astype(jnp.int32)
-    lengths = _array("species_bond_lengths_A", species_bond_lengths_A, 2)
-    if positions.shape != (occupancy.shape[0], 3):
-        raise ValueError("position and occupancy shapes do not match")
-    if probabilities.shape[0] != positions.shape[0]:
-        raise ValueError("species probabilities must have one row per host site")
-    if lengths.shape != (probabilities.shape[1], probabilities.shape[1]):
-        raise ValueError("bond-length matrix does not match the species count")
-    if bond_indices.shape[1:] != (2,) or angle_indices.shape[1:] != (3,):
-        raise ValueError("bonds and angles must have shapes (n,2) and (m,3)")
-    if bond_indices.shape[0]:
-        first, second = bond_indices[:, 0], bond_indices[:, 1]
-        vectors = positions[second] - positions[first]
-        squared_distance = jnp.sum(vectors**2, axis=-1)
-        pair_probabilities = (
-            probabilities[first, :, None] * probabilities[second, None, :]
-        )
-        target = jnp.sum(pair_probabilities * lengths[None, :, :], axis=(1, 2))
-        bond_gate = occupancy[first] * occupancy[second]
-        stretch = jnp.sum(
-            bond_gate * ((squared_distance - target**2) / target**2) ** 2
-        ) / jnp.maximum(jnp.sum(bond_gate), 1.0)
-    else:
-        stretch = jnp.asarray(0.0, dtype=positions.dtype)
-    if angle_indices.shape[0]:
-        center, first, second = (
-            angle_indices[:, 0],
-            angle_indices[:, 1],
-            angle_indices[:, 2],
-        )
-        vector_first = positions[first] - positions[center]
-        vector_second = positions[second] - positions[center]
-        cosine = jnp.sum(vector_first * vector_second, axis=-1) / jnp.maximum(
-            jnp.linalg.norm(vector_first, axis=-1)
-            * jnp.linalg.norm(vector_second, axis=-1),
-            1e-8,
-        )
-        angle_gate = occupancy[center] * occupancy[first] * occupancy[second]
-        bend = jnp.sum(angle_gate * (cosine + 1.0 / 3.0) ** 2) / jnp.maximum(
-            jnp.sum(angle_gate), 1.0
-        )
-    else:
-        bend = jnp.asarray(0.0, dtype=positions.dtype)
-    return stretch_weight * stretch + bend_weight * bend
-
-
-def _base_model(
-    model: CrystallineDefectModel1D,
-    initial_positions: Array,
-    bounds: Array,
-    maximum_displacement_A: float,
-) -> FreeAtomModel1D:
-    # A globally translated lattice may place a boundary atom just outside the
-    # reconstructed grid while its finite template still overlaps the grid.
-    # The local renderer only uses these positions as stencil anchors, so clip
-    # the anchors to the grid and retain the physical positions passed to the
-    # renderer itself.
-    anchor_positions = jnp.clip(
-        initial_positions,
-        jnp.asarray(bounds)[:, 0],
-        jnp.asarray(bounds)[:, 1],
-    )
-    return FreeAtomModel1D(
-        model.axial_coordinates,
-        model.transverse_coordinates,
-        model.species_templates[0],
-        bounds,
-        anchor_positions,
-        fixed_potential=None,
-        maximum_displacement_A=maximum_displacement_A,
-        metadata=model.metadata,
+    relative = projected - center
+    strained = relative.at[:, 0].multiply(1.0 + scalar_values[3])
+    cosine = jnp.cos(scalar_values[2])
+    sine = jnp.sin(scalar_values[2])
+    transformed_s = cosine * strained[:, 0] - sine * strained[:, 1]
+    transformed_u = sine * strained[:, 0] + cosine * strained[:, 1]
+    transformed = jnp.stack([transformed_s, transformed_u], axis=1) + center
+    transformed = transformed + scalar_values[:2]
+    return reference.at[:, 0].set(transformed[:, 0]).at[:, 2].set(
+        transformed[:, 1]
     )
 
 
-def _render_bounds(model: CrystallineDefectModel1D) -> Array:
-    return jnp.asarray(
-        [
-            [model.axial_coordinates[0], model.axial_coordinates[-1]],
-            [model.transverse_coordinates[0], model.transverse_coordinates[-1]],
-        ]
+def _same_fft_convolution_2d(image: Array, kernel: Array) -> Array:
+    """Convolve two real JAX arrays and crop the odd-kernel ``same`` result."""
+    full_shape = (
+        image.shape[0] + kernel.shape[0] - 1,
+        image.shape[1] + kernel.shape[1] - 1,
     )
-
-
-def render_crystalline_defects_1d(
-    model: CrystallineDefectModel1D,
-    host_positions_3d: Any,
-    host_occupancies: Any,
-    host_species_probabilities: Any,
-    adatom_positions: Any,
-    adatom_occupancies: Any,
-    adatom_species_probabilities: Any,
-) -> Array:
-    """Render host and off-lattice atoms as fixed-template species mixtures."""
-    host_positions = _array("host_positions_3d", host_positions_3d, 2)
-    projected_host = _host_projection(host_positions)
-    host_model = _base_model(
-        model,
-        projected_host,
-        _render_bounds(model),
-        min(model.host_maximum_displacement_A, 0.5),
+    image_frequency = jnp.fft.rfftn(image, full_shape, axes=(0, 1))
+    kernel_frequency = jnp.fft.rfftn(kernel, full_shape, axes=(0, 1))
+    full = jnp.fft.irfftn(
+        image_frequency * kernel_frequency, full_shape, axes=(0, 1)
     )
-    host_potential = render_species_mixture_atoms_1d(
-        host_model,
-        model.species_templates,
-        projected_host,
-        host_occupancies,
-        host_species_probabilities,
-    )
-    adatom_positions_array = _array("adatom_positions", adatom_positions, 2)
-    if adatom_positions_array.shape[0]:
-        adatom_model = _base_model(
-            model,
-            adatom_positions_array,
-            _render_bounds(model),
-            min(model.adatom_maximum_displacement_A, 0.5),
-        )
-        adatom_potential = render_species_mixture_atoms_1d(
-            adatom_model,
-            model.species_templates,
-            adatom_positions_array,
-            adatom_occupancies,
-            adatom_species_probabilities,
-        )
-    else:
-        adatom_potential = jnp.zeros_like(host_potential)
-    fixed = (
-        jnp.zeros_like(host_potential)
-        if model.fixed_potential is None
-        else jnp.asarray(model.fixed_potential, dtype=host_potential.dtype)
-    )
-    return fixed + host_potential + adatom_potential
+    start_s = (kernel.shape[0] - 1) // 2
+    start_u = (kernel.shape[1] - 1) // 2
+    return full[
+        start_s : start_s + image.shape[0],
+        start_u : start_u + image.shape[1],
+    ]
 
 
 def render_crystalline_host_1d(
     model: CrystallineHostModel1D,
     host_positions_3d: Any,
 ) -> Array:
-    """Render a fully occupied single-species crystalline host."""
-    if len(model.species_names) != 1:
-        raise ValueError("pristine host rendering requires exactly one species")
+    """Render the host by splatting sites and convolving their shared template."""
     positions = _array("host_positions_3d", host_positions_3d, 2)
-    n_host = positions.shape[0]
-    dtype = jnp.result_type(positions, model.species_templates)
-    return render_crystalline_defects_1d(
-        model,
-        positions,
-        jnp.ones((n_host,), dtype=dtype),
-        jnp.ones((n_host, 1), dtype=dtype),
-        jnp.empty((0, 2), dtype=dtype),
-        jnp.empty((0,), dtype=dtype),
-        jnp.empty((0, 1), dtype=dtype),
-    )
+    if positions.shape != model.reference_positions_3d.shape:
+        raise ValueError("host_positions_3d must match the model reference shape")
+    concrete_positions = _concrete_numpy(positions)
+    if concrete_positions is not None and not np.all(np.isfinite(concrete_positions)):
+        raise ValueError("host_positions_3d must be finite")
+    site_grid = _splat_crystalline_sites_1d(model, positions)
+    template = jnp.asarray(model.atom_template)
+    return _same_fft_convolution_2d(site_grid, template)
 
 
-def _sparse_repulsion(
-    first_positions: Array,
-    first_occupancies: Array,
-    second_positions: Array,
-    second_occupancies: Array,
-    pairs: Array,
-    minimum_distance_A: float,
+def _splat_crystalline_sites_1d(
+    model: CrystallineHostModel1D,
+    positions: Array,
 ) -> Array:
-    if pairs.shape[0] == 0:
-        return jnp.asarray(0.0, dtype=first_positions.dtype)
-    first_indices, second_indices = pairs[:, 0], pairs[:, 1]
-    distances = jnp.linalg.norm(
-        first_positions[first_indices] - second_positions[second_indices], axis=-1
+    """Deposit projected sites onto the specimen grid with cubic weights."""
+    coordinates_s = jnp.asarray(model.axial_coordinates)
+    coordinates_u = jnp.asarray(model.transverse_coordinates)
+    template = jnp.asarray(model.atom_template)
+    projected = positions[:, [0, 2]]
+    ds = coordinates_s[1] - coordinates_s[0]
+    du = coordinates_u[1] - coordinates_u[0]
+    output_shape = (coordinates_s.shape[0], coordinates_u.shape[0])
+    fractional_indices = jnp.stack(
+        [
+            (projected[:, 0] - coordinates_s[0]) / ds,
+            (projected[:, 1] - coordinates_u[0]) / du,
+        ],
+        axis=1,
     )
-    gate = first_occupancies[first_indices] * second_occupancies[second_indices]
-    return jnp.sum(gate * jax.nn.relu(minimum_distance_A - distances) ** 2) / jnp.maximum(
-        jnp.sum(gate), 1.0
+    lower_indices = jnp.floor(fractional_indices).astype(jnp.int32)
+    fractions = fractional_indices - lower_indices
+    fraction_s = fractions[:, 0]
+    fraction_u = fractions[:, 1]
+
+    def cubic_weights(fraction: Array) -> Array:
+        return jnp.stack(
+            [
+                -fraction * (1.0 - fraction) * (2.0 - fraction) / 6.0,
+                (1.0 + fraction)
+                * (1.0 - fraction)
+                * (2.0 - fraction)
+                / 2.0,
+                (1.0 + fraction) * fraction * (2.0 - fraction) / 2.0,
+                -(1.0 + fraction)
+                * fraction
+                * (1.0 - fraction)
+                / 6.0,
+            ]
+        )
+
+    weights_s = cubic_weights(fraction_s)
+    weights_u = cubic_weights(fraction_u)
+    corner_weights = (weights_s[:, None, :] * weights_u[None, :, :]).astype(
+        template.dtype
     )
+    offsets = jnp.arange(-1, 3, dtype=jnp.int32)
+    offsets_s, offsets_u = jnp.meshgrid(offsets, offsets, indexing="ij")
+    corner_offsets = jnp.stack([offsets_s, offsets_u], axis=-1)
+    corner_indices = (
+        lower_indices[None, None, :, :] + corner_offsets[:, :, None, :]
+    )
+    shape_array = jnp.asarray(output_shape, dtype=jnp.int32)
+    valid = jnp.all(
+        (corner_indices >= 0) & (corner_indices < shape_array), axis=-1
+    )
+    clipped = jnp.clip(corner_indices, 0, shape_array - 1)
+    site_grid = jnp.zeros(output_shape, dtype=template.dtype)
+    site_grid = site_grid.at[
+        clipped[..., 0].reshape(-1), clipped[..., 1].reshape(-1)
+    ].add(jnp.where(valid, corner_weights, 0.0).reshape(-1))
+    return site_grid
 
 
-def reconstruct_crystalline_defects_1d(
-    model: CrystallineDefectModel1D,
-    input_probe: Any,
-    window_starts: Any,
-    window_length: int,
-    propagation_kernel: Any,
+def _render_with_template_frequency_1d(
+    model: CrystallineHostModel1D,
+    host_positions_3d: Array,
+    template_frequency: Array,
+) -> Array:
+    """Render using a precomputed FFT of the fixed atom template."""
+    site_grid = _splat_crystalline_sites_1d(model, host_positions_3d)
+    output_shape = site_grid.shape
+    template_shape = model.atom_template.shape
+    full_shape = (
+        output_shape[0] + template_shape[0] - 1,
+        output_shape[1] + template_shape[1] - 1,
+    )
+    full = jnp.fft.irfftn(
+        jnp.fft.rfftn(site_grid, full_shape, axes=(0, 1)) * template_frequency,
+        full_shape,
+        axes=(0, 1),
+    )
+    start_s = (template_shape[0] - 1) // 2
+    start_u = (template_shape[1] - 1) // 2
+    return full[
+        start_s : start_s + output_shape[0],
+        start_u : start_u + output_shape[1],
+    ]
+
+
+def _normalized_amplitude_numerator(
+    predicted: Array,
+    measured: Array,
+    scan_weights: Array,
+    detector_mask: Array,
+    epsilon: Array,
+) -> Array:
+    errors = (
+        jnp.sqrt(predicted + epsilon) - jnp.sqrt(measured + epsilon)
+    ) ** 2
+    weights = scan_weights[:, None] * detector_mask[None, :]
+    return jnp.sum(weights * errors)
+
+
+def _balanced_amplitude_loss_1d(
+    predicted: Any,
+    measured: Any,
+    scan_weights: Any,
+    reflected_detector_mask: Any,
+    *,
+    whole_detector_weight: Any = 0.5,
+    epsilon: Any = 1e-12,
+) -> Array:
+    """Return independently normalized whole/reflected squared amplitude loss."""
+    predicted_array = _array("predicted", predicted, 2)
+    measured_array = _array("measured", measured, 2)
+    weights = _array("scan_weights", scan_weights, 1)
+    reflected = _array("reflected_detector_mask", reflected_detector_mask, 1)
+    if predicted_array.shape != measured_array.shape:
+        raise ValueError("predicted and measured intensities must have equal shapes")
+    if weights.shape != (predicted_array.shape[0],):
+        raise ValueError("scan_weights must contain one value per scan")
+    if reflected.shape != (predicted_array.shape[1],):
+        raise ValueError("reflected_detector_mask must contain one value per pixel")
+    reflected = reflected.astype(predicted_array.dtype)
+    detector_all = jnp.ones_like(reflected)
+    epsilon_array = jnp.asarray(epsilon, dtype=predicted_array.dtype)
+    all_denominator = jnp.sum(weights[:, None] * measured_array)
+    reflected_denominator = jnp.sum(
+        weights[:, None] * reflected[None, :] * measured_array
+    )
+    all_loss = _normalized_amplitude_numerator(
+        predicted_array,
+        measured_array,
+        weights,
+        detector_all,
+        epsilon_array,
+    ) / jnp.maximum(all_denominator, epsilon_array)
+    reflected_loss = _normalized_amplitude_numerator(
+        predicted_array,
+        measured_array,
+        weights,
+        reflected,
+        epsilon_array,
+    ) / jnp.maximum(reflected_denominator, epsilon_array)
+    resolved_weight = jnp.asarray(whole_detector_weight, dtype=predicted_array.dtype)
+    return resolved_weight * all_loss + (1.0 - resolved_weight) * reflected_loss
+
+
+def _pad_scan_rows(array: Array, padded_size: int) -> Array:
+    padding = padded_size - array.shape[0]
+    return jnp.pad(array, [(0, padding)] + [(0, 0)] * (array.ndim - 1))
+
+
+def _simulate_full_domain_batch_1d(
+    global_potential: Array,
+    input_probes: Array,
+    propagation_kernel: Array,
     slice_thickness: Any,
     energy: Any,
-    measured_intensities: Any,
     *,
-    validation_indices: Sequence[int] = (),
-    updates: int = 1800,
-    stage_global_end: int = 300,
-    stage_host_end: int = 900,
-    stage_defect_end: int = 1400,
-    minibatch_size: int = 4,
-    validation_interval: int = 25,
-    evaluation_batch_size: int = 5,
-    learning_rate_start: float = 1e-2,
-    learning_rate_end: float = 5e-4,
-    keating_weight: float = 5e-2,
-    host_occupancy_weight: float = 2e-4,
-    substitution_weight: float = 5e-5,
-    adatom_weight: float = 5e-5,
-    displacement_weight: float = 1e-3,
-    binary_weight: float = 2e-4,
-    entropy_weight: float = 1e-4,
-    repulsion_weight: float = 5e-2,
-    buffer_defect_multiplier: float = 10.0,
-    initial_host_occupancy: float = 0.98,
-    initial_adatom_occupancy: float = 0.01,
-    initial_host_si_probability: float = 0.99,
-    initial_adatom_si_probability: float = 0.9,
-    translation_limit_A: float = 3.0,
-    strain_limit: float = 0.03,
-    rotation_limit_deg: float = 1.0,
-    host_displacement_limit_A: float = 0.75,
-    repulsion_minimum_distance_A: float = 1.8,
-    enable_global_transform: bool = True,
-    enable_host_displacements: bool = True,
-    enable_host_occupancies: bool = True,
-    enable_substitutions: bool = True,
-    enable_adatoms: bool = True,
-    seed: int = 0,
-    progress: bool = False,
-    progress_description: str = "crystalline defect reconstruction",
-) -> CrystallineDefectReconstruction1D:
-    """Jointly fit a deformable host, substitutions, and sparse adatoms."""
-    try:
-        import optax
-    except ImportError as exc:  # pragma: no cover
-        raise ImportError("reconstruct_crystalline_defects_1d requires Optax") from exc
-    n_updates = operator.index(updates)
-    global_end = operator.index(stage_global_end)
-    host_end = operator.index(stage_host_end)
-    defect_end = operator.index(stage_defect_end)
-    if not (0 <= global_end <= host_end <= defect_end <= n_updates):
-        raise ValueError("optimization stages must be ordered within updates")
-    starts = _array("window_starts", window_starts, 1).astype(jnp.int32)
-    measured = _array("measured_intensities", measured_intensities, 2)
-    probe = jnp.asarray(input_probe)
+    rematerialize: bool,
+) -> Array:
+    """Propagate a batch through the complete domain in one scan.
+
+    This is the common registration case: every probe starts at zero and the
+    propagation window is the complete potential.  Carrying all probe waves
+    in one scan lets XLA issue batched FFTs instead of compiling one scan per
+    padded batch.  The generic public simulator remains the fallback for
+    arbitrary windows.
+    """
+    potential = _array("global_potential", global_potential, 2)
+    probes = _array("input_probes", input_probes, 2)
     kernel = _array("propagation_kernel", propagation_kernel, 1)
-    n_scan, n_u = measured.shape
-    if starts.shape[0] != n_scan or probe.shape[-1] != n_u or kernel.shape[0] != n_u:
-        raise ValueError("scan, probe, kernel, and measurements do not match")
-    probe_rows = jnp.broadcast_to(probe, (n_scan, n_u)) if probe.ndim == 1 else probe
-    if probe_rows.shape != (n_scan, n_u):
-        raise ValueError("input_probe must be shared or contain one row per scan")
-    validation = np.asarray(validation_indices, dtype=np.int32)
-    if validation.ndim != 1 or np.unique(validation).size != validation.size or np.any(
-        (validation < 0) | (validation >= n_scan)
-    ):
-        raise ValueError("validation_indices must be unique valid scan indices")
-    training = np.setdiff1d(np.arange(n_scan, dtype=np.int32), validation)
-    if training.size == 0:
-        raise ValueError("at least one training scan is required")
-    n_host = model.host_reference_positions_3d.shape[0]
-    n_adatom = model.adatom_initial_positions.shape[0]
-    n_species = len(model.species_names)
-    if n_species < 1:
-        raise ValueError("at least one host species is required")
-    if enable_substitutions and n_species < 2:
-        raise ValueError("substitution fitting requires at least two candidate species")
-    enable_flags = (
-        enable_global_transform,
-        enable_host_displacements,
-        enable_host_occupancies,
-        enable_substitutions,
-        enable_adatoms,
+    complex_dtype = jnp.result_type(probes.dtype, kernel.dtype, jnp.complex64)
+    wave = probes.astype(complex_dtype)
+    transfer = kernel.astype(complex_dtype)
+    sigma_dz = interaction_constant(energy) * slice_thickness
+
+    def step(current_wave: Array, potential_slice: Array):
+        phase = jnp.exp(1j * sigma_dz * potential_slice)
+        current_wave = current_wave * phase[None, :]
+        propagated = jnp.fft.ifft(
+            jnp.fft.fft(current_wave, axis=-1) * transfer[None, :], axis=-1
+        )
+        return propagated, None
+
+    scan_step = jax.checkpoint(step) if rematerialize else step
+    exit_waves, _ = jax.lax.scan(scan_step, wave, potential)
+    detector_waves = jnp.fft.fftshift(
+        jnp.fft.fft(exit_waves, axis=-1), axes=-1
     )
-    if not all(isinstance(value, (bool, np.bool_)) for value in enable_flags):
-        raise TypeError("defect enable flags must be boolean")
-    if not np.isfinite(buffer_defect_multiplier) or buffer_defect_multiplier < 1.0:
-        raise ValueError("buffer_defect_multiplier must be finite and at least one")
-    if n_species > 1:
-        for name, probability in (
-            ("initial_host_si_probability", initial_host_si_probability),
-            ("initial_adatom_si_probability", initial_adatom_si_probability),
-        ):
-            if not np.isfinite(probability) or not 0.0 < probability < 1.0:
-                raise ValueError(f"{name} must lie strictly between zero and one")
-    dtype = jnp.result_type(model.host_reference_positions_3d, jnp.float32)
-    host_update_weights = (
-        jnp.ones((n_host,), dtype=dtype)
-        if model.host_update_weights is None
-        else jnp.asarray(model.host_update_weights, dtype=dtype)
-    )
-    if host_update_weights.shape != (n_host,):
-        raise ValueError("model host_update_weights must have one value per host site")
-    if n_species == 1:
-        host_logits = jnp.zeros((n_host, 1), dtype=dtype)
-        adatom_logits = jnp.zeros((n_adatom, 1), dtype=dtype)
-    else:
-        host_other = (1.0 - initial_host_si_probability) / (n_species - 1)
-        adatom_other = (1.0 - initial_adatom_si_probability) / (n_species - 1)
-        host_logits = jnp.full(
-            (n_host, n_species), jnp.log(host_other), dtype=dtype
-        ).at[:, 0].set(jnp.log(initial_host_si_probability))
-        adatom_logits = jnp.full(
-            (n_adatom, n_species), jnp.log(adatom_other), dtype=dtype
-        ).at[:, 0].set(jnp.log(initial_adatom_si_probability))
-    if not enable_substitutions:
-        host_logits = jnp.full((n_host, n_species), -12.0, dtype=dtype).at[:, 0].set(12.0)
-    resolved_initial_adatom_occupancy = (
-        initial_adatom_occupancy if enable_adatoms else 0.0
-    )
-    resolved_initial_host_occupancy = (
-        initial_host_occupancy if enable_host_occupancies else 1.0
-    )
-    parameters = {
-        "translation": jnp.zeros(2, dtype=dtype),
-        "strain": jnp.zeros((2, 2), dtype=dtype),
-        "rotation": jnp.asarray(0.0, dtype=dtype),
-        "host_displacements": jnp.zeros((n_host, 2), dtype=dtype),
-        "host_occupancies": jnp.full(
-            (n_host,), resolved_initial_host_occupancy, dtype=dtype
-        ),
-        "host_species_logits": host_logits,
-        "adatom_positions": jnp.asarray(model.adatom_initial_positions, dtype=dtype),
-        "adatom_occupancies": jnp.full(
-            (n_adatom,), resolved_initial_adatom_occupancy, dtype=dtype
-        ),
-        "adatom_species_logits": adatom_logits,
-    }
+    return jnp.abs(detector_waves) ** 2
 
-    def decode(values):
-        host_positions = transform_crystalline_host_1d(
-            model.host_reference_positions_3d,
-            values["translation"],
-            values["strain"],
-            values["rotation"],
-            values["host_displacements"],
-            host_update_weights,
-        )
-        return (
-            host_positions,
-            jax.nn.softmax(values["host_species_logits"], axis=-1),
-            jax.nn.softmax(values["adatom_species_logits"], axis=-1),
-        )
 
-    def objective(values, batch_indices, elastic_scale, discrete_scale):
-        host_positions, host_species, adatom_species = decode(values)
-        potential = render_crystalline_defects_1d(
-            model,
-            host_positions,
-            values["host_occupancies"],
-            host_species,
-            values["adatom_positions"],
-            values["adatom_occupancies"],
-            adatom_species,
-        )
-        prediction = simulate_glancing_scan_1d(
-            potential,
-            probe_rows[batch_indices],
-            starts[batch_indices],
-            window_length,
-            kernel,
-            slice_thickness,
-            energy,
-        )
-        data = jnp.sqrt(
-            normalized_amplitude_loss_1d(prediction, measured[batch_indices]) + 1e-16
-        )
-        keating = keating_lattice_energy_1d(
-            host_positions,
-            values["host_occupancies"] * host_update_weights,
-            host_species,
-            model.host_bonds,
-            model.host_angles,
-            model.species_bond_lengths_A,
-        )
-        host_projection = _host_projection(host_positions)
-        cross_repulsion = _sparse_repulsion(
-            values["adatom_positions"],
-            values["adatom_occupancies"],
-            host_projection,
-            values["host_occupancies"],
-            model.adatom_host_pairs,
-            repulsion_minimum_distance_A,
-        )
-        self_repulsion = _sparse_repulsion(
-            values["adatom_positions"],
-            values["adatom_occupancies"],
-            values["adatom_positions"],
-            values["adatom_occupancies"],
-            model.adatom_pairs,
-            repulsion_minimum_distance_A,
-        )
-        host_binary = jnp.mean(
-            values["host_occupancies"] * (1.0 - values["host_occupancies"])
-        )
-        adatom_binary = (
-            jnp.mean(values["adatom_occupancies"] * (1.0 - values["adatom_occupancies"]))
-            if n_adatom
-            else 0.0
-        )
-        host_entropy = -jnp.mean(jnp.sum(host_species * jnp.log(host_species + 1e-12), axis=-1))
-        adatom_entropy = (
-            -jnp.mean(jnp.sum(adatom_species * jnp.log(adatom_species + 1e-12), axis=-1))
-            if n_adatom
-            else 0.0
-        )
-        core_bounds = jnp.asarray(model.defect_core_bounds)
-        host_in_core = (
-            (host_projection[:, 0] >= core_bounds[0, 0])
-            & (host_projection[:, 0] <= core_bounds[0, 1])
-            & (host_projection[:, 1] >= core_bounds[1, 0])
-            & (host_projection[:, 1] <= core_bounds[1, 1])
-        )
-        host_defect_weight = jnp.where(host_in_core, 1.0, buffer_defect_multiplier)
-        adatom_in_core = (
-            (values["adatom_positions"][:, 0] >= core_bounds[0, 0])
-            & (values["adatom_positions"][:, 0] <= core_bounds[0, 1])
-            & (values["adatom_positions"][:, 1] >= core_bounds[1, 0])
-            & (values["adatom_positions"][:, 1] <= core_bounds[1, 1])
-        )
-        adatom_defect_weight = jnp.where(
-            adatom_in_core, 1.0, buffer_defect_multiplier
-        )
-        return (
-            data
-            + elastic_scale * keating_weight * keating
-            + host_occupancy_weight * jnp.mean((values["host_occupancies"] - 1.0) ** 2)
-            + substitution_weight * jnp.sum(
-                host_defect_weight * values["host_occupancies"] * (1.0 - host_species[:, 0])
-            )
-            + adatom_weight * (
-                jnp.sum(adatom_defect_weight * values["adatom_occupancies"])
-                if n_adatom else 0.0
-            )
-            + displacement_weight * jnp.sum(
-                host_update_weights[:, None] * values["host_displacements"] ** 2
-            ) / jnp.maximum(2.0 * jnp.sum(host_update_weights), 1.0)
-            + discrete_scale * binary_weight * (host_binary + adatom_binary)
-            + discrete_scale * entropy_weight * (host_entropy + adatom_entropy)
-            + repulsion_weight * (cross_repulsion + self_repulsion)
-        )
+def _amplitude_numerator_from_amplitudes(
+    predicted: Array,
+    measured_amplitudes: Array,
+    scan_weights: Array,
+    detector_mask: Array,
+    epsilon: Array,
+) -> Array:
+    """Squared amplitude numerator when measured amplitudes are precomputed."""
+    errors = (jnp.sqrt(predicted + epsilon) - measured_amplitudes) ** 2
+    weights = scan_weights[:, None] * detector_mask[None, :]
+    return jnp.sum(weights * errors)
 
-    schedule = optax.cosine_decay_schedule(
-        learning_rate_start, n_updates, alpha=learning_rate_end / learning_rate_start
-    )
-    def scaled_schedule(factor):
-        return lambda count: factor * schedule(count)
 
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
-        optax.multi_transform(
-            {
-                "translation": optax.adam(scaled_schedule(1.0)),
-                "affine": optax.adam(scaled_schedule(1e-3)),
-                "host_position": optax.adam(scaled_schedule(0.2)),
-                "occupancy": optax.adam(scaled_schedule(1.0)),
-                "species": optax.adam(scaled_schedule(1.0)),
-                "adatom_position": optax.adam(scaled_schedule(0.5)),
-            },
-            {
-                "translation": "translation",
-                "strain": "affine",
-                "rotation": "affine",
-                "host_displacements": "host_position",
-                "host_occupancies": "occupancy",
-                "host_species_logits": "species",
-                "adatom_positions": "adatom_position",
-                "adatom_occupancies": "occupancy",
-                "adatom_species_logits": "species",
-            },
-        ),
-    )
-    state = optimizer.init(parameters)
-
-    @jax.jit
-    def update_step(values, optimizer_state, batch_indices, stage, elastic_scale, discrete_scale):
-        loss, gradients = jax.value_and_grad(objective)(
-            values, batch_indices, elastic_scale, discrete_scale
-        )
-        global_stage = (stage >= 0) & enable_global_transform
-        host_stage = (stage >= 1) & enable_host_displacements
-        occupancy_stage = enable_host_occupancies
-        defect_stage = stage >= 2
-        substitution_stage = defect_stage & enable_substitutions
-        adatom_stage = defect_stage & enable_adatoms
-        gradients = {
-            "translation": jnp.where(global_stage, gradients["translation"], 0.0),
-            "strain": jnp.where(global_stage, gradients["strain"], 0.0),
-            "rotation": jnp.where(global_stage, gradients["rotation"], 0.0),
-            "host_displacements": jnp.where(
-                host_stage,
-                gradients["host_displacements"] * host_update_weights[:, None],
-                0.0,
-            ),
-            "host_occupancies": jnp.where(
-                occupancy_stage,
-                gradients["host_occupancies"] * host_update_weights,
-                0.0,
-            ),
-            "host_species_logits": jnp.where(
-                substitution_stage,
-                gradients["host_species_logits"] * host_update_weights[:, None],
-                0.0,
-            ),
-            "adatom_positions": jnp.where(adatom_stage, gradients["adatom_positions"], 0.0),
-            "adatom_occupancies": jnp.where(adatom_stage, gradients["adatom_occupancies"], 0.0),
-            "adatom_species_logits": jnp.where(adatom_stage, gradients["adatom_species_logits"], 0.0),
-        }
-        updates_value, optimizer_state = optimizer.update(gradients, optimizer_state, values)
-        values = optax.apply_updates(values, updates_value)
-        host_lower = jnp.asarray(model.host_bounds)[:, 0]
-        host_upper = jnp.asarray(model.host_bounds)[:, 1]
-        adatom_lower = jnp.maximum(
-            jnp.asarray(model.adatom_bounds)[:, 0],
-            model.adatom_initial_positions - model.adatom_maximum_displacement_A,
-        )
-        adatom_upper = jnp.minimum(
-            jnp.asarray(model.adatom_bounds)[:, 1],
-            model.adatom_initial_positions + model.adatom_maximum_displacement_A,
-        )
-        del host_lower, host_upper  # host positions are bounded through transform components.
-        values = {
-            **values,
-            "translation": jnp.clip(values["translation"], -translation_limit_A, translation_limit_A),
-            "strain": jnp.clip(values["strain"], -strain_limit, strain_limit),
-            "rotation": jnp.clip(
-                values["rotation"], -jnp.deg2rad(rotation_limit_deg), jnp.deg2rad(rotation_limit_deg)
-            ),
-            "host_displacements": jnp.clip(
-                values["host_displacements"], -host_displacement_limit_A, host_displacement_limit_A
-            ),
-            "host_occupancies": jnp.clip(values["host_occupancies"], 0.0, 1.0),
-            "adatom_positions": jnp.clip(values["adatom_positions"], adatom_lower, adatom_upper),
-            "adatom_occupancies": jnp.clip(values["adatom_occupancies"], 0.0, 1.0),
-        }
-        return values, optimizer_state, loss
-
-    @jax.jit
-    def predict(values, indices):
-        host_positions, host_species, adatom_species = decode(values)
-        potential = render_crystalline_defects_1d(
-            model,
-            host_positions,
-            values["host_occupancies"],
-            host_species,
-            values["adatom_positions"],
-            values["adatom_occupancies"],
-            adatom_species,
-        )
-        return simulate_glancing_scan_1d(
-            potential,
-            probe_rows[indices],
-            starts[indices],
-            window_length,
-            kernel,
-            slice_thickness,
-            energy,
-        )
-
-    def evaluate(values, indices: np.ndarray) -> float:
-        numerator = 0.0
-        denominator = 0.0
-        for start_index in range(0, len(indices), evaluation_batch_size):
-            chosen = indices[start_index : start_index + evaluation_batch_size]
-            predicted = predict(values, jnp.asarray(chosen))
-            measured_batch = measured[chosen]
-            numerator += float(
-                jnp.sum((jnp.sqrt(predicted + 1e-12) - jnp.sqrt(measured_batch + 1e-12)) ** 2)
-            )
-            denominator += float(jnp.sum(measured_batch))
-        return float(np.sqrt(numerator / max(denominator, 1e-12)))
-
-    rng = np.random.default_rng(operator.index(seed))
-    iterator = range(1, n_updates + 1)
-    if progress:
-        from tqdm.auto import tqdm
-
-        iterator = tqdm(iterator, desc=progress_description, unit="update", dynamic_ncols=True)
-    update_history: list[int] = []
-    elapsed_history: list[float] = []
-    training_history: list[float] = []
-    validation_history: list[float] = []
-    snapshots: dict[str, list[np.ndarray]] = {
-        "translation": [], "strain": [], "rotation": [], "host_displacements": [],
-        "host_occupancies": [], "host_species": [], "adatom_positions": [],
-        "adatom_occupancies": [], "adatom_species": [],
-    }
-    best_values = parameters
-    best_metric = np.inf
-    best_update = 0
-    start_time = perf_counter()
-
-    def record(update, values):
-        nonlocal best_values, best_metric, best_update
-        training_loss = evaluate(values, training)
-        validation_loss = evaluate(values, validation) if validation.size else np.nan
-        metric = validation_loss if validation.size else training_loss
-        host_positions, host_species, adatom_species = decode(values)
-        del host_positions
-        update_history.append(update)
-        elapsed_history.append(perf_counter() - start_time)
-        training_history.append(training_loss)
-        validation_history.append(validation_loss)
-        snapshots["translation"].append(np.asarray(values["translation"]))
-        snapshots["strain"].append(np.asarray(values["strain"]))
-        snapshots["rotation"].append(np.asarray(values["rotation"]))
-        snapshots["host_displacements"].append(np.asarray(values["host_displacements"]))
-        snapshots["host_occupancies"].append(np.asarray(values["host_occupancies"]))
-        snapshots["host_species"].append(np.asarray(host_species))
-        snapshots["adatom_positions"].append(np.asarray(values["adatom_positions"]))
-        snapshots["adatom_occupancies"].append(np.asarray(values["adatom_occupancies"]))
-        snapshots["adatom_species"].append(np.asarray(adatom_species))
-        if metric < best_metric:
-            best_metric = metric
-            best_update = update
-            best_values = {name: value for name, value in values.items()}
-
-    record(0, parameters)
-    for update in iterator:
-        chosen = rng.choice(training, size=min(minibatch_size, training.size), replace=False)
-        stage = 0 if update <= global_end else 1 if update <= host_end else 2 if update <= defect_end else 3
-        final_fraction = max(update - defect_end, 0) / max(n_updates - defect_end, 1)
-        elastic_scale = 1.0 - 0.75 * final_fraction
-        discrete_scale = final_fraction
-        parameters, state, _ = update_step(
-            parameters,
-            state,
-            jnp.asarray(chosen),
-            jnp.asarray(stage),
-            jnp.asarray(elastic_scale),
-            jnp.asarray(discrete_scale),
-        )
-        if update % validation_interval == 0 or update == n_updates:
-            record(update, parameters)
-
-    host_positions, host_species, adatom_species = decode(best_values)
-    potential = render_crystalline_defects_1d(
-        model,
-        host_positions,
-        best_values["host_occupancies"],
-        host_species,
-        best_values["adatom_positions"],
-        best_values["adatom_occupancies"],
-        adatom_species,
-    )
-    predicted = predict(best_values, jnp.arange(n_scan))
-    metadata = {
-        **dict(model.metadata),
-        "species_names": list(model.species_names),
-        "updates": n_updates,
-        "stages": [global_end, host_end, defect_end, n_updates],
-        "training_indices": training.tolist(),
-        "validation_indices": validation.tolist(),
-        "n_host_sites": int(n_host),
-        "n_adatom_candidates": int(n_adatom),
-        "n_bonds": int(model.host_bonds.shape[0]),
-        "n_angles": int(model.host_angles.shape[0]),
-        "effective_update_sites": float(jnp.sum(host_update_weights)),
-        "fully_frozen_sites": int(jnp.sum(host_update_weights == 0.0)),
-        "best_metric": best_metric,
-        "seed": operator.index(seed),
-        "enable_substitutions": bool(enable_substitutions),
-        "enable_adatoms": bool(enable_adatoms),
-        "enable_global_transform": bool(enable_global_transform),
-        "enable_host_displacements": bool(enable_host_displacements),
-        "enable_host_occupancies": bool(enable_host_occupancies),
-        "buffer_defect_multiplier": float(buffer_defect_multiplier),
-        "detector_angles_mrad": np.asarray(
-            1e3 * jnp.arcsin(jnp.clip(
-                energy2wavelength(energy)
-                * jnp.fft.fftshift(jnp.fft.fftfreq(n_u, model.transverse_coordinates[1] - model.transverse_coordinates[0])),
-                -1.0, 1.0,
-            ))
-        ).tolist(),
-    }
-    return CrystallineDefectReconstruction1D(
-        host_positions_3d=host_positions,
-        host_occupancies=best_values["host_occupancies"],
-        host_species_probabilities=host_species,
-        adatom_positions=best_values["adatom_positions"],
-        adatom_occupancies=best_values["adatom_occupancies"],
-        adatom_species_probabilities=adatom_species,
-        translation=best_values["translation"],
-        strain=best_values["strain"],
-        rotation_rad=best_values["rotation"],
-        potential=potential,
-        predicted_intensities=predicted,
-        measured_intensities=measured,
-        update_history=jnp.asarray(update_history),
-        elapsed_time_history=jnp.asarray(elapsed_history),
-        training_loss_history=jnp.asarray(training_history),
-        validation_loss_history=jnp.asarray(validation_history),
-        translation_history=jnp.asarray(snapshots["translation"]),
-        strain_history=jnp.asarray(snapshots["strain"]),
-        rotation_history=jnp.asarray(snapshots["rotation"]),
-        host_displacement_history=jnp.asarray(snapshots["host_displacements"]),
-        host_occupancy_history=jnp.asarray(snapshots["host_occupancies"]),
-        host_species_probability_history=jnp.asarray(snapshots["host_species"]),
-        adatom_position_history=jnp.asarray(snapshots["adatom_positions"]),
-        adatom_occupancy_history=jnp.asarray(snapshots["adatom_occupancies"]),
-        adatom_species_probability_history=jnp.asarray(snapshots["adatom_species"]),
-        best_update=best_update,
-        metadata=metadata,
+def _parameter_scales(model: CrystallineHostModel1D, dtype) -> Array:
+    return jnp.asarray(
+        [
+            model.axial_period_A / 2.0,
+            1.0,
+            jnp.deg2rad(1.0),
+            0.02,
+        ],
+        dtype=dtype,
     )
 
 
-def reconstruct_crystalline_host_1d(
+def register_crystalline_host_1d(
     model: CrystallineHostModel1D,
     input_probe: Any,
     window_starts: Any,
@@ -1134,75 +493,408 @@ def reconstruct_crystalline_host_1d(
     slice_thickness: Any,
     energy: Any,
     measured_intensities: Any,
-    **kwargs: Any,
-) -> CrystallineHostReconstruction1D:
-    """Fit a pristine single-species host under Keating regularization.
+    detector_angles_mrad: Any,
+    *,
+    initial_parameters: CrystallineRegistrationParameters1D | None = None,
+    reflected_angle_bounds_mrad: tuple[float, float] = (0.0, 80.0),
+    specular_angle_bounds_mrad: tuple[float, float] = (25.0, 45.0),
+    whole_detector_weight: float = 0.5,
+    batch_size: int = 5,
+    phase_grid_points: int = 25,
+    updates: int = 200,
+    learning_rate_start: float = 5e-2,
+    learning_rate_end: float = 1e-3,
+    gradient_clip: float = 1.0,
+) -> CrystallineRegistrationResult1D:
+    """Register a crystalline host using a compiled phase search and Adam fit."""
+    try:
+        import optax
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise ImportError("register_crystalline_host_1d requires Optax") from exc
+    from tqdm.auto import tqdm
 
-    The specimen volume fixes the set of occupied host sites.  This wrapper
-    removes substitution, vacancy, and adatom degrees of freedom while keeping
-    the global lattice transform and optional local elastic displacements.
-    """
-    if len(model.species_names) != 1:
-        raise ValueError("pristine host reconstruction requires exactly one species")
-    controlled = {
-        "enable_host_occupancies",
-        "enable_substitutions",
-        "enable_adatoms",
-        "initial_host_occupancy",
-    }
-    overlap = controlled.intersection(kwargs)
-    if overlap:
-        names = ", ".join(sorted(overlap))
-        raise TypeError(f"pristine host reconstruction controls {names}")
-    return reconstruct_crystalline_defects_1d(
-        model,
-        input_probe,
-        window_starts,
-        window_length,
-        propagation_kernel,
-        slice_thickness,
-        energy,
-        measured_intensities,
-        initial_host_occupancy=1.0,
-        enable_host_occupancies=False,
-        enable_substitutions=False,
-        enable_adatoms=False,
-        **kwargs,
+    measured = _array("measured_intensities", measured_intensities, 2)
+    detector_angles = _array("detector_angles_mrad", detector_angles_mrad, 1)
+    if jnp.issubdtype(detector_angles.dtype, jnp.complexfloating):
+        raise ValueError("detector_angles_mrad must be finite and real")
+    starts = _array("window_starts", window_starts, 1)
+    if not jnp.issubdtype(starts.dtype, jnp.integer):
+        raise TypeError("window_starts must contain integers")
+    starts = starts.astype(jnp.int32)
+    kernel = _array("propagation_kernel", propagation_kernel, 1)
+    probe = jnp.asarray(input_probe)
+    if probe.ndim not in (1, 2):
+        raise ValueError("input_probe must be one- or two-dimensional")
+    n_scan, n_u = measured.shape
+    if detector_angles.shape != (n_u,) or kernel.shape != (n_u,):
+        raise ValueError("detector angles, kernel, and measurements do not match")
+    if starts.shape != (n_scan,) or probe.shape[-1] != n_u:
+        raise ValueError("scan starts, probes, and measurements do not match")
+    probe_rows = jnp.broadcast_to(probe, (n_scan, n_u)) if probe.ndim == 1 else probe
+    if probe_rows.shape != (n_scan, n_u):
+        raise ValueError("two-dimensional input_probe must have one row per scan")
+    resolved_window_length = operator.index(window_length)
+    resolved_batch_size = operator.index(batch_size)
+    resolved_grid_points = operator.index(phase_grid_points)
+    resolved_updates = operator.index(updates)
+    if resolved_window_length < 1:
+        raise ValueError("window_length must be positive")
+    if resolved_window_length > model.axial_coordinates.shape[0]:
+        raise ValueError("window_length cannot exceed the specimen grid")
+    if resolved_batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    if resolved_grid_points < 3:
+        raise ValueError("phase_grid_points must be at least three")
+    if resolved_updates < 1:
+        raise ValueError("updates must be positive")
+    for name, value in (
+        ("slice_thickness", slice_thickness),
+        ("energy", energy),
+        ("learning_rate_start", learning_rate_start),
+        ("learning_rate_end", learning_rate_end),
+        ("gradient_clip", gradient_clip),
+    ):
+        concrete = float(value)
+        if not np.isfinite(concrete) or concrete <= 0.0:
+            raise ValueError(f"{name} must be positive and finite")
+    resolved_whole_weight = float(whole_detector_weight)
+    if not np.isfinite(resolved_whole_weight) or not 0.0 <= resolved_whole_weight <= 1.0:
+        raise ValueError("whole_detector_weight must lie in [0, 1]")
+    reflected_bounds = np.asarray(reflected_angle_bounds_mrad, dtype=float)
+    specular_bounds = np.asarray(specular_angle_bounds_mrad, dtype=float)
+    if (
+        reflected_bounds.shape != (2,)
+        or not np.all(np.isfinite(reflected_bounds))
+        or reflected_bounds[1] <= reflected_bounds[0]
+    ):
+        raise ValueError("reflected_angle_bounds_mrad must be increasing")
+    if (
+        specular_bounds.shape != (2,)
+        or not np.all(np.isfinite(specular_bounds))
+        or specular_bounds[1] <= specular_bounds[0]
+    ):
+        raise ValueError("specular_angle_bounds_mrad must be increasing")
+    reflected_mask = (detector_angles > reflected_bounds[0]) & (
+        detector_angles < reflected_bounds[1]
+    )
+    specular_mask = (detector_angles > specular_bounds[0]) & (
+        detector_angles < specular_bounds[1]
+    )
+    reflected_host = _concrete_numpy(reflected_mask)
+    specular_host = _concrete_numpy(specular_mask)
+    measured_host = _concrete_numpy(measured)
+    detector_host = _concrete_numpy(detector_angles)
+    starts_host = _concrete_numpy(starts)
+    probes_host = _concrete_numpy(probe_rows)
+    kernel_host = _concrete_numpy(kernel)
+    if detector_host is not None and (
+        np.iscomplexobj(detector_host) or not np.all(np.isfinite(detector_host))
+    ):
+        raise ValueError("detector_angles_mrad must be finite and real")
+    if starts_host is not None and (
+        np.any(starts_host < 0)
+        or np.any(starts_host + resolved_window_length > model.axial_coordinates.shape[0])
+    ):
+        raise ValueError("window_starts place a scan outside the specimen grid")
+    if probes_host is not None and not np.all(np.isfinite(probes_host)):
+        raise ValueError("input_probe must be finite")
+    if kernel_host is not None and not np.all(np.isfinite(kernel_host)):
+        raise ValueError("propagation_kernel must be finite")
+    if reflected_host is not None and not np.any(reflected_host):
+        raise ValueError("reflected detector band contains no pixels")
+    if specular_host is not None and not np.any(specular_host):
+        raise ValueError("specular detector band contains no pixels")
+    if measured_host is not None and (
+        np.iscomplexobj(measured_host)
+        or not np.all(np.isfinite(measured_host))
+        or np.any(measured_host < 0.0)
+    ):
+        raise ValueError("measured_intensities must be finite and non-negative")
+
+    initial = initial_parameters or CrystallineRegistrationParameters1D()
+    initial_physical = _parameters_to_array(initial).astype(
+        jnp.result_type(measured, model.reference_positions_3d, jnp.float32)
+    )
+    scales = _parameter_scales(model, initial_physical.dtype)
+    initial_normalized = initial_physical / scales
+    initial_host = _concrete_numpy(initial_normalized)
+    if initial_host is not None and np.any(np.abs(initial_host) > 1.0):
+        raise ValueError("initial registration parameters lie outside fit bounds")
+
+    padded_scan_count = (
+        (n_scan + resolved_batch_size - 1) // resolved_batch_size
+    ) * resolved_batch_size
+    n_batch = padded_scan_count // resolved_batch_size
+    padded_probes = _pad_scan_rows(probe_rows, padded_scan_count).reshape(
+        n_batch, resolved_batch_size, n_u
+    )
+    padded_starts = _pad_scan_rows(starts, padded_scan_count).reshape(
+        n_batch, resolved_batch_size
+    )
+    padded_measured = _pad_scan_rows(measured, padded_scan_count).reshape(
+        n_batch, resolved_batch_size, n_u
+    )
+    padded_weights = jnp.pad(
+        jnp.ones((n_scan,), dtype=measured.dtype),
+        (0, padded_scan_count - n_scan),
+    ).reshape(n_batch, resolved_batch_size)
+    epsilon = jnp.asarray(1e-12, dtype=measured.dtype)
+    padded_measured_amplitudes = jnp.sqrt(padded_measured + epsilon)
+    reflected_numeric = reflected_mask.astype(measured.dtype)
+    all_denominator = jnp.sum(measured)
+    reflected_denominator = jnp.sum(measured * reflected_numeric[None, :])
+    if measured_host is not None:
+        if float(all_denominator) <= 0.0 or float(reflected_denominator) <= 0.0:
+            raise ValueError("measured intensity must be positive in both loss bands")
+
+    def decode(normalized_parameters: Array) -> Array:
+        return normalized_parameters * scales
+
+    template_shape = model.atom_template.shape
+    render_full_shape = (
+        model.axial_coordinates.shape[0] + template_shape[0] - 1,
+        model.transverse_coordinates.shape[0] + template_shape[1] - 1,
+    )
+    template_frequency = jnp.fft.rfftn(
+        jnp.asarray(model.atom_template), render_full_shape, axes=(0, 1)
     )
 
+    def potential_from_normalized(normalized_parameters: Array) -> Array:
+        physical = decode(normalized_parameters)
+        positions = transform_crystalline_host_1d(
+            model.reference_positions_3d,
+            physical[0],
+            physical[1],
+            physical[2],
+            physical[3],
+        )
+        return _render_with_template_frequency_1d(
+            model, positions, template_frequency
+        )
 
-def _json_default(value: Any) -> Any:
-    array = np.asarray(value)
-    return array.item() if array.ndim == 0 else array.tolist()
-
-
-def save_crystalline_defect_reconstruction_1d(
-    path: str | Path,
-    result: CrystallineDefectReconstruction1D,
-) -> None:
-    """Save a reconstruction without pickle-backed object arrays."""
-    destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    arrays = {
-        name: np.asarray(getattr(result, name))
-        for name in result.__dataclass_fields__
-        if name != "metadata"
-    }
-    arrays["metadata_json"] = np.asarray(
-        json.dumps(dict(result.metadata), default=_json_default, sort_keys=True)
+    flat_probes = padded_probes.reshape(padded_scan_count, n_u)
+    flat_starts = padded_starts.reshape(padded_scan_count)
+    full_domain_batch = bool(
+        starts_host is not None
+        and resolved_window_length == model.axial_coordinates.shape[0]
+        and np.all(starts_host == 0)
     )
-    np.savez_compressed(destination, **arrays)
 
+    def predict_flat(potential: Array) -> Array:
+        if full_domain_batch:
+            return _simulate_full_domain_batch_1d(
+                potential,
+                flat_probes,
+                kernel,
+                slice_thickness,
+                energy,
+                # ``predict_flat`` is wrapped in one checkpoint below.  A
+                # second checkpoint around every slice would needlessly
+                # rematerialize the same batched scan and is substantially
+                # slower for the full-domain case.
+                rematerialize=False,
+            )
+        return simulate_glancing_scan_1d(
+            potential,
+            flat_probes,
+            flat_starts,
+            resolved_window_length,
+            kernel,
+            slice_thickness,
+            energy,
+            rematerialize=True,
+        )
 
-def load_crystalline_defect_reconstruction_1d(
-    path: str | Path,
-) -> CrystallineDefectReconstruction1D:
-    """Load a result written by :func:`save_crystalline_defect_reconstruction_1d`."""
-    with np.load(path, allow_pickle=False) as data:
-        values = {
-            name: (int(data[name]) if name == "best_update" else jnp.asarray(data[name]))
-            for name in CrystallineDefectReconstruction1D.__dataclass_fields__
-            if name != "metadata"
-        }
-        values["metadata"] = json.loads(str(data["metadata_json"].item()))
-    return CrystallineDefectReconstruction1D(**values)
+    checkpointed_predict_flat = jax.checkpoint(predict_flat)
+
+    def objective(normalized_parameters: Array) -> Array:
+        potential = potential_from_normalized(normalized_parameters)
+        predicted_batches = checkpointed_predict_flat(potential).reshape(
+            n_batch, resolved_batch_size, n_u
+        )
+
+        def accumulate(carry, batch):
+            predicted_batch, measured_amplitudes_batch, scan_weights = batch
+            all_numerator, reflected_numerator = carry
+            all_numerator = all_numerator + _amplitude_numerator_from_amplitudes(
+                predicted_batch,
+                measured_amplitudes_batch,
+                scan_weights,
+                jnp.ones((n_u,), dtype=measured.dtype),
+                epsilon,
+            )
+            reflected_numerator = (
+                reflected_numerator
+                + _amplitude_numerator_from_amplitudes(
+                    predicted_batch,
+                    measured_amplitudes_batch,
+                    scan_weights,
+                    reflected_numeric,
+                    epsilon,
+                )
+            )
+            return (all_numerator, reflected_numerator), None
+
+        (all_numerator, reflected_numerator), _ = jax.lax.scan(
+            accumulate,
+            (jnp.asarray(0.0, measured.dtype), jnp.asarray(0.0, measured.dtype)),
+            (predicted_batches, padded_measured_amplitudes, padded_weights),
+        )
+        all_loss = all_numerator / jnp.maximum(all_denominator, epsilon)
+        reflected_loss = reflected_numerator / jnp.maximum(
+            reflected_denominator, epsilon
+        )
+        return (
+            resolved_whole_weight * all_loss
+            + (1.0 - resolved_whole_weight) * reflected_loss
+        )
+
+    objective_jit = jax.jit(objective)
+    value_and_grad = jax.jit(jax.value_and_grad(objective))
+    phase_grid = (
+        jnp.arange(resolved_grid_points, dtype=initial_physical.dtype)
+        - resolved_grid_points // 2
+    ) * (model.axial_period_A / resolved_grid_points)
+
+    def evaluate_phase(phase_A):
+        candidate = initial_normalized.at[0].set(phase_A / scales[0])
+        return objective_jit(candidate)
+
+    # Both phases are compiled JAX operations, so keep the bar at the stage
+    # level rather than introducing host callbacks into the CUDA scan.
+    progress_bar = tqdm(
+        total=2,
+        desc="crystal registration",
+        unit="stage",
+        dynamic_ncols=True,
+    )
+    phase_grid_objective = jax.lax.map(evaluate_phase, phase_grid)
+    progress_bar.update(1)
+    selected_phase = phase_grid[jnp.argmin(phase_grid_objective)]
+    optimization_start = initial_normalized.at[0].set(selected_phase / scales[0])
+    initial_objective = objective_jit(initial_normalized)
+
+    schedule = optax.cosine_decay_schedule(
+        learning_rate_start,
+        resolved_updates,
+        alpha=learning_rate_end / learning_rate_start,
+    )
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(gradient_clip),
+        optax.adam(schedule),
+    )
+    optimizer_state = optimizer.init(optimization_start)
+
+    def update_step(carry, _):
+        normalized_parameters, state = carry
+        value, gradients = value_and_grad(normalized_parameters)
+        parameter_updates, state = optimizer.update(
+            gradients, state, normalized_parameters
+        )
+        updated = optax.apply_updates(normalized_parameters, parameter_updates)
+        updated = jnp.clip(updated, -1.0, 1.0)
+        return (updated, state), (value, normalized_parameters)
+
+    @jax.jit
+    def run_updates(normalized_parameters, state):
+        return jax.lax.scan(
+            update_step,
+            (normalized_parameters, state),
+            xs=None,
+            length=resolved_updates,
+        )
+
+    try:
+        (final_normalized, _), (recorded_objective, recorded_normalized) = run_updates(
+            optimization_start, optimizer_state
+        )
+        progress_bar.update(1)
+    finally:
+        progress_bar.close()
+    final_objective = objective_jit(final_normalized)
+    objective_history = jnp.concatenate(
+        [recorded_objective, final_objective[None]], axis=0
+    )
+    normalized_history = jnp.concatenate(
+        [recorded_normalized, final_normalized[None, :]], axis=0
+    )
+    parameter_history = normalized_history * scales[None, :]
+    final_physical = decode(final_normalized)
+    final_positions = transform_crystalline_host_1d(
+        model.reference_positions_3d,
+        final_physical[0],
+        final_physical[1],
+        final_physical[2],
+        final_physical[3],
+    )
+    final_potential = _render_with_template_frequency_1d(
+        model, final_positions, template_frequency
+    )
+
+    predicted = jax.jit(predict_flat)(final_potential)[:n_scan]
+    scan_weights = jnp.ones((n_scan,), dtype=measured.dtype)
+    whole_loss = _balanced_amplitude_loss_1d(
+        predicted,
+        measured,
+        scan_weights,
+        jnp.ones((n_u,), dtype=bool),
+        whole_detector_weight=1.0,
+    )
+    reflected_loss = _balanced_amplitude_loss_1d(
+        predicted,
+        measured,
+        scan_weights,
+        reflected_mask,
+        whole_detector_weight=0.0,
+    )
+    specular_loss = _balanced_amplitude_loss_1d(
+        predicted,
+        measured,
+        scan_weights,
+        specular_mask,
+        whole_detector_weight=0.0,
+    )
+    optimization_start_physical = decode(optimization_start)
+    metadata = {
+        **dict(model.metadata),
+        "parameter_names": [
+            "axial_phase_A",
+            "surface_offset_A",
+            "rotation_rad",
+            "axial_strain",
+        ],
+        "n_parameters": 4,
+        "n_scans": int(n_scan),
+        "batch_size": resolved_batch_size,
+        "phase_grid_points": resolved_grid_points,
+        "updates": resolved_updates,
+        "learning_rate_start": float(learning_rate_start),
+        "learning_rate_end": float(learning_rate_end),
+        "whole_detector_weight": resolved_whole_weight,
+        "reflected_angle_bounds_mrad": reflected_bounds.tolist(),
+        "specular_angle_bounds_mrad": specular_bounds.tolist(),
+    }
+    return CrystallineRegistrationResult1D(
+        initial_parameters=_array_to_parameters(initial_physical),
+        optimization_start_parameters=_array_to_parameters(
+            optimization_start_physical
+        ),
+        parameters=_array_to_parameters(final_physical),
+        host_positions_3d=final_positions,
+        potential=final_potential,
+        predicted_intensities=predicted,
+        measured_intensities=measured,
+        detector_angles_mrad=detector_angles,
+        reflected_detector_mask=reflected_mask,
+        specular_detector_mask=specular_mask,
+        phase_grid_A=phase_grid,
+        phase_grid_objective=phase_grid_objective,
+        objective_history=objective_history,
+        parameter_history=parameter_history,
+        initial_objective=initial_objective,
+        whole_detector_nrmse=jnp.sqrt(whole_loss),
+        reflected_nrmse=jnp.sqrt(reflected_loss),
+        specular_nrmse=jnp.sqrt(specular_loss),
+        converged=jnp.isfinite(final_objective) & (final_objective < initial_objective),
+        metadata=metadata,
+    )

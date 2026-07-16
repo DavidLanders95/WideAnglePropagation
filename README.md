@@ -16,6 +16,9 @@ and second-order Klein-Gordon propagation.
 - `wide_angle_propagation/ptychography_atoms_1d.py`: a deliberately small
   free-atom reconstruction with movable positions, continuous occupancies,
   short-range repulsion, and an optional weak cohesion experiment.
+- `wide_angle_propagation/ptychography_crystal_1d.py`: full-domain JAX crystal
+  registration with exactly four global specimen parameters: axial phase,
+  surface offset, in-plane rotation, and axial strain.
 - `tests/`: regression and behavior tests for the propagation methods.
 - `notebooks/figure_generation/01_axel_lubk_verification.ipynb`: Au [100]
   beam-amplitude verification against the full KG ODE reference.
@@ -45,8 +48,9 @@ The optional glancing-incidence reconstruction workflow uses Optax:
 python -m pip install -e ".[dev,ptychography]"
 ```
 
-The deliberately limited free-atom experiment and its promotion gate are
-described in [`docs/ptychography_robustness.md`](docs/ptychography_robustness.md).
+The deliberately limited free-atom experiment and the separate four-parameter
+crystal-registration baseline are described in
+[`docs/ptychography_robustness.md`](docs/ptychography_robustness.md).
 
 ## Minimal Usage
 

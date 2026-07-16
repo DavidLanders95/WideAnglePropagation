@@ -106,56 +106,55 @@ save/load infrastructure, and the realistic side-view specimen were deferred by
 this first gate. The crystalline-host extension below keeps its own tests and
 does not weaken the original free-atom acceptance criteria.
 
-## The pristine crystalline-host baseline
+## Four-parameter crystalline registration
 
-The additive ``ptychography_crystal_1d`` module keeps the diffraction model in
-projected ``(s, u)`` coordinates but evaluates crystalline elasticity on latent
-three-dimensional ``(s, y, u)`` diamond sites.  A fixed sparse bond/angle graph
-provides occupancy-gated Keating stretch and tetrahedral-angle penalties without
-forming all-pairs distance matrices. The single-species interface fixes every
-site to occupied Si, fits a global lattice transform, and then releases bounded
-local displacements under the Keating penalty.
+The separate ``ptychography_crystal_1d`` module is intentionally narrower than
+the free-atom experiment. It receives a fully occupied, single-species crystal
+with fixed site identities and fits exactly four global values:
 
-The maintained large-slab notebook forward-simulates the complete 1000
-Angstrom-long, 50 Angstrom-deep pristine slab, while reconstruction uses an
-independently generated diamond host in the loose 100--900 Angstrom axial
-volume. The fixed graph assumes the diamond topology, silicon bond length,
-approximate (100) orientation and termination, and atom count implied by the
-volume. It is therefore a crystallographic refinement test rather than lattice
-discovery.
+- axial lattice phase;
+- surface-normal offset;
+- in-plane rotation;
+- axial strain.
 
-The coordinate start is deliberately perturbed by a 1.7 Angstrom axial phase
-error, 1.2 percent axial strain, shear and transverse strain, 0.45 degree
-rotation, and 0.18 Angstrom RMS local disorder.  Coordinate updates are now
-restricted to the union of post-landing incident half-rays.  The support is
-empty before the first 400 Angstrom landing, grows while scans land from
-400--600 Angstrom, and continues downstream after 600 Angstrom.  A smooth
-transverse support is one inside 2.5 input-probe waists and zero beyond four
-waists; the affine transform, local displacements, occupancy/species gradients,
-and Keating terms all use the same per-site weights.  Of 10,915 sites in the
-loose box, 8,099 are therefore exactly frozen and all 4,089 sites before 400
-Angstrom have zero update weight.  These
-sites retain the assumed diamond-host prior so that an arbitrary unobservable
-guess cannot contaminate the forward calculation, but they are greyed out and
-are neither scored nor claimed as reconstructed.
+Axial strain is applied about the host centroid, followed by rotation and the
+two translations. The latent ``y`` coordinate is retained exactly. There are
+no sitewise coordinates, occupancies, species labels, defect variables, or
+elastic-energy terms, so this is crystal registration rather than defect or
+lattice discovery.
 
-With this post-landing observability constraint, 300 ptychographic updates
-reach a held-out amplitude NRMSE of 0.01008, compared with 0.01141 for simply
-cropping the exact forward potential to the loose inverse volume.  In the
-interpretable illumination core (weight above 0.8), the final median host bond
-is 2.3537 Angstrom with a 0.0249 Angstrom standard deviation, and the
-axial-gauge-aligned median site error is 0.0616 Angstrom.  The soft support
-boundary is excluded from structural scores.
+The maintained notebook constructs the pristine 1000 Å by 50 Å truth with ASE
+and abTEM, generates all 41 scans on every run, and independently constructs a
+diamond reference over the complete 0--1000 Å domain. Static constructor
+outputs are converted immediately to JAX arrays. The crystal renderer uses a
+compact cubic deposition of transformed sites and one JAX FFT convolution
+with the known silicon template. Propagation, detector losses, phase search,
+optimization, histories, and metrics also remain in JAX.
 
-The post-hoc registration is used only for structural scoring and potential
-visualization, not for reconstruction or diffraction evaluation. Absolute
-axial unit-cell phase is weakly observable for a long uniform slab illuminated
-far from its ends, so the notebook reports that degree of freedom as a gauge
-rather than as a discovered coordinate. The gauge is restricted to the axial
-direction: shifting in depth would change the finite surface termination and
-can incorrectly hide surface rows. With axial registration only, the median
-interpretable-core site error is 0.0616 Angstrom, while the median illuminated
-top surface plane lies 0.0150 Angstrom from its known position. The more general module retains
-occupancy, Si/Ge substitution, and off-lattice adatom variables, with compact
-isolated tests for each case, but the maintained large-slab notebook does not
-activate those variables until the pristine baseline is established.
+The squared-amplitude objective gives equal weight to two independently
+normalized terms,
+
+\[
+L = \tfrac12 L_{\mathrm{all}} + \tfrac12 L_{0\text{--}80\,\mathrm{mrad}}.
+\]
+
+All scans contribute to fixed global denominators. They are evaluated in
+fixed-size batches of five with a masked final batch and accumulated by
+``jax.lax.scan``; checkpointing the multislice batch limits reverse-mode
+storage. A sequential 25-point phase search selects the Adam starting basin.
+The four physical parameters are scaled to ``[-1, 1]``, clipped after every
+update, and fitted by 200 compiled Optax Adam updates with global gradient
+clipping and a cosine-decayed learning rate.
+
+The deliberately poor start is +1.7 Å phase, +0.30 Å surface offset, +0.45
+degree rotation, and +1.2 percent axial strain. All 41 scans are used by the
+fit; no validation or generalization claim is made. Structural errors compare
+the independent reference and truth using their fixed lattice ordering, with
+no subsequent coordinate alignment. The notebook reports square-root amplitude
+NRMSE for the whole detector, positive 0--80 mrad band, and +25--45 mrad band,
+along with parameter and site errors.
+
+This matched, noiseless baseline asks only whether a known pristine diamond
+host can be globally registered. It does not test defects, chemistry, local
+strain, unknown probes, experimental noise, or model mismatch. Those questions
+require a different model rather than adding hidden freedom to this baseline.
