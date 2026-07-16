@@ -8,8 +8,6 @@ from . import notebook_utils
 from .notebook_utils import *  # noqa: F403
 from . import ptychography_1d
 from .ptychography_1d import *  # noqa: F403
-from . import ptychography_atoms_1d
-from .ptychography_atoms_1d import *  # noqa: F403
 from . import ptychography_crystal_1d
 from .ptychography_crystal_1d import *  # noqa: F403
 
@@ -21,6 +19,5 @@ __all__ = [
     *sideview_geometry.__all__,
     *notebook_utils.__all__,
     *ptychography_1d.__all__,
-    *ptychography_atoms_1d.__all__,
     *ptychography_crystal_1d.__all__,
 ]

@@ -10,20 +10,48 @@ The module is organized around the maintained comparison in the paper:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import math
 
 import jax
 import jax.numpy as jnp
 import jax.scipy.linalg
+import numpy as np
 from ase import units
 
 
 Sampling = tuple[float, float]
 
+
+@dataclass(frozen=True)
+class AtomAlignedScreenPartition1D:
+    """Map a fine axial potential grid to atom-aligned phase screens.
+
+    The partition is host-side geometry data. ``segment_ids`` assigns every
+    fine slice to one phase screen, while projection through the map remains
+    differentiable with respect to JAX potential values.
+    """
+
+    segment_ids: np.ndarray
+    screen_positions: np.ndarray
+    fine_axial_sampling: float
+    domain_start: float
+    domain_end: float
+    atom_plane_count: int
+    sub_screens_per_plane: int
+    screen_offset_scale: float
+
+    @property
+    def n_screens(self) -> int:
+        return int(self.screen_positions.size)
+
+
 __all__ = [
+    "AtomAlignedScreenPartition1D",
     "Sampling",
     "angular_spectrum_propagation_kernel",
     "angular_spectrum_propagation_kernel_1d",
+    "build_atom_aligned_screen_partition_1d",
     "apply_pade_rational_1d",
     "bidirectional_pade_sweep_1d",
     "bidirectional_wpm_sweep_1d",
@@ -50,6 +78,7 @@ __all__ = [
     "pade_sqrt_coefficients",
     "phase_grating_1d_from_projected_potential",
     "project_atoms_to_sample_line_1d",
+    "project_potential_to_screens_1d",
     "project_potential_to_sample_line_1d",
     "schrodinger_refractive_index_1d",
     "simulate_fresnel_as",
@@ -57,6 +86,7 @@ __all__ = [
     "simulate_bidirectional_pade_bpm_1d",
     "simulate_bidirectional_wpm_1d",
     "simulate_glancing_angular_spectrum_1d",
+    "simulate_projected_as_screens_1d",
     "simulate_glancing_fresnel_baseline_1d",
     "simulate_kg_ode_full",
     "simulate_single_slice_cylindrical_1d",
@@ -434,6 +464,257 @@ def phase_grating_1d_from_projected_potential(projected_potential, energy):
     """Return a projected-potential phase grating ``exp(i sigma V_proj)``."""
     phase = interaction_constant(energy) * jnp.asarray(projected_potential)
     return jnp.exp(1j * phase)
+
+
+def build_atom_aligned_screen_partition_1d(
+    axial_coordinates,
+    atom_plane_coordinates,
+    *,
+    sub_screens_per_plane=2,
+    reference_potential=None,
+    screen_offset_scale=1.0,
+):
+    """Build integrated local phase screens around each atomic plane.
+
+    Fine axial samples are first assigned to the nearest atomic plane. With
+    one sub-screen, the complete Voronoi cell is placed on that plane. With
+    multiple sub-screens, each plane cell is divided into equal axial regions.
+    Odd counts retain the central screen exactly on the atomic plane, while
+    tail screens use longitudinal centroids weighted by
+    ``abs(reference_potential)``. Geometric centroids are used when no
+    reference is supplied. ``screen_offset_scale`` contracts tail centroids
+    towards their parent atomic plane; values below one can reduce coherent
+    over-propagation through broad atomic tails.
+
+    The reference potential may have any number of transverse dimensions. It
+    determines screen coordinates only and is not stored in the partition.
+    Consequently the returned segment map can project changing JAX potentials
+    without rebuilding the geometry.
+    """
+    coordinates = np.asarray(axial_coordinates, dtype=float)
+    planes = np.asarray(atom_plane_coordinates, dtype=float)
+    if coordinates.ndim != 1 or coordinates.size < 2:
+        raise ValueError("axial_coordinates must be a one-dimensional grid")
+    if not np.all(np.isfinite(coordinates)) or np.any(np.diff(coordinates) <= 0.0):
+        raise ValueError("axial_coordinates must be finite and strictly increasing")
+    spacings = np.diff(coordinates)
+    if not np.allclose(spacings, spacings[0], rtol=5e-4, atol=1e-10):
+        raise ValueError("axial_coordinates must be uniformly spaced")
+    if planes.ndim != 1 or planes.size == 0 or not np.all(np.isfinite(planes)):
+        raise ValueError("atom_plane_coordinates must be a non-empty finite vector")
+    if isinstance(sub_screens_per_plane, (bool, np.bool_)):
+        raise TypeError("sub_screens_per_plane must be a positive integer")
+    try:
+        sub_screens = int(sub_screens_per_plane)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("sub_screens_per_plane must be a positive integer") from exc
+    if sub_screens != sub_screens_per_plane or sub_screens < 1:
+        raise ValueError("sub_screens_per_plane must be a positive integer")
+    offset_scale = float(screen_offset_scale)
+    if not np.isfinite(offset_scale) or offset_scale <= 0.0 or offset_scale > 1.0:
+        raise ValueError("screen_offset_scale must lie in (0, 1]")
+
+    ds = float(spacings[0])
+    domain_start = float(coordinates[0])
+    domain_end = float(coordinates[-1] + ds)
+    planes = np.unique(np.sort(planes))
+    planes = planes[
+        (planes >= domain_start - 0.5 * ds) & (planes <= domain_end + 0.5 * ds)
+    ]
+    if planes.size == 0:
+        raise ValueError("no atomic planes overlap the axial grid")
+
+    plane_boundaries = 0.5 * (planes[:-1] + planes[1:])
+    plane_ids = np.searchsorted(plane_boundaries, coordinates, side="right")
+    if sub_screens == 1:
+        raw_ids = plane_ids
+    else:
+        left_edges = np.concatenate([[domain_start], plane_boundaries])
+        right_edges = np.concatenate([plane_boundaries, [domain_end]])
+        local_fraction = (
+            (coordinates - left_edges[plane_ids])
+            / (right_edges[plane_ids] - left_edges[plane_ids])
+        )
+        local_ids = np.floor(sub_screens * local_fraction).astype(np.int64)
+        local_ids = np.clip(local_ids, 0, sub_screens - 1)
+        raw_ids = sub_screens * plane_ids + local_ids
+
+    used_raw_ids = np.unique(raw_ids)
+    segment_ids = np.searchsorted(used_raw_ids, raw_ids).astype(np.int32)
+    if reference_potential is None:
+        axial_weights = np.ones(coordinates.size, dtype=float)
+    else:
+        reference = np.asarray(reference_potential)
+        if reference.ndim < 1 or reference.shape[0] != coordinates.size:
+            raise ValueError(
+                "reference_potential must have axial_coordinates on its first axis"
+            )
+        reduction_axes = tuple(range(1, reference.ndim))
+        axial_weights = np.abs(reference)
+        if reduction_axes:
+            axial_weights = np.sum(axial_weights, axis=reduction_axes)
+        axial_weights = np.asarray(axial_weights, dtype=float)
+        if not np.all(np.isfinite(axial_weights)):
+            raise ValueError("reference_potential must contain finite values")
+
+    positions = []
+    for compact_id, raw_id in enumerate(used_raw_ids):
+        mask = segment_ids == compact_id
+        plane_id = int(raw_id) // sub_screens
+        local_id = int(raw_id) % sub_screens
+        central_screen_contains_plane = (
+            sub_screens % 2 == 1
+            and local_id == sub_screens // 2
+            and planes[plane_id] >= coordinates[mask][0] - 0.5 * ds
+            and planes[plane_id] <= coordinates[mask][-1] + 0.5 * ds
+        )
+        if sub_screens == 1 or central_screen_contains_plane:
+            position = planes[plane_id]
+        else:
+            weights = axial_weights[mask]
+            if float(np.sum(weights)) > 0.0:
+                position = np.average(coordinates[mask], weights=weights)
+            else:
+                position = np.mean(coordinates[mask])
+            position = planes[plane_id] + offset_scale * (
+                position - planes[plane_id]
+            )
+        positions.append(float(position))
+    positions = np.asarray(positions, dtype=float)
+    if np.any(np.diff(positions) <= 0.0):
+        raise ValueError("constructed screen positions are not strictly increasing")
+
+    segment_ids.setflags(write=False)
+    positions.setflags(write=False)
+    return AtomAlignedScreenPartition1D(
+        segment_ids=segment_ids,
+        screen_positions=positions,
+        fine_axial_sampling=ds,
+        domain_start=domain_start,
+        domain_end=domain_end,
+        atom_plane_count=int(planes.size),
+        sub_screens_per_plane=sub_screens,
+        screen_offset_scale=offset_scale,
+    )
+
+
+def project_potential_to_screens_1d(potential_slices, partition):
+    """Integrate a fine potential into a fixed atom-aligned screen partition.
+
+    The first axis is axial; all remaining transverse dimensions are retained.
+    The scatter-add is differentiable with respect to ``potential_slices``.
+    """
+    potential = jnp.asarray(potential_slices)
+    if potential.ndim < 2:
+        raise ValueError("potential_slices must have an axial and transverse axis")
+    if potential.shape[0] != partition.segment_ids.size:
+        raise ValueError("potential_slices does not match the partition axial grid")
+    dtype = (
+        potential.dtype
+        if jnp.issubdtype(potential.dtype, jnp.inexact)
+        else jnp.float32
+    )
+    integrated = potential.astype(dtype) * jnp.asarray(
+        partition.fine_axial_sampling, dtype=dtype
+    )
+    output = jnp.zeros((partition.n_screens, *potential.shape[1:]), dtype=dtype)
+    return output.at[jnp.asarray(partition.segment_ids)].add(integrated)
+
+
+def simulate_projected_as_screens_1d(
+    input_wave,
+    projected_potential_screens,
+    screen_positions,
+    transverse_sampling,
+    energy,
+    *,
+    domain_start=0.0,
+    domain_end=None,
+    return_diagnostics=True,
+):
+    """Propagate through nonuniform projected screens with exact 1D AS steps.
+
+    ``input_wave`` may be one wave or a batch with transverse position on the
+    final axis. ``projected_potential_screens`` is already integrated along the
+    propagation direction and therefore has units of potential times length.
+    """
+    wave = jnp.asarray(input_wave)
+    projected = jnp.asarray(projected_potential_screens)
+    positions_host = np.asarray(screen_positions, dtype=float)
+    if wave.ndim not in (1, 2):
+        raise ValueError("input_wave must be one wave or a batch of waves")
+    if projected.ndim != 2 or projected.shape[1] != wave.shape[-1]:
+        raise ValueError("projected screens must have shape (n_screen, n_transverse)")
+    if positions_host.ndim != 1 or positions_host.size != projected.shape[0]:
+        raise ValueError("screen_positions must contain one coordinate per screen")
+    if positions_host.size == 0 or not np.all(np.isfinite(positions_host)):
+        raise ValueError("screen_positions must be non-empty and finite")
+    if np.any(np.diff(positions_host) <= 0.0):
+        raise ValueError("screen_positions must be strictly increasing")
+    dx = float(transverse_sampling)
+    if not np.isfinite(dx) or dx <= 0.0:
+        raise ValueError("transverse_sampling must be finite and positive")
+    start = float(domain_start)
+    end = float(positions_host[-1] if domain_end is None else domain_end)
+    if not np.isfinite(start) or not np.isfinite(end) or end < positions_host[-1]:
+        raise ValueError("domain bounds must contain every screen")
+    if positions_host[0] < start:
+        raise ValueError("domain_start cannot lie after the first screen")
+
+    complex_dtype = jnp.result_type(wave.dtype, jnp.complex64)
+    wave = wave.astype(complex_dtype)
+    projected = projected.astype(jnp.result_type(projected.dtype, wave.real.dtype))
+    positions = jnp.asarray(positions_host, dtype=wave.real.dtype)
+    distances_after = jnp.concatenate(
+        [jnp.diff(positions), jnp.asarray([end - positions_host[-1]], dtype=positions.dtype)]
+    )
+    pre_distance = jnp.asarray(positions_host[0] - start, dtype=positions.dtype)
+    wavelength = jnp.asarray(energy2wavelength(energy), dtype=wave.real.dtype)
+    frequencies = get_frequencies_1d(wave.shape[-1], dx).astype(wave.real.dtype)
+    kz = jnp.sqrt(
+        jnp.asarray((1.0 / wavelength) ** 2 - frequencies**2, dtype=complex_dtype)
+    )
+
+    def propagate_distance(field, distance):
+        transfer = jnp.exp(1j * 2.0 * jnp.pi * distance * kz)
+        return jnp.fft.ifft(jnp.fft.fft(field, axis=-1) * transfer, axis=-1)
+
+    wave = propagate_distance(wave, pre_distance)
+    sigma = jnp.asarray(interaction_constant(energy), dtype=wave.real.dtype)
+
+    if return_diagnostics:
+        def step(field, payload):
+            projected_slice, distance = payload
+            field = field * jnp.exp(1j * sigma * projected_slice)
+            field = propagate_distance(field, distance)
+            return field, field
+    else:
+        def step(field, payload):
+            projected_slice, distance = payload
+            field = field * jnp.exp(1j * sigma * projected_slice)
+            field = propagate_distance(field, distance)
+            return field, None
+
+    wave, wavefronts = jax.lax.scan(
+        step,
+        wave,
+        (projected, distances_after),
+    )
+    detector_wave = jnp.fft.fftshift(jnp.fft.fft(wave, axis=-1), axes=-1)
+    intensity = jnp.abs(detector_wave) ** 2
+    if not return_diagnostics:
+        return wave, intensity
+    wavefront_coordinates = jnp.concatenate(
+        [positions[1:], jnp.asarray([end], dtype=positions.dtype)]
+    )
+    diagnostics = {
+        "wavefronts": wavefronts,
+        "wavefront_coordinates": wavefront_coordinates,
+        "screen_positions": positions,
+        "distances_after_screens": distances_after,
+        "transmitted_power": jnp.sum(jnp.abs(wave) ** 2, axis=-1),
+    }
+    return wave, intensity, diagnostics
 
 
 def make_gaussian_atom_potential_sideview_1d(points, atom_positions, strengths, sigmas):

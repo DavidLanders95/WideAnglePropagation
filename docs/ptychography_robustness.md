@@ -1,160 +1,203 @@
-# Free-atom ptychography: first working experiment
+# Full-slab sparse crystal-edit ptychography
 
-This document describes the small experiment that must work before free atoms
-are used in the large side-view reconstruction.
+This document defines the maintained glancing-incidence reconstruction and its
+acceptance criteria. The implementation addresses one deliberately constrained
+question: given a known diamond-silicon host, fixed probe, fixed scan geometry,
+and fixed latent depth, can diffraction recover a smooth projected displacement
+field together with a small number of removals and additions?
 
-## The idea
+The complete 1000 Å specimen is retained in every forward calculation. There
+is no cropped 250 Å reconstruction, permanent pixel correction, continuous
+site weight, or separate registration solver.
 
-The specimen is represented by candidate silicon atoms rather than independent
-potential pixels. Each candidate has only three fitted values:
+## Geometry and supplied information
 
-- its axial position;
-- its transverse position;
-- an occupancy between zero and one.
+The experiment reproduces the side-view viewer geometry:
 
-Every active candidate produces the same known Lobato silicon scattering
-potential. The measured diffraction data decide which candidates become atoms
-and where they move.
+- 30 keV incident energy;
+- 2° glancing incidence;
+- a 15 mrad circular-aperture probe;
+- a 1000 Å propagation length and 50 Å silicon depth; and
+- 21 surface landings from 400 Å to 600 Å.
 
-The reconstruction is **not** given a silicon lattice, particle shape, atom
-count, surface, vacancy list, or ground-truth position. Twenty-four candidates
-start on a uniform rectangular grid spanning the illuminated search region.
-That grid is only a numerical starting point; it is not a crystal model.
+The inverse problem is supplied with the silicon species, complete diamond
+host, approximate lattice scale, exterior crystal, fixed probe, scan
+coordinates, and a fixed latent coordinate for added atoms. It fits four
+global registration parameters, projected host displacements, discrete host
+removals, and at most four added silicon atoms. Added atoms have continuous
+projected coordinates and fixed latent coordinate \(y=a/4\).
 
-Knowing the atomic species and the beam-observable region is still a strong
-prior. The comparison with a pixel reconstruction reports that reduction in
-freedom explicitly.
+The host is built independently of the abTEM forward specimen. Its latent
+\(y\) coordinates are preserved, and nearest-neighbour construction uses the
+periodic minimum image in \(y\). The renderer deposits complete physical sites
+on the \((s,u)\) grid and convolves them with one independently generated
+Lobato silicon template. A removed host contributes no template; an active
+added atom contributes one. Temporary residual pixels are never passed to this
+renderer.
 
-## The fitted loss
+## Training-defined mutable wedge
 
-The initial solver uses three terms:
-
-\[
-L = L_{\rm amplitude}
-  + 10^{-3}\,\mathrm{mean}(o_i)
-  + 10^{-2} E_{\rm repulsion}.
-\]
-
-The first term fits the diffraction amplitudes. The occupancy term removes
-unneeded weak candidates. The repulsion term prevents occupied candidates from
-approaching more closely than 1.8 Å.
-
-The first 200 updates change occupancies only. The remaining 800 updates also
-move atom positions. Occupancies and positions are clipped to their allowed
-ranges after every Adam update. Every fifth scan is held out, and the returned
-state is the checkpoint with the lowest held-out amplitude loss.
-
-A weak, softened Lennard--Jones-like term is tested only after repulsion works.
-It is an ablation, not an accurate energy model for covalent silicon. It ramps
-from zero during the final 400 updates and remains disabled unless it preserves
-the deliberately missing atoms and improves held-out recovery.
-
-## The nine-atom gate
-
-The truth begins as a small triangular arrangement, then removes one internal
-and two surface atoms and applies displacements of at most 0.20 Å. The truth is
-not relaxed with the reconstruction energy.
-
-The maintained notebook compares:
-
-1. independent potential pixels;
-2. atoms without pair interactions;
-3. atoms with short-range repulsion;
-4. atoms with repulsion and weak cohesion.
-
-The repulsion result must recover exactly nine atoms at occupancy 0.5, produce
-no false or missing atoms, achieve position RMSE at most 0.25 Å, keep every pair
-at least 1.8 Å apart, and reach validation amplitude NRMSE below \(10^{-3}\).
-Its 72 specimen parameters must also be at least 50 times fewer than the
-selected pixel values.
-
-If this gate fails, the side-view atom reconstruction is not implemented. A low
-diffraction residual by itself is not a successful structural result.
-
-## The first glancing-incidence gate
-
-The maintained side-view experiment uses the pristine 250 Å, 30 keV, 2 degree
-geometry from the viewer notebook. Silicon outside a calibrated 20 Å surface
-box is fixed and known. Inside that box, sixteen uniform candidates reconstruct
-eight atoms in the uppermost projected row; no axial lattice sites or atom count
-are supplied.
-
-Compact local atomic patches make this calculation scale with the template
-area rather than with candidate count times the complete 737 by 512 specimen.
-Each candidate is allowed to move by 0.75 Å around its uniform seed, while the
-known exterior remains part of every forward simulation.
-
-The accepted noiseless run recovers all eight atoms without false positives,
-with 0.064 Å position RMSE, 2.53 Å minimum spacing, and held-out amplitude NRMSE
-of \(4.04\times10^{-4}\). Its 48 specimen parameters replace 4,920 independent
-potential values in the complete atomic influence halo.
-
-This success does not extend to depth. Development runs freeing three projected
-layers (23 atoms) and a wider 4.5 Å band (52 atoms) reduced diffraction loss but
-did not recover reliable structures. They are treated as failed observability
-tests, not promoted results. Acquisition diversity or depth-response analysis
-must improve before deeper atoms are freed.
-
-## What this does not establish
-
-This is a matched, noiseless, single-species test with a fixed known probe and
-known scan geometry. It uses the maintained two-dimensional \((s,u)\) model;
-it is not a three-dimensional atom reconstruction.
-
-Noise, unknown probes, scan errors, species inference, candidate birth/death,
-save/load infrastructure, and the realistic side-view specimen were deferred by
-this first gate. The crystalline-host extension below keeps its own tests and
-does not weaken the original free-atom acceptance criteria.
-
-## Four-parameter crystalline registration
-
-The separate ``ptychography_crystal_1d`` module is intentionally narrower than
-the free-atom experiment. It receives a fully occupied, single-species crystal
-with fixed site identities and fits exactly four global values:
-
-- axial lattice phase;
-- surface-normal offset;
-- in-plane rotation;
-- axial strain.
-
-Axial strain is applied about the host centroid, followed by rotation and the
-two translations. The latent ``y`` coordinate is retained exactly. There are
-no sitewise coordinates, occupancies, species labels, defect variables, or
-elastic-energy terms, so this is crystal registration rather than defect or
-lattice discovery.
-
-The maintained notebook constructs the pristine 1000 Å by 50 Å truth with ASE
-and abTEM, generates all 41 scans on every run, and independently constructs a
-diamond reference over the complete 0--1000 Å domain. Static constructor
-outputs are converted immediately to JAX arrays. The crystal renderer uses a
-compact cubic deposition of transformed sites and one JAX FFT convolution
-with the known silicon template. Propagation, detector losses, phase search,
-optimization, histories, and metrics also remain in JAX.
-
-The squared-amplitude objective gives equal weight to two independently
-normalized terms,
+Only the fifteen training scans define the mutable beam-path wedge. For
+wavelength \(\lambda\) and convergence semiangle \(\alpha\), its reference
+radius is the first Airy zero,
 
 \[
-L = \tfrac12 L_{\mathrm{all}} + \tfrac12 L_{0\text{--}80\,\mathrm{mrad}}.
+r_0 = 0.61\frac{\lambda}{\alpha}.
 \]
 
-All scans contribute to fixed global denominators. They are evaluated in
-fixed-size batches of five with a masked final batch and accumulated by
-``jax.lax.scan``; checkpointing the multislice batch limits reverse-mode
-storage. A sequential 25-point phase search selects the Adam starting basin.
-The four physical parameters are scaled to ``[-1, 1]``, clipped after every
-update, and fitted by 200 compiled Optax Adam updates with global gradient
-clipping and a cosine-decayed learning rate.
+Host sites within \(2.5r_0\) of a post-landing ray have full mobility. Mobility
+falls smoothly to zero between \(2.5r_0\) and \(4r_0\), and all more distant
+sites remain fixed. Removal and insertion proposals are restricted to the
+full-mobility core. The temporary-pixel mask includes the same taper and an
+atomic-template halo so that a physical atom centred at the wedge boundary can
+still be proposed without truncating its diagnostic signature.
 
-The deliberately poor start is +1.7 Å phase, +0.30 Å surface offset, +0.45
-degree rotation, and +1.2 percent axial strain. All 41 scans are used by the
-fit; no validation or generalization claim is made. Structural errors compare
-the independent reference and truth using their fixed lattice ordering, with
-no subsequent coordinate alignment. The notebook reports square-root amplitude
-NRMSE for the whole detector, positive 0--80 mrad band, and +25--45 mrad band,
-along with parameter and site errors.
+There is no target-versus-nuisance hierarchy inside the wedge. Any host in the
+core can be proposed for removal, and additions can be proposed throughout the
+core, subject to the hard-core constraint and fixed capacities.
 
-This matched, noiseless baseline asks only whether a known pristine diamond
-host can be globally registered. It does not test defects, chemistry, local
-strain, unknown probes, experimental noise, or model mismatch. Those questions
-require a different model rather than adding hidden freedom to this baseline.
+## Three separate reconstruction operations
+
+The workflow deliberately separates data fitting, mechanics, and topology
+proposal.
+
+### Diffraction coordinate updates
+
+For a fixed topology, each physical cycle performs ten scaled Adam updates of
+the diffraction objective and a three-dimensional 1.8 Å hard-core penalty.
+Only projected \((s,u)\) host displacements are fitted. Their support and
+maximum excursion taper with host mobility. Active added atoms move in
+\((s,u)\), while their latent \(y\) coordinate remains fixed.
+
+The detector objective balances the complete detector and the reflected
+0--80 mrad band:
+
+\[
+L_{\rm data}
+= \tfrac12 L_{\rm all}
++ \tfrac12 L_{0\text{--}80\,{\rm mrad}},
+\qquad
+L_\Omega
+= \frac{\sum_\Omega(\sqrt{I_{\rm pred}}-\sqrt{I_{\rm meas}})^2}
+        {\sum_\Omega I_{\rm meas}}.
+\]
+
+### Weak Keating proximal update
+
+One mechanics step follows the ten data updates. The silicon host uses sparse
+linearized bond-stretch and bond-angle operators, including terms that cross
+from mobile atoms into the fixed exterior. Terms touching a removed host are
+masked. Added atoms receive no Keating bonds. The stretch-to-bend ratio follows
+the standard silicon parameterization of the
+[Keating model](https://journals.aps.org/pr/abstract/10.1103/PhysRev.145.637).
+
+The proximal subproblem is applied matrix-free with eight conjugate-gradient
+iterations, \(\sigma_K=0.15\) Å, and initial strength 0.1. A trial is rejected
+if training NRMSE increases by more than 0.5%. The strength is halved after a
+rejection, and the mechanics operation is skipped after three failed trials.
+This makes the elastic model a weak regularizer rather than an alternative fit
+to the diffraction data.
+
+The initial host receives six physical cycles. An accepted edit receives four,
+and the retained topology receives eight final cycles. Candidate screening and
+pruning use two cycles with only the local 6 Å neighbourhood free.
+
+### Discarded signed-pixel proposal
+
+Before each topology decision, the physical state is frozen and a scratch
+residual is initialized to zero. Five Adam updates fit training diffraction
+inside the tapered scratch mask. The residual is signed and clipped to
+\(\pm1.25\) times the silicon-template peak.
+
+Correlation with the silicon template turns the scratch field into proposals:
+
+- negative correlation at an active host ranks possible removals; and
+- positive, spatially non-maximal peaks rank possible additions.
+
+At most two removals and two additions are screened. The scratch field is
+stored only as a downsampled diagnostic frame and is then discarded. It is not
+a reconstruction variable, is not propagated into candidate fitting, and is
+absent from the final potential.
+
+The valid candidate with lowest selection NRMSE is accepted only if it improves
+that value by at least \(10^{-5}\). Search stops when the calibrated target is
+reached, no valid edit improves selection loss, or the capacities of four
+removals and four additions are exhausted. Once the target is reached, each
+accepted edit is removed in turn and discarded if the reduced topology still
+meets the target.
+
+## Registration, partitions, and mismatch calibration
+
+Registration is the first stage of `reconstruct_crystal_1d`. A sequential
+phase search followed by scaled Adam fits axial phase, surface-normal offset,
+in-plane rotation, and axial strain. Once the other three coordinates have
+settled, a second bounded phase profile selects the best symmetry-equivalent
+axial basin. Registration is then fixed during physical and topology updates.
+Registration history remains available in the returned result, but users do
+not coordinate a second solver.
+
+The 21 scans are partitioned deterministically into fifteen training scans,
+three topology-selection scans, and three audit scans. Training data determine
+continuous coordinates and scratch proposals. Selection data decide topology
+and pruning. Audit data remain unopened until the final physical state has
+been selected.
+
+Independent forward and inverse rasterizers do not agree exactly, even at the
+known pristine coordinates. The notebook therefore fixes the target before
+either reconstruction gate:
+
+\[
+\epsilon
+= \max\!\left(10^{-3},,1.25\,\epsilon_{\rm pristine\ oracle}\right).
+\]
+
+The oracle compares diffraction from the independently rasterized pristine
+abTEM slab with diffraction from the inverse renderer at the known pristine
+state. This calibration admits unavoidable renderer mismatch without using
+defect truth or audit scans to tune the threshold.
+
+## Maintained synthetic gates
+
+The notebook evaluates two noiseless gates.
+
+The strained-pristine gate contains global misregistration and a smooth,
+wedge-supported displacement field. It must recover the field without
+introducing a removal or addition.
+
+The sparse-defect gate uses the same smooth field, removes the surface host
+nearest the 500 Å landing, and adds one silicon atom 0.65 Å farther along the
+axial direction and 1.9 Å above that site. A prescribed local relaxation is
+added around the defect; it is not generated by the reconstruction's Keating
+model. This gate is run both with the 10:1 data/mechanics schedule and with
+mechanics disabled. Both variants retain the same signed-pixel proposal steps.
+
+The maintained acceptance conditions are:
+
+- no edits in the strained-pristine gate;
+- exactly the intended vacancy and one addition, with no false edits;
+- added-atom error no greater than 0.25 Å;
+- host-displacement RMSE no greater than 0.15 Å in the full-mobility core;
+- minimum three-dimensional separation of at least 1.8 Å;
+- selection and unopened-audit NRMSE below the calibrated target; and
+- lower displacement roughness with mechanics, without more than 5% audit
+  degradation relative to the no-mechanics result.
+
+Compact tests cover renderer discreteness and gradients, periodic latent-depth
+neighbours, training-only wedge construction, sparse Keating actions,
+backtracking, hard-core exclusion, signed residual correlation, deterministic
+proposal ranking, fixed topology capacities, and pruning. The complete 1000 Å
+gates remain a slow accelerator/notebook test.
+
+## Scope and limitations
+
+This is a matched, noiseless, single-species synthetic experiment. It assumes a
+fixed coherent probe, exact scan positions, known detector geometry, known
+exterior, and fixed latent depth. It does not infer chemistry, probe
+aberrations, partial coherence, scan errors, experimental noise, or arbitrary
+three-dimensional structure. The Keating operator is linearized and excludes
+added atoms, so it is not a reactive defect potential.
+
+Passing unopened synthetic scans tests consistency under these assumptions; it
+does not establish structural uniqueness or experimental validity. Extending
+the method requires new observability tests rather than adding an unreported
+permanent pixel correction.

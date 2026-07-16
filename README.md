@@ -9,16 +9,14 @@ and second-order Klein-Gordon propagation.
 - `wide_angle_propagation/propagation_methods.py`: public propagation kernels
   and simulation loops.
 - `wide_angle_propagation/notebook_utils.py`: beam/amplitude utilities, plotting
-  helpers, and compact result-file helpers used by the notebooks.
-- `wide_angle_propagation/ptychography_1d.py`: focused helpers for masked
-  pixelwise-potential reconstruction and selected-scan side-view caches in
-  synthetic one-dimensional glancing-incidence scans.
-- `wide_angle_propagation/ptychography_atoms_1d.py`: a deliberately small
-  free-atom reconstruction with movable positions, continuous occupancies,
-  short-range repulsion, and an optional weak cohesion experiment.
-- `wide_angle_propagation/ptychography_crystal_1d.py`: full-domain JAX crystal
-  registration with exactly four global specimen parameters: axial phase,
-  surface offset, in-plane rotation, and axial strain.
+  helpers, and the scrollable crystal-reconstruction history viewer.
+- `wide_angle_propagation/ptychography_1d.py`: four forward-facing primitives
+  for normalized amplitude loss, full-slab glancing scans, and compact
+  selected-scan side-view caches.
+- `wide_angle_propagation/ptychography_crystal_1d.py`: the unified full-slab
+  crystal workflow: internal four-parameter registration, wedge-supported host
+  displacements, sparse removals and additions, weak matrix-free Keating
+  regularization, and discarded signed-pixel topology proposals.
 - `tests/`: regression and behavior tests for the propagation methods.
 - `notebooks/figure_generation/01_axel_lubk_verification.ipynb`: Au [100]
   beam-amplitude verification against the full KG ODE reference.
@@ -48,9 +46,12 @@ The optional glancing-incidence reconstruction workflow uses Optax:
 python -m pip install -e ".[dev,ptychography]"
 ```
 
-The deliberately limited free-atom experiment and the separate four-parameter
-crystal-registration baseline are described in
-[`docs/ptychography_robustness.md`](docs/ptychography_robustness.md).
+The reconstruction assumptions, 10:1 data/mechanics schedule, topology search,
+and acceptance gates are described in
+[`docs/ptychography_robustness.md`](docs/ptychography_robustness.md). The
+maintained demonstration uses the complete 1000 Å by 50 Å silicon side view;
+there is no reduced-domain reconstruction or compatibility layer for the
+retired inversion APIs.
 
 ## Minimal Usage
 
@@ -80,17 +81,18 @@ exit_wave, diffraction_pattern, wavefronts = simulate_fresnel_as(
 
 ```bash
 python scripts/check_static.py
-python scripts/check_static.py --enforce-clean-notebooks
 pytest tests/test_multislice_method_basics.py
 pytest
 ```
 
 `scripts/check_static.py` validates package syntax, exported names, and the
 maintained notebooks without importing the GPU/scientific runtime stack.
-Use `--enforce-clean-notebooks` when you want saved notebook outputs to fail
-the check. The pytest suite requires JAX, and some integration tests and
-notebooks also require GPU dependencies (`cupy`, JAX with the appropriate
-backend, and abTEM data generation).
+The ptychography notebook is always required to have clean outputs, unique cell
+IDs, valid code cells, progress reporting, the interactive history viewer, and
+an explicit limitations section. `--enforce-clean-notebooks` extends the clean
+output policy to every maintained notebook. The pytest suite requires JAX, and
+some integration tests and notebooks also require GPU dependencies (`cupy`,
+JAX with the appropriate backend, and abTEM data generation).
 
 ## Notes
 

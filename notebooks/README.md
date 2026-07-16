@@ -25,22 +25,24 @@ dependencies.
   showing a 30 keV, 2 degree beam moving through a pristine, unstrained silicon
   slab. It contains no defects or reconstruction machinery.
 - `sideview_glancing_ptychography_1d.ipynb`: 30 keV, 2 degree silicon
-  registration over the complete 1000 Å by 50 Å pristine slab. It regenerates
-  all 41 synthetic scans, independently constructs the diamond host, and fits
-  only axial phase, surface offset, in-plane rotation, and axial strain using a
-  compiled JAX/Optax objective. Every scan is fitted; the reported detector
-  errors are fit metrics, not held-out results.
-- `nine_atom_free_atom_ptychography_1d.ipynb`: gated free-atom experiment in
-  which 24 uniform candidates must recover a nine-atom irregular Si cluster
-  before the method is promoted to the large side-view geometry.
+  reconstruction over the complete 1000 Å by 50 Å slab. It regenerates 21
+  synthetic scans, splits them into 15 training, 3 topology-selection, and 3
+  unopened audit scans, and calibrates the independent-renderer mismatch at
+  the known pristine state. The notebook evaluates a strained-pristine gate
+  and a one-vacancy/one-addition gate, including a no-mechanics ablation.
+  Reconstruction uses the package workflow; the cells contain no optimizer,
+  graph, Keating, active-search, or signed-pixel implementation. A Matplotlib
+  widget scrolls through data, mechanics, temporary-pixel, topology, pruning,
+  and final-audit events.
 
 ## Data And Outputs
 
 - Input crystal data lives in `notebooks/data/`.
 - Generated compact simulation caches and notebook figures are written under
   `notebooks/cbed/results/` and `notebooks/verification/figures/`.
-- The crystal-registration notebook always recomputes its synthetic data and
-  fit and does not write data or reconstruction files.
+- The crystal ptychography notebook always recomputes its synthetic data and
+  fit and does not write reconstruction files. abTEM specimen generation stays
+  on CPU, while JAX uses the available accelerator.
 - Paper-ready exports are written under `Paper/figures/` when the save flags in
   each notebook are enabled.
 

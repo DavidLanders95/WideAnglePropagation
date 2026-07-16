@@ -32,6 +32,7 @@ __all__ = [
     "global_phase_removed",
     "grid_from_pixel_size",
     "load_cbed_results",
+    "make_crystal_reconstruction_viewer_1d",
     "make_kirkland_probe",
     "masked_angle_crop",
     "method_key",
@@ -423,3 +424,315 @@ def load_cbed_results(path):
             ].copy()
             loaded["cell_runtime_s"][method] = data[f"{key}_cell_runtime_s"].copy()
     return loaded
+
+
+def make_crystal_reconstruction_viewer_1d(
+    model,
+    result,
+    *,
+    truth_state=None,
+    zoom_half_width_A: float = 12.0,
+):
+    """Return a Matplotlib-widget viewer for a crystal reconstruction history."""
+    try:
+        import ipywidgets as widgets
+        import matplotlib.pyplot as plt
+        from IPython.display import display
+    except ImportError as exc:  # pragma: no cover - notebook-only dependency
+        raise ImportError(
+            "the reconstruction viewer requires ipywidgets, IPython, and Matplotlib"
+        ) from exc
+    from .ptychography_crystal_1d import (
+        CrystalModel1D,
+        CrystalReconstruction1D,
+        CrystalState1D,
+    )
+
+    if not isinstance(model, CrystalModel1D) or not isinstance(
+        result, CrystalReconstruction1D
+    ):
+        raise TypeError("model and result must be crystal workflow objects")
+    if truth_state is not None and not isinstance(truth_state, CrystalState1D):
+        raise TypeError("truth_state must be CrystalState1D or None")
+    half_width = float(zoom_half_width_A)
+    if not np.isfinite(half_width) or half_width <= 0.0:
+        raise ValueError("zoom_half_width_A must be positive")
+
+    reference = np.asarray(model.reference_positions_3d)
+
+    def registered_positions(registration):
+        registration = np.asarray(registration)
+        projected = reference[:, [0, 2]]
+        center = projected.mean(axis=0)
+        relative = projected - center
+        strained_s = relative[:, 0] * (1.0 + registration[3])
+        cosine, sine = np.cos(registration[2]), np.sin(registration[2])
+        registered = np.stack(
+            [
+                cosine * strained_s - sine * relative[:, 1],
+                sine * strained_s + cosine * relative[:, 1],
+            ],
+            axis=1,
+        )
+        return registered + center + registration[:2]
+
+    mobility = np.asarray(model.host_mobility)
+    mobile = mobility > 0.0
+    registered_su = registered_positions(result.state.registration)
+    event_count = len(result.event_stages)
+    if event_count == 0:
+        raise ValueError("the reconstruction contains no viewer events")
+    scratch_lookup = {
+        int(event): index
+        for index, event in enumerate(np.asarray(result.scratch_event_indices))
+    }
+    scratch_extent = [
+        float(model.axial_coordinates[0]),
+        float(model.axial_coordinates[-1]),
+        float(model.transverse_coordinates[0]),
+        float(model.transverse_coordinates[-1]),
+    ]
+    training_history = np.asarray(result.training_nrmse_history)
+    selection_history = np.asarray(result.selection_nrmse_history)
+
+    def local_potential(active_positions_su, zoom_center):
+        coordinates_s = np.asarray(model.axial_coordinates)
+        coordinates_u = np.asarray(model.transverse_coordinates)
+        selected_s = np.flatnonzero(
+            np.abs(coordinates_s - zoom_center[0]) <= half_width
+        )
+        selected_u = np.flatnonzero(
+            np.abs(coordinates_u - zoom_center[1]) <= half_width
+        )
+        local = np.zeros((len(selected_s), len(selected_u)), dtype=np.float32)
+        template = np.asarray(model.atom_template, dtype=np.float32)
+        half_s, half_u = np.asarray(template.shape) // 2
+        ds = float(coordinates_s[1] - coordinates_s[0])
+        du = float(coordinates_u[1] - coordinates_u[0])
+        halo_s, halo_u = half_s * ds, half_u * du
+        nearby = active_positions_su[
+            (np.abs(active_positions_su[:, 0] - zoom_center[0]) <= half_width + halo_s)
+            & (np.abs(active_positions_su[:, 1] - zoom_center[1]) <= half_width + halo_u)
+        ]
+        for position in nearby:
+            center_s = int(np.rint((position[0] - coordinates_s[0]) / ds))
+            center_u = int(np.rint((position[1] - coordinates_u[0]) / du))
+            destination_s = np.arange(center_s - half_s, center_s + half_s + 1)
+            destination_u = np.arange(center_u - half_u, center_u + half_u + 1)
+            valid_s = np.isin(destination_s, selected_s)
+            valid_u = np.isin(destination_u, selected_u)
+            if np.any(valid_s) and np.any(valid_u):
+                local[np.ix_(destination_s[valid_s] - selected_s[0],
+                             destination_u[valid_u] - selected_u[0])] += template[
+                    np.ix_(np.flatnonzero(valid_s), np.flatnonzero(valid_u))
+                ]
+        extent = [coordinates_s[selected_s[0]], coordinates_s[selected_s[-1]],
+                  coordinates_u[selected_u[0]], coordinates_u[selected_u[-1]]]
+        return local.T, extent
+
+    with plt.ioff():
+        figure, axes = plt.subplots(
+            2,
+            2,
+            figsize=(14, 8),
+            constrained_layout=True,
+        )
+
+    def draw(frame):
+        frame = int(frame)
+        for axis in axes.ravel():
+            axis.clear()
+        displacement = np.asarray(result.host_displacement_history[frame])
+        positions = registered_su + displacement
+        removed = np.asarray(result.removed_host_history[frame])
+        extras = np.asarray(result.extra_position_history[frame])
+        extra_active = np.asarray(result.extra_active_history[frame])
+        magnitude = np.linalg.norm(displacement, axis=1)
+
+        axes[0, 0].scatter(
+            registered_su[~mobile, 0],
+            registered_su[~mobile, 1],
+            s=1,
+            color="0.80",
+            rasterized=True,
+        )
+        axes[0, 0].scatter(
+            positions[mobile & ~removed, 0],
+            positions[mobile & ~removed, 1],
+            c=magnitude[mobile & ~removed],
+            s=5,
+            cmap="viridis",
+            vmin=0.0,
+            vmax=max(0.2, float(np.nanmax(magnitude))),
+            rasterized=True,
+        )
+        axes[0, 0].scatter(
+            positions[removed, 0],
+            positions[removed, 1],
+            marker="x",
+            s=35,
+            color="tab:red",
+            label="removed host",
+        )
+        axes[0, 0].scatter(
+            extras[extra_active, 0],
+            extras[extra_active, 2],
+            marker="*",
+            s=70,
+            color="cyan",
+            edgecolor="black",
+            label="added Si",
+        )
+        axes[0, 0].set(
+            xlim=(float(model.axial_coordinates[0]), float(model.axial_coordinates[-1])),
+            ylim=(model.slab_bounds_A[0], model.slab_bounds_A[1] + 4.0),
+            xlabel="axial coordinate $s$ (Å)",
+            ylabel="depth $u$ (Å)",
+            title=f"{result.event_stages[frame]} — event {frame}",
+        )
+        if np.any(removed) or np.any(extra_active):
+            axes[0, 0].legend(loc="lower left", fontsize=8)
+
+        if np.any(extra_active):
+            zoom_center = extras[np.flatnonzero(extra_active)[-1], [0, 2]]
+        elif np.any(removed):
+            zoom_center = positions[np.flatnonzero(removed)[-1]]
+        else:
+            mobile_indices = np.flatnonzero(mobility > 0.0)
+            zoom_center = positions[mobile_indices[np.argmax(magnitude[mobile_indices])]]
+        local = np.abs(positions[:, 0] - zoom_center[0]) <= half_width
+        active_positions_su = np.concatenate(
+            [positions[~removed], extras[extra_active][:, [0, 2]]], axis=0
+        )
+        local_image, local_extent = local_potential(active_positions_su, zoom_center)
+        axes[0, 1].imshow(
+            local_image,
+            origin="lower",
+            aspect="auto",
+            extent=local_extent,
+            cmap="magma",
+            alpha=0.55,
+        )
+        axes[0, 1].scatter(
+            positions[local & ~removed, 0],
+            positions[local & ~removed, 1],
+            s=18,
+            color="tab:blue",
+            label="current host",
+        )
+        axes[0, 1].scatter(
+            positions[local & removed, 0],
+            positions[local & removed, 1],
+            marker="x",
+            s=65,
+            color="tab:red",
+            label="removed",
+        )
+        axes[0, 1].scatter(
+            extras[extra_active, 0],
+            extras[extra_active, 2],
+            marker="*",
+            s=100,
+            color="cyan",
+            edgecolor="black",
+            label="added",
+        )
+        if truth_state is not None:
+            truth_removed = np.asarray(truth_state.removed_host_mask)
+            truth_positions = registered_positions(truth_state.registration) + np.asarray(
+                truth_state.host_displacements
+            )
+            truth_extras = np.asarray(truth_state.extra_positions_3d)[
+                np.asarray(truth_state.extra_active_mask)
+            ]
+            axes[0, 1].scatter(
+                truth_positions[truth_removed, 0],
+                truth_positions[truth_removed, 1],
+                marker="s",
+                facecolors="none",
+                edgecolors="black",
+                s=90,
+                label="reference edit",
+            )
+            axes[0, 1].scatter(
+                truth_extras[:, 0],
+                truth_extras[:, 2],
+                marker="o",
+                facecolors="none",
+                edgecolors="black",
+                s=90,
+            )
+        axes[0, 1].set(
+            xlim=(zoom_center[0] - half_width, zoom_center[0] + half_width),
+            ylim=(max(model.slab_bounds_A[0], zoom_center[1] - half_width),
+                  min(model.slab_bounds_A[1] + 4.0, zoom_center[1] + half_width)),
+            xlabel="$s$ (Å)",
+            ylabel="$u$ (Å)",
+            title="local atomic state",
+        )
+        axes[0, 1].legend(loc="best", fontsize=8)
+
+        axes[1, 0].semilogy(training_history, label="training")
+        finite_selection = np.isfinite(selection_history)
+        axes[1, 0].semilogy(
+            np.flatnonzero(finite_selection),
+            selection_history[finite_selection],
+            marker="o",
+            ms=2,
+            label="selection",
+        )
+        axes[1, 0].semilogy(
+            [event_count - 1],
+            [float(result.audit_nrmse)],
+            marker="*",
+            ms=9,
+            linestyle="none",
+            label="unopened audit",
+        )
+        axes[1, 0].axvline(frame, color="k", ls="--", lw=0.8)
+        axes[1, 0].axhline(float(result.target_nrmse), color="tab:red", ls=":", label="target")
+        axes[1, 0].set(xlabel="stored event", ylabel="balanced amplitude NRMSE")
+        axes[1, 0].grid(alpha=0.25)
+        axes[1, 0].legend(fontsize=8)
+
+        if frame in scratch_lookup:
+            scratch = np.asarray(result.scratch_residual_history[scratch_lookup[frame]]).T
+            limit = max(float(np.max(np.abs(scratch))), 1e-12)
+            axes[1, 1].imshow(
+                scratch,
+                origin="lower",
+                aspect="auto",
+                extent=scratch_extent,
+                cmap="coolwarm",
+                vmin=-limit,
+                vmax=limit,
+            )
+            axes[1, 1].set_title("discarded signed-pixel proposal field")
+        else:
+            axes[1, 1].text(
+                0.5,
+                0.5,
+                "No pixel field is retained at this event",
+                ha="center",
+                va="center",
+                transform=axes[1, 1].transAxes,
+            )
+            axes[1, 1].set_title("temporary residual")
+        axes[1, 1].set(xlabel="$s$ (Å)", ylabel="$u$ (Å)")
+        figure.canvas.draw_idle()
+
+    slider = widgets.IntSlider(
+        value=event_count - 1,
+        min=0,
+        max=event_count - 1,
+        step=1,
+        description="reconstruction event",
+        continuous_update=False,
+        style={"description_width": "initial"},
+        layout=widgets.Layout(width="760px"),
+    )
+    slider.observe(lambda change: draw(change["new"]), names="value")
+    draw(slider.value)
+    viewer = widgets.VBox([slider, figure.canvas])
+    display(viewer)
+    return viewer

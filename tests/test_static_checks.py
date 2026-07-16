@@ -15,6 +15,7 @@ def test_python_sources_parse_and_public_exports_exist():
     check_static.assert_exports_exist(
         check_static.ROOT / "wide_angle_propagation" / "notebook_utils.py"
     )
+    check_static.assert_ptychography_contract()
 
 
 def test_notebook_output_policy_is_optional(tmp_path, monkeypatch):
