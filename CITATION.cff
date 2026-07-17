@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the accompanying paper and the archived software release."
+title: "Wide-angle multislice propagation for electron microscopy"
+type: software
+authors:
+  - family-names: Landers
+    given-names: David
+  - family-names: Rouvière
+    given-names: Jean-Luc
+version: 0.1.0
+date-released: 2026-07-17
+license: MIT
+repository-code: "https://github.com/DavidLanders95/WideAnglePropagation"
+abstract: >-
+  Implementations and numerical workflows comparing Fresnel multislice,
+  angular-spectrum multislice, wave-propagation multislice, and a second-order
+  Klein--Gordon ODE reference for electron microscopy.

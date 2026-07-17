@@ -1,3 +1,4 @@
 include README.md
+include CITATION.cff
 include LICENSE
 recursive-include wide_angle_propagation *.py

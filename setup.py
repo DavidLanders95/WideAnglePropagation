@@ -31,19 +31,19 @@ setup(
     install_requires=[
         "numpy",
         "jax",
-        "jaxlib",
-        "abtem",
         "ase",
         "matplotlib",
-        "tqdm",
         "scipy",
         "diffrax",
     ],
     extras_require={
         "dev": [
             "pytest",
-            "jupyter",
-            "notebook",
+        ],
+        "notebooks": [
+            "abtem",
+            "jupyterlab",
+            "tqdm",
         ],
     },
     include_package_data=True,

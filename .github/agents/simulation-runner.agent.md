@@ -70,8 +70,7 @@ previous `exit_phi` as `initial_phi`.
 
 ## Validation and reporting
 
-1. Run focused unit tests and `pytest -q tests/test_static_checks.py` after
-   implementation changes.
+1. Run focused unit tests and `pytest -q` after implementation changes.
 2. Check potential shape, Fourier support, finite values, norm drift, and the
    requested convergence refinement.
 3. Regenerate figures from the saved result archive rather than copying
