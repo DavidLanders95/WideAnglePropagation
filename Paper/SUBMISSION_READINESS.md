@@ -31,24 +31,10 @@ https://www.sciencedirect.com/journal/ultramicroscopy/publish/guide-for-authors
 
 ## Author actions required before upload
 
-- Confirm the drafted CRediT roles for both authors in `main.tex`.
-- Confirm that the AIDAS funding statement accurately describes the funder's
-  role. No public grant number is listed on the AIDAS website; add an internal
-  project, award, or contract number if one appears in the funding documents.
 - Complete Elsevier's declarations tool, verify the competing-interest answer
   with both authors, and upload the generated `.doc` or `.docx` file.
-- Archive the exact submitted code and data release in a persistent repository
-  such as Zenodo, then add the versioned DOI to the Data availability section
-  and to Editorial Manager. The public GitHub repository is linked now, but it
-  has no release or persistent identifier.
 - Enter the corresponding author's current telephone number in Editorial
   Manager.
-- Confirm that both authors approve the final manuscript, author order, and
-  exclusive submission to Ultramicroscopy.
-- Confirm that every figure is author-generated and that no generative-AI tool
-  was used to create or alter submitted artwork.
-- Obtain permission and attribution for any third-party material, if any was
-  introduced after this audit.
 
 ## Files to upload
 
