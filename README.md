@@ -1,5 +1,7 @@
 # Wide-angle multislice propagation for electron microscopy
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21415469.svg)](https://doi.org/10.5281/zenodo.21415469)
+
 This repository contains the implementation and numerical workflows accompanying
 the paper *Wide-Angle Multislice Propagation for Electron Microscopy: Comparison
 of Fresnel, Angular-Spectrum, and Wave-Propagation Methods* by David Landers and
@@ -115,10 +117,14 @@ simulations.
 
 ## Citation
 
-If you use this software, cite the accompanying paper and the archived Zenodo
-release. The release DOI should be added here after the Zenodo record is
-published. Machine-readable author and repository metadata are provided in
-`CITATION.cff`.
+If you use this software, please cite both the accompanying paper and the
+archived software release:
+
+> Landers, D., & Rouvière, J.-L. (2026). *Wide-angle multislice propagation
+> for electron microscopy* (Version 1.0.0) [Computer software]. Zenodo.
+> https://doi.org/10.5281/zenodo.21415469
+
+Machine-readable citation metadata are provided in `CITATION.cff`.
 
 ## License
 
