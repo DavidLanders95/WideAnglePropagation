@@ -39,7 +39,7 @@ Comparison of Fresnel, Angular-Spectrum, and Wave-Propagation Methods}
 Conventional Fresnel multislice (F-MS) is the standard method for modelling
 electron--specimen interactions in transmission electron microscopy (TEM) due to its
 computational efficiency and ability to simulate both perfect and defective crystals.
-However its paraxial propagation kernel loses accuracy when large scattering angles
+However, its paraxial propagation kernel loses accuracy when large scattering angles
 contribute to the exit wave in thick samples. Here we compare slice-based fast Fourier transform
 (FFT) propagation methods
 that preserve the practical multislice workflow while improving wide-angle
@@ -62,6 +62,22 @@ electron microscopy \sep multislice \sep electron diffraction \sep Fresnel propa
 \end{keyword}
 
 \end{frontmatter}
+
+\section*{Glossary}
+\begin{description}
+\item[AS-MS] Angular-spectrum multislice.
+\item[BPM] Beam-propagation method.
+\item[CBED] Convergent-beam electron diffraction.
+\item[FC-MS] Fully corrected multislice.
+\item[FFT] Fast Fourier transform.
+\item[F-MS] Fresnel multislice.
+\item[KG] Klein--Gordon.
+\item[ODE] Ordinary differential equation.
+\item[STEM] Scanning transmission electron microscopy.
+\item[TEM] Transmission electron microscopy.
+\item[WPM] Wave propagation method.
+\item[WP-MS] Wave-propagation multislice.
+\end{description}
 
 \section{Introduction}
 \label{sec:introduction}
@@ -298,7 +314,9 @@ The relativistically corrected Schr\"odinger refractive index is a linearised
 potential approximation to the Klein--Gordon refractive index while retaining
 the relativistic vacuum momentum through $k_0$. Therefore, changing
 from $n_\mathrm{S}$ to $n_\mathrm{KG}$ changes the refractive-index model,
-whereas the choice between the propagation method (see Section~\ref{sec:propagation_methods}) changes how a given input field is propagated through the refractive-index distribution.
+whereas the choice of propagation method (see
+Section~\ref{sec:propagation_models}) changes how a given input field is
+propagated through the refractive-index distribution.
 
 \subsection{Fresnel and angular-spectrum multislice}
 \label{sec:fresnel_angular_spectrum}
@@ -413,8 +431,8 @@ function, while propagation between slices is still performed in vacuum.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth,keepaspectratio]{method_explainer_generations/wpm}
-    \caption{Schematic of the classical wave propagation method (WPM), following
+    \includegraphics[width=0.95\textwidth,keepaspectratio]{Figure_1}
+    \caption{Classical wave propagation method (WPM). The schematic follows
     the algorithm of Schmidt et al.~\cite{Schmidt2016}. The input wave is propagated
     using a bank of homogeneous angular-spectrum kernels evaluated at
     representative refractive indices $n_m$. At each output pixel, a mask
@@ -802,7 +820,7 @@ unit cells ($\sim40$~nm).
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth,keepaspectratio]{method_explainer_generations/Au_exit_wave_amplitudes}
+    \includegraphics[width=\textwidth,keepaspectratio]{Figure_3}
     \caption{Au~[100] ODE benchmark after 100 unit cells (40.8~nm). The first
     two columns show the real-space exit-wave intensity and phase, and the rightmost
     column shows the high-resolution TEM image intensity after applying a representative
@@ -822,15 +840,15 @@ and transfer-function image intensity after propagation through 100 unit cells
 qualitatively different
 from AS-MS, WP-MS, and the Klein--Gordon ODE reference, whereas the latter
 three remain visually similar. After the microscope transfer function is
-applied, however, the image-plane differences are much less obvious because the
+applied, however, the image-plane differences are much less apparent because the
 objective aperture and transfer function suppress part of the high-angle
 information.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth,keepaspectratio]{method_explainer_generations/Au_pixel_amplitudes}
-    \caption{Fourier-component amplitudes for the Au~[100] benchmark, with the
-    incident [0, 0] amplitude normalised to unity. Panels (a) and (b) show the
+    \includegraphics[width=\textwidth,keepaspectratio]{Figure_4}
+    \caption{Fourier-component amplitudes for the Au~[100] benchmark. The
+    incident [0, 0] amplitude is normalised to unity. Panels (a) and (b) show the
     first 25 unit cells for the [0, 0] and [0, 28] components, respectively;
     panels (c) and (d) extend the same comparison to 100 unit cells. The [0, 28]
     component corresponds to approximately 135.1~mrad.}
@@ -870,7 +888,7 @@ thickness of approximately 100~nm.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth,keepaspectratio]{method_explainer_generations/cbed_kirkland_si111_combined_300mrad_997A}
+    \includegraphics[width=\textwidth,keepaspectratio]{Figure_5}
     \caption{Si~[111] CBED comparison at 100~keV, 8~mrad probe, and
     99.7117~nm thickness.
     (a) The 128-bin WP-MS CBED pattern cropped to 300~mrad.
@@ -930,7 +948,7 @@ wave.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth,keepaspectratio]{method_explainer_generations/cbed_combined_amplitude_log_error_maps}
+    \includegraphics[width=\textwidth,keepaspectratio]{Figure_6}
     \caption{CBED exit-wave amplitude comparison for the Au~[100]
     convergence-angle experiment. The top row shows the final diffraction
     amplitudes from (a) WP-MS, (b) AS-MS, and (c) F-MS. The lower row shows the
@@ -947,9 +965,10 @@ small compared with the F-MS--WP-MS discrepancy.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth,keepaspectratio]{method_explainer_generations/cbed_error_vs_thickness}
-    \caption{Relative CBED-amplitude differences from the 64-bin WP-MS result
-    as a function of specimen thickness for Au~[100] at 200~keV, using a
+    \includegraphics[width=\textwidth,keepaspectratio]{Figure_7}
+    \caption{Thickness dependence of the Au~[100] CBED-amplitude differences.
+    Relative differences from the 64-bin WP-MS result are shown as a function
+    of specimen thickness at 200~keV, using a
     5~mrad probe and 64 slices per unit cell. Scattering angles up to
     300~mrad are included.}
     \label{fig:cbed_error_vs_thickness}
@@ -1133,20 +1152,37 @@ lower accelerating voltages, compare it with bidirectional FC-MS, and evaluate
 it within ptychographic reconstructions, where systematic forward-model errors
 could bias the recovered potential.
 
-\section*{Data and code availability}
+% AUTHOR CHECK: Confirm the statement about the funder's role and add an
+% internal AIDAS project or award number here if one was assigned.
+\section*{Funding}
 
-The source code for the propagation methods is publicly available in the
+This work was supported by the European Joint Virtual Lab on Artificial
+Intelligence, Data Analytics and Scalable Simulation (AIDAS), a joint
+initiative of the French Alternative Energies and Atomic Energy Commission
+(CEA) and Forschungszentrum J\"ulich (FZJ).
+
+\section*{Data availability}
+
+The source code, input scripts, and numerical result archives that support the
+findings and reproduce the figures are publicly available in the
 \href{https://github.com/DavidLanders95/WideAnglePropagation}{WideAnglePropagation
-GitHub repository}. The scripts and
-numerical result archives used to generate the figures are provided with the
-source package for this manuscript.
+repository}. The repository includes execution instructions and the numerical
+metadata recorded for each benchmark.
+
+% AUTHOR CHECK: Confirm these roles with both authors before submission.
+\section*{CRediT authorship contribution statement}
+
+\textbf{David Landers:} Conceptualisation, Methodology, Software, Validation,
+Investigation, Visualization, Writing --
+original draft. \textbf{Jean-Luc Rouvi\`ere:} Conceptualisation, Methodology, Writing -- review and editing.
 
 \section*{Declaration of generative AI and AI-assisted technologies in the
 manuscript preparation process}
 
 During the preparation of this work, the authors used OpenAI Codex to assist
-with language editing, code writing and code review. The authors reviewed and edited the
-output and take full responsibility for the content of the article.
+with language editing, code writing, and code review. After using this tool,
+the authors reviewed and edited the content as needed and take full
+responsibility for the content of the published article.
 
 \bibliographystyle{elsarticle-num}
 \IfFileExists{Paper/sample.bib}{\bibliography{Paper/sample}}{\bibliography{sample}}
