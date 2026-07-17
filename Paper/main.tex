@@ -150,10 +150,8 @@ variants have been developed in the scalar-optics
 literature~\cite{Schmidt2016,BarreBrunel2025}.
 The method is therefore a natural starting point for a practical wide-angle
 multislice algorithm in electron microscopy, but to our knowledge it has not
-yet been systematically assessed in this context.
-
-Table~\ref{tab:method_timeline} summarises the related developments in light
-and electron optics for the method families used or compared here.
+yet been systematically assessed in this context - see table~\ref{tab:method_timeline} which summarises the related developments in light
+and electron optics for the method families compared here.
 
 \begin{table}[H]
 \centering
@@ -522,7 +520,8 @@ to refractive-index bins is not smoothly differentiable.
 
 We refer to our electron-microscopy adaptation of WPM as wave propagation
 multislice (WP-MS), to distinguish it from the classical WPM used in scalar
-light optics. The main practical issue is that an electron-microscopy slice has
+light optics. The main practical issue is that a typical sample slice used for 
+electron-microscopy simulations has
 a nearly continuous refractive-index distribution, so grouping exactly by
 refractive-index value would require almost one homogeneous propagation
 per pixel. We therefore use a differentiable binned version of WPM, partly
@@ -656,7 +655,7 @@ thickness until the field error is within an acceptable tolerance.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth,keepaspectratio]{method_explainer_generations/wpm_binning_diagnostics}
+    \includegraphics[width=\textwidth,keepaspectratio]{Figure_2}
     \caption{Diagnostics of the automatic-differentiation-compatible WP-MS
     binning strategy for a
     200~keV Au~[100] calculation using one 4.08~\AA{} projected slice and 32
@@ -1090,6 +1089,39 @@ here, AS-MS captures most of the change from F-MS at the same per-slice FFT
 cost, whereas WP-MS produces a further increase in accuracy at a much
 higher cost.
 
+To indicate the scale of this overhead in the present implementation,
+Table~\ref{tab:propagation_timing} reports propagation-only timings for the
+Au~[100] CBED grid comparing F-MS, AS-MS, and WP-MS, whereby the WP-MS implementation
+is timed with 64, 128 and 256 refractive index bins in each slice. Each timed call propagated the same $2048\times2048$
+probe through one 64-slice Au unit cell at 200~keV using double precision on
+an NVIDIA A100 80~GB GPU. The values are medians of ten calls after one
+warm-up call for each method; potential and probe construction, kernel
+construction, JAX compilation, and analysis were excluded. F-MS and AS-MS
+both required approximately 0.205~s per unit cell, whereas the WP-MS time
+increased approximately linearly with the number of refractive index bins. These
+values are implementation- and hardware-specific, but they show why the
+smaller AS-MS correction is the more practical default when the additional
+local-medium correction of WP-MS is not required.
+
+\begin{table}[H]
+    \centering
+    \caption{Propagation-only timing for one 64-slice Au~[100] unit cell on a
+    $2048\times2048$ grid using an NVIDIA A100 80~GB GPU. Relative times are
+    normalised by the median AS-MS time. WP-MS times are reported for 64, 128, and 256 refractive index bins.}
+    \label{tab:propagation_timing}
+    \begin{tabular}{lrr}
+        \toprule
+        \textbf{Method} & \textbf{Median time (s)} & \textbf{Relative to AS-MS} \\
+        \midrule
+        F-MS      & 0.205 & 1.00 \\
+        AS-MS     & 0.205 & 1.00 \\
+        WP-MS-64 bins  & 11.5  & 56.3 \\
+        WP-MS-128 bins & 22.8  & 111  \\
+        WP-MS-256 bins & 45.0  & 220  \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
 \subsection{Consequences and limits}
 
 The silicon CBED calculation (Figure~\ref{fig:si111_cbed_combined}) shows that
@@ -1152,8 +1184,6 @@ lower accelerating voltages, compare it with bidirectional FC-MS, and evaluate
 it within ptychographic reconstructions, where systematic forward-model errors
 could bias the recovered potential.
 
-% AUTHOR CHECK: Confirm the statement about the funder's role and add an
-% internal AIDAS project or award number here if one was assigned.
 \section*{Funding}
 
 This work was supported by the European Joint Virtual Lab on Artificial
@@ -1169,7 +1199,6 @@ findings and reproduce the figures are publicly available in the
 repository}. The repository includes execution instructions and the numerical
 metadata recorded for each benchmark.
 
-% AUTHOR CHECK: Confirm these roles with both authors before submission.
 \section*{CRediT authorship contribution statement}
 
 \textbf{David Landers:} Conceptualisation, Methodology, Software, Validation,
@@ -1183,6 +1212,11 @@ During the preparation of this work, the authors used OpenAI Codex to assist
 with language editing, code writing, and code review. After using this tool,
 the authors reviewed and edited the content as needed and take full
 responsibility for the content of the published article.
+
+\section*{Acknowledgements}
+
+The authors thank Matthew Bryan, Dieter Weber, Alexander Clausen and Malika Khelfallah
+for helpful discussion and feedback on the algorithm and manuscript.
 
 \bibliographystyle{elsarticle-num}
 \IfFileExists{Paper/sample.bib}{\bibliography{Paper/sample}}{\bibliography{sample}}

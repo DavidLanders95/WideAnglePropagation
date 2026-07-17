@@ -13,19 +13,14 @@ pytest.importorskip("ase")
 jax.config.update("jax_enable_x64", True)
 
 from wide_angle_propagation.propagation_methods import (
-    _slice_phase_grating,
-    simulate_fresnel_as,
-    simulate_wpm,
-    fresnel_propagation_kernel,
     angular_spectrum_propagation_kernel,
-    electron_refractive_index,
-    electron_refractive_index_squared,
-    electron_rest_energy,
     energy2wavelength,
-    transverse_frequency_squared,
+    fresnel_propagation_kernel,
+    simulate_fresnel_as,
+    simulate_fresnel_as_jit,
+    simulate_wpm,
+    simulate_wpm_jit,
 )
-from tests.conftest import beam_amplitude_normalized
-
 
 # ---------------------------------------------------------------------------
 # Shared test parameters
@@ -35,6 +30,15 @@ GPTS = (64, 64)
 DZ = 2.0  # Angstrom slice thickness
 SAMPLING = (0.1, 0.1)  # Angstrom pixel size
 N_SLICES = 2
+REST_ENERGY_EV = 510_998.95
+WAVELENGTH_300KEV = 0.019687489006848795
+
+
+def _beam_amplitude(psi_xy, h, k):
+    """Return the normalized amplitude of one fftshifted Fourier beam."""
+    ny, nx = psi_xy.shape
+    spectrum = np.fft.fftshift(np.fft.fft2(psi_xy) / (nx * ny))
+    return np.abs(spectrum[ny // 2 + k, nx // 2 + h])
 
 
 def _make_vacuum_potential():
@@ -42,146 +46,167 @@ def _make_vacuum_potential():
     return jnp.zeros((N_SLICES, *GPTS), dtype=jnp.float64)
 
 
-def _make_constant_potential(V_volts=10.0):
-    """Uniform potential (constant V everywhere)."""
-    return V_volts * jnp.ones((N_SLICES, *GPTS), dtype=jnp.float64)
-
-
 def _make_plane_wave():
     return jnp.ones(GPTS, dtype=jnp.complex128)
-
-
-def test_transverse_frequency_squared_uses_cycles_per_length():
-    """FFT-grid helper should not hide an angular 2*pi conversion."""
-    shape = (4, 6)
-    sampling = (0.5, 0.25)
-    fy = np.fft.fftfreq(shape[0], d=sampling[0])
-    fx = np.fft.fftfreq(shape[1], d=sampling[1])
-    fx_grid, fy_grid = np.meshgrid(fx, fy)
-    expected = fy_grid**2 + fx_grid**2
-
-    np.testing.assert_allclose(
-        np.asarray(transverse_frequency_squared(shape, sampling)),
-        expected,
-        rtol=1e-14,
-        atol=1e-14,
-    )
 
 
 # ---------------------------------------------------------------------------
 # Vacuum propagation: plane wave should be preserved
 # ---------------------------------------------------------------------------
 
-class TestVacuumPropagation:
-    """Propagating a plane wave through vacuum should preserve it."""
 
-    def test_fresnel_vacuum(self):
-        pot = _make_vacuum_potential()
-        pw = _make_plane_wave()
-        fk = fresnel_propagation_kernel(GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY)
-        exit_wave, _, _ = simulate_fresnel_as(pot, pw, fk, DZ, ENERGY)
-        amp = beam_amplitude_normalized(np.asarray(exit_wave), 0, 0)
-        assert abs(amp - 1.0) < 1e-6, f"Fresnel vacuum [0,0] amplitude = {amp}"
+def test_all_methods_match_vacuum_plane_wave_solution():
+    pot = _make_vacuum_potential()
+    plane_wave = _make_plane_wave()
+    fresnel_kernel = fresnel_propagation_kernel(
+        GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY
+    )
+    angular_kernel = angular_spectrum_propagation_kernel(
+        GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY
+    )
 
-    def test_angular_spectrum_vacuum(self):
-        pot = _make_vacuum_potential()
-        pw = _make_plane_wave()
-        ak = angular_spectrum_propagation_kernel(GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY)
-        exit_wave, _, _ = simulate_fresnel_as(pot, pw, ak, DZ, ENERGY)
-        amp = beam_amplitude_normalized(np.asarray(exit_wave), 0, 0)
-        assert abs(amp - 1.0) < 1e-6, f"AS vacuum [0,0] amplitude = {amp}"
+    exit_waves = {
+        "Fresnel": simulate_fresnel_as(
+            pot, plane_wave, fresnel_kernel, DZ, ENERGY
+        )[0],
+        "angular spectrum": simulate_fresnel_as(
+            pot, plane_wave, angular_kernel, DZ, ENERGY
+        )[0],
+        "WPM": simulate_wpm(pot, plane_wave, DZ, ENERGY, SAMPLING)[0],
+    }
+    wavelength = float(energy2wavelength(ENERGY))
+    expected = np.asarray(plane_wave) * np.exp(
+        2j * np.pi * N_SLICES * DZ / wavelength
+    )
 
-    def test_wpm_vacuum(self):
-        pot = _make_vacuum_potential()
-        pw = _make_plane_wave()
-        exit_wave, _, _ = simulate_wpm(pot, pw, DZ, ENERGY, SAMPLING)
-        amp = beam_amplitude_normalized(np.asarray(exit_wave), 0, 0)
-        assert abs(amp - 1.0) < 1e-6, f"WPM vacuum [0,0] amplitude = {amp}"
+    for name, exit_wave in exit_waves.items():
+        np.testing.assert_allclose(
+            np.asarray(exit_wave),
+            expected,
+            rtol=1e-11,
+            atol=1e-11,
+            err_msg=f"{name} should reproduce the analytic vacuum phase",
+        )
 
 
 # ---------------------------------------------------------------------------
-# Constant potential: all methods should give the same phase shift
+# Uniform-medium propagation
 # ---------------------------------------------------------------------------
 
-class TestConstantPotential:
-    """Uniform potential produces a known global phase shift."""
 
-    V_CONST = 20.0  # Volts
+def test_all_methods_match_uniform_medium_plane_wave_solutions():
+    shape = (8, 8)
+    sampling = (0.2, 0.2)
+    thickness = 0.05
+    n_slices = 3
+    potential_value = 20_000.0
+    potential = jnp.full((n_slices, *shape), potential_value)
+    plane_wave = jnp.ones(shape, dtype=jnp.complex128)
+    fresnel_kernel = fresnel_propagation_kernel(
+        *shape, sampling, z=thickness, energy=ENERGY
+    )
+    angular_kernel = angular_spectrum_propagation_kernel(
+        *shape, sampling, z=thickness, energy=ENERGY
+    )
 
-    def test_kg_index_squared_matches_energy_ratio(self):
-        potential = jnp.asarray([-20.0, 0.0, 20.0, 20_000.0])
-        rest_energy = electron_rest_energy()
-        total_energy = rest_energy + ENERGY
-        expected = (
-            (total_energy + potential) ** 2 - rest_energy**2
-        ) / (total_energy**2 - rest_energy**2)
+    fixed_kernel_results = {
+        "Fresnel": simulate_fresnel_as(
+            potential, plane_wave, fresnel_kernel, thickness, ENERGY
+        ),
+        "angular spectrum": simulate_fresnel_as(
+            potential, plane_wave, angular_kernel, thickness, ENERGY
+        ),
+    }
+    wpm_result = simulate_wpm(
+        potential, plane_wave, thickness, ENERGY, sampling, n_bins=5
+    )
 
-        actual = electron_refractive_index_squared(potential, ENERGY)
+    total_energy = REST_ENERGY_EV + ENERGY
+    n_squared = (
+        (total_energy + potential_value) ** 2 - REST_ENERGY_EV**2
+    ) / (total_energy**2 - REST_ENERGY_EV**2)
+    refractive_index = np.sqrt(n_squared)
+    fixed_kernel_step = np.exp(
+        1j * np.pi * (n_squared + 1.0) * thickness / WAVELENGTH_300KEV
+    )
+    wpm_step = np.exp(
+        2j
+        * np.pi
+        * refractive_index
+        * thickness
+        / WAVELENGTH_300KEV
+    )
+    slice_numbers = np.arange(1, n_slices + 1)[:, None, None]
+    initial = np.asarray(plane_wave)[None, ...]
+    expected_fixed_wavefronts = initial * fixed_kernel_step**slice_numbers
+    expected_wpm_wavefronts = initial * wpm_step**slice_numbers
+
+    for name, (exit_wave, _, wavefronts) in fixed_kernel_results.items():
         np.testing.assert_allclose(
-            np.asarray(actual), np.asarray(expected), rtol=2e-15, atol=2e-15
+            np.asarray(wavefronts),
+            expected_fixed_wavefronts,
+            rtol=2e-6,
+            atol=2e-6,
+            err_msg=f"{name} should follow the paraxial uniform-medium phase",
         )
-
         np.testing.assert_allclose(
-            np.asarray(electron_refractive_index(potential, ENERGY) ** 2),
-            np.asarray(actual),
-            rtol=2e-15,
-            atol=2e-15,
+            np.asarray(exit_wave),
+            expected_fixed_wavefronts[-1],
+            rtol=2e-6,
+            atol=2e-6,
         )
 
-    def test_phase_grating_uses_paraxial_kg_interaction(self):
-        potential = jnp.asarray([[20_000.0]], dtype=jnp.float64)
-        thickness = 0.5
-        wavelength = energy2wavelength(ENERGY)
-        refractive_index = electron_refractive_index(potential, ENERGY)
+    wpm_exit, _, wpm_wavefronts = wpm_result
+    np.testing.assert_allclose(
+        np.asarray(wpm_wavefronts),
+        expected_wpm_wavefronts,
+        rtol=2e-6,
+        atol=2e-6,
+    )
+    np.testing.assert_allclose(
+        np.asarray(wpm_exit),
+        expected_wpm_wavefronts[-1],
+        rtol=2e-6,
+        atol=2e-6,
+    )
 
-        expected = jnp.exp(
-            1j
-            * jnp.pi
-            * (refractive_index**2 - 1.0)
-            * thickness
-            / wavelength
-        )
-        actual = _slice_phase_grating(potential, thickness, ENERGY)
 
-        np.testing.assert_allclose(np.asarray(actual), np.asarray(expected), rtol=1e-13)
+def test_jitted_multislice_solvers_match_eager_results():
+    shape = (4, 4)
+    sampling = (0.2, 0.2)
+    thickness = 0.05
+    y, x = jnp.mgrid[: shape[0], : shape[1]]
+    first_slice = 10.0 + jnp.cos(2.0 * jnp.pi * x / shape[1])
+    potential = jnp.stack([first_slice, 0.5 * first_slice])
+    probe = jnp.exp(2j * jnp.pi * y / shape[0])
+    kernel = angular_spectrum_propagation_kernel(
+        *shape, sampling, z=thickness, energy=ENERGY
+    )
 
-        eikonal_phase = jnp.exp(
-            2j
-            * jnp.pi
-            * (refractive_index - 1.0)
-            * thickness
-            / wavelength
-        )
-        assert not np.allclose(np.asarray(actual), np.asarray(eikonal_phase), rtol=1e-6)
+    eager_fixed = simulate_fresnel_as(
+        potential, probe, kernel, thickness, ENERGY
+    )
+    jitted_fixed = simulate_fresnel_as_jit(
+        potential, probe, kernel, thickness, ENERGY
+    )
+    eager_wpm = simulate_wpm(
+        potential, probe, thickness, ENERGY, sampling, n_bins=4
+    )
+    jitted_wpm = simulate_wpm_jit(
+        potential, probe, thickness, ENERGY, sampling, n_bins=4
+    )
 
-    def test_fresnel_constant_v(self):
-        pot = _make_constant_potential(self.V_CONST)
-        pw = _make_plane_wave()
-        fk = fresnel_propagation_kernel(GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY)
-        exit_wave, _, _ = simulate_fresnel_as(pot, pw, fk, DZ, ENERGY)
-        # Amplitude of [0,0] beam should still be ~1
-        amp = beam_amplitude_normalized(np.asarray(exit_wave), 0, 0)
-        assert abs(amp - 1.0) < 1e-4, f"Fresnel const-V [0,0] amplitude = {amp}"
-
-    def test_methods_agree_constant_v(self):
-        """All methods should give similar exit waves for constant potential."""
-        pot = _make_constant_potential(self.V_CONST)
-        pw = _make_plane_wave()
-        fk = fresnel_propagation_kernel(GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY)
-        ak = angular_spectrum_propagation_kernel(GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY)
-
-        w_fr, _, _ = simulate_fresnel_as(pot, pw, fk, DZ, ENERGY)
-        w_as, _, _ = simulate_fresnel_as(pot, pw, ak, DZ, ENERGY)
-        w_wpm, _, _ = simulate_wpm(pot, pw, DZ, ENERGY, SAMPLING)
-
-        # All should produce ~same beam amplitudes for [0,0]
-        amps = {
-            "fresnel": beam_amplitude_normalized(np.asarray(w_fr), 0, 0),
-            "as": beam_amplitude_normalized(np.asarray(w_as), 0, 0),
-            "wpm": beam_amplitude_normalized(np.asarray(w_wpm), 0, 0),
-        }
-        for name, amp in amps.items():
-            assert abs(amp - 1.0) < 1e-3, f"{name} const-V [0,0] = {amp}"
+    for eager, jitted in [
+        (eager_fixed, jitted_fixed),
+        (eager_wpm, jitted_wpm),
+    ]:
+        for eager_output, jitted_output in zip(eager, jitted):
+            np.testing.assert_allclose(
+                np.asarray(jitted_output),
+                np.asarray(eager_output),
+                rtol=1e-12,
+                atol=1e-12,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -203,15 +228,19 @@ class TestThinSpecimenAgreement:
     def test_all_methods_close_thin(self):
         pot = self._make_weak_potential()
         pw = _make_plane_wave()
-        fk = fresnel_propagation_kernel(GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY)
-        ak = angular_spectrum_propagation_kernel(GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY)
+        fk = fresnel_propagation_kernel(
+            GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY
+        )
+        ak = angular_spectrum_propagation_kernel(
+            GPTS[0], GPTS[1], SAMPLING, z=DZ, energy=ENERGY
+        )
 
         w_fr, _, _ = simulate_fresnel_as(pot, pw, fk, DZ, ENERGY)
         w_as, _, _ = simulate_fresnel_as(pot, pw, ak, DZ, ENERGY)
         w_wpm, _, _ = simulate_wpm(pot, pw, DZ, ENERGY, SAMPLING)
-        amp_fr = beam_amplitude_normalized(np.asarray(w_fr), 0, 0)
-        amp_as = beam_amplitude_normalized(np.asarray(w_as), 0, 0)
-        amp_wpm = beam_amplitude_normalized(np.asarray(w_wpm), 0, 0)
+        amp_fr = _beam_amplitude(np.asarray(w_fr), 0, 0)
+        amp_as = _beam_amplitude(np.asarray(w_as), 0, 0)
+        amp_wpm = _beam_amplitude(np.asarray(w_wpm), 0, 0)
 
         # All should agree within 1% for thin specimen
         ref = amp_fr

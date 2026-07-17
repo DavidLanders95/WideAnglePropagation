@@ -1,12 +1,17 @@
+from pathlib import Path
+
 from setuptools import find_packages, setup
 
-with open("README.md", "r", encoding="utf-8") as fh:
-    long_description = fh.read()
+description = "Wide-angle wave propagation methods for electron microscopy"
+readme_path = Path(__file__).with_name("README.md")
+long_description = (
+    readme_path.read_text(encoding="utf-8") if readme_path.exists() else description
+)
 
 setup(
     name="wide-angle-propagation",
     version="0.1.0",
-    description="Wide-angle wave propagation methods for electron microscopy",
+    description=description,
     long_description=long_description,
     long_description_content_type="text/markdown",
     license="MIT",

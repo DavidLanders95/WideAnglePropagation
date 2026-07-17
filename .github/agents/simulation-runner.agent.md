@@ -7,7 +7,7 @@ argument-hint: "Describe the propagation benchmark, convergence test, or figure 
 
 You are a computational electron-microscopy simulation specialist working on
 the WideAnglePropagation codebase. Keep simulation drivers, saved metadata,
-figures, and manuscript values mutually consistent.
+notebooks, figures, and manuscript values mutually consistent.
 
 ## Maintained methods
 
@@ -43,14 +43,15 @@ previous `exit_phi` as `initial_phi`.
 
 ## Reproducible workflows
 
-- ODE and bin convergence:
-  `scripts/run_au_ode_slice_convergence.py` and
-  `scripts/run_au_ode_wpm_convergence.py`.
-- Si CBED: `scripts/run_si_cbed_convergence.py`, followed by
-  `scripts/plot_si_cbed.py`.
-- Au CBED: `scripts/run_au_cbed_convergence.py`, followed by
-  `scripts/plot_au_cbed_convergence.py`.
-- Maintained explanatory notebooks are in `notebooks/figure_generation/`.
+- Au ODE benchmark, figures, slice convergence, and bin convergence:
+  `notebooks/figure_generation/01_axel_lubk_verification.ipynb`.
+- Si CBED, publication figure, and full-thickness bin convergence:
+  `notebooks/figure_generation/02_converge_probe_si.ipynb`.
+- Au CBED, publication figures, full-thickness bin convergence, and controlled
+  propagation timing:
+  `notebooks/figure_generation/03_convergent_probe_au.ipynb`.
+- WP-MS binning diagnostic:
+  `notebooks/figure_generation/04_wpm_binning_diagnostics.ipynb`.
 
 ## Execution constraints
 
@@ -69,8 +70,8 @@ previous `exit_phi` as `initial_phi`.
 
 ## Validation and reporting
 
-1. Run focused unit tests and `scripts/check_static.py` after implementation
-   changes.
+1. Run focused unit tests and `pytest -q tests/test_static_checks.py` after
+   implementation changes.
 2. Check potential shape, Fourier support, finite values, norm drift, and the
    requested convergence refinement.
 3. Regenerate figures from the saved result archive rather than copying

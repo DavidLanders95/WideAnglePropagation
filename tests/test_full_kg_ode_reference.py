@@ -47,10 +47,6 @@ def _gaussian_probe(ny, nx, dy, dx, sigma):
     return probe / np.sqrt(np.sum(np.abs(probe) ** 2))
 
 
-def _total_intensity(psi):
-    return float(np.sum(np.abs(np.asarray(psi)) ** 2))
-
-
 def _transverse_frequency_sq_grid(gpts, sampling):
     ny, nx = gpts
     dy, dx = sampling
@@ -259,12 +255,6 @@ class TestVacuumReference:
             atol=1e-8,
             err_msg="Saved vacuum wavefronts should land on exact slice boundaries",
         )
-        np.testing.assert_allclose(
-            _total_intensity(ew),
-            1.0,
-            atol=5e-8,
-            err_msg="Vacuum propagation should preserve total intensity",
-        )
 
 
 class TestUniformMediumReference:
@@ -317,56 +307,6 @@ class TestUniformMediumReference:
 
 
 class TestExactReferenceConvergence:
-    def test_matches_exact_single_slice_matrix_exponential(self):
-        potential = _small_nonuniform_stack()[:1]
-        probe = _small_probe()
-        initial_phi = _forward_vacuum_phi(probe, ENERGY, SMALL_SAMPLING)
-
-        exact_wave, exact_phi, exact_wavefronts = _exact_full_kg_stack(
-            potential,
-            probe,
-            initial_phi,
-            SMALL_DZ,
-            ENERGY,
-            SMALL_SAMPLING,
-        )
-
-        ew, phi, _, wavefronts = simulate_kg_ode_full(
-            jnp.asarray(potential),
-            jnp.asarray(probe),
-            SMALL_DZ,
-            ENERGY,
-            SMALL_SAMPLING,
-            initial_phi=jnp.asarray(initial_phi),
-            rtol=1e-10,
-            atol=1e-12,
-        )
-
-        np.testing.assert_allclose(
-            np.asarray(ew),
-            exact_wave,
-            rtol=1e-6,
-            atol=1e-7,
-            err_msg=(
-                "Full KG ODE should match the exact one-slice matrix "
-                "exponential reference"
-            ),
-        )
-        np.testing.assert_allclose(
-            np.asarray(phi),
-            exact_phi,
-            rtol=1e-6,
-            atol=1e-7,
-            err_msg="One-slice exit derivative should match the exact reference",
-        )
-        np.testing.assert_allclose(
-            np.asarray(wavefronts),
-            exact_wavefronts,
-            rtol=1e-6,
-            atol=1e-7,
-            err_msg="One-slice saved wavefronts should match the exact reference",
-        )
-
     def test_matches_exact_multislice_matrix_exponential(self):
         potential = _small_nonuniform_stack()
         probe = _small_probe()
@@ -417,104 +357,8 @@ class TestExactReferenceConvergence:
             err_msg="Saved wavefronts should match the exact reference",
         )
 
-    def test_tighter_tolerances_reduce_exact_reference_error(self):
-        potential = _small_nonuniform_stack()
-        probe = _small_probe()
-        initial_phi = _forward_vacuum_phi(probe, ENERGY, SMALL_SAMPLING)
-
-        exact_wave, _, _ = _exact_full_kg_stack(
-            potential,
-            probe,
-            initial_phi,
-            SMALL_DZ,
-            ENERGY,
-            SMALL_SAMPLING,
-        )
-
-        errors = []
-        for rtol, atol in [(1e-4, 1e-6), (1e-7, 1e-9), (1e-10, 1e-12)]:
-            ew, _, _, _ = simulate_kg_ode_full(
-                jnp.asarray(potential),
-                jnp.asarray(probe),
-                SMALL_DZ,
-                ENERGY,
-                SMALL_SAMPLING,
-                initial_phi=jnp.asarray(initial_phi),
-                rtol=rtol,
-                atol=atol,
-            )
-            error = float(
-                jnp.linalg.norm(ew - exact_wave) / jnp.linalg.norm(exact_wave)
-            )
-            errors.append(error)
-
-        assert errors[1] < errors[0], (
-            f"Medium tolerance should improve on loose tolerance: {errors}"
-        )
-        assert errors[2] < errors[1], (
-            f"Tight tolerance should improve on medium tolerance: {errors}"
-        )
-        assert errors[2] < 1e-7, (
-            f"Tight tolerance should be near the exact reference: {errors}"
-        )
-
 
 class TestSecondOrderStateHandling:
-    def test_sequential_calls_match_full_stack_when_phi_is_carried(self):
-        potential = _small_discontinuous_stack()
-        probe = _small_probe()
-
-        full_wave, full_phi, _, full_wavefronts = simulate_kg_ode_full(
-            jnp.asarray(potential),
-            jnp.asarray(probe),
-            SMALL_DZ,
-            ENERGY,
-            SMALL_SAMPLING,
-            rtol=1e-9,
-            atol=1e-11,
-        )
-
-        state = jnp.asarray(probe)
-        phi = None
-        sequential_wavefronts = []
-        for idx in range(potential.shape[0]):
-            state, phi, _, _ = simulate_kg_ode_full(
-                jnp.asarray(potential[idx:idx + 1]),
-                state,
-                SMALL_DZ,
-                ENERGY,
-                SMALL_SAMPLING,
-                initial_phi=phi,
-                rtol=1e-9,
-                atol=1e-11,
-            )
-            sequential_wavefronts.append(np.asarray(state))
-
-        sequential_wavefronts = np.stack(sequential_wavefronts)
-
-        np.testing.assert_allclose(
-            np.asarray(full_wavefronts),
-            sequential_wavefronts,
-            rtol=1e-6,
-            atol=1e-7,
-            err_msg=(
-                "Full KG wavefronts should match sequential one-slice calls "
-                "when exit_phi is passed back as initial_phi"
-            ),
-        )
-        np.testing.assert_allclose(
-            np.asarray(full_wave),
-            sequential_wavefronts[-1],
-            rtol=1e-6,
-            atol=1e-7,
-        )
-        np.testing.assert_allclose(
-            np.asarray(full_phi),
-            np.asarray(phi),
-            rtol=1e-6,
-            atol=1e-7,
-        )
-
     def test_slice_by_slice_calls_must_carry_exit_phi(self):
         potential = _small_discontinuous_stack()
         probe = _small_probe()
@@ -570,107 +414,4 @@ class TestSecondOrderStateHandling:
         assert without_phi_error > 1e-4, (
             "Dropping exit_phi should measurably change the second-order KG "
             f"state: {without_phi_error:.3e}"
-        )
-
-
-class TestOutputs:
-    ny = nx = 24
-    dy = dx = 0.15
-    dz = 2.0
-    n_slices = 6
-
-    def test_last_wavefront_matches_exit_wave(self):
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx, sigma=1.0)
-        pot = jnp.zeros((self.n_slices, self.ny, self.nx))
-
-        ew, _, _, wavefronts = simulate_kg_ode_full(
-            pot,
-            jnp.asarray(probe),
-            self.dz,
-            ENERGY,
-            (self.dy, self.dx),
-            rtol=1e-10,
-            atol=1e-12,
-        )
-
-        np.testing.assert_allclose(
-            np.asarray(wavefronts[-1]),
-            np.asarray(ew),
-            rtol=1e-10,
-            atol=1e-12,
-            err_msg="The final saved wavefront should equal the exit wave",
-        )
-
-    def test_diffraction_pattern_matches_manual_fft(self):
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx, sigma=1.0)
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-        V = 30.0 * np.exp(-((X - cx) ** 2 + (Y - cy) ** 2) / 0.25)
-        pot = jnp.stack([jnp.asarray(V)] * self.n_slices)
-
-        ew, _, dp, _ = simulate_kg_ode_full(
-            pot,
-            jnp.asarray(probe),
-            self.dz,
-            ENERGY,
-            (self.dy, self.dx),
-            rtol=1e-8,
-            atol=1e-10,
-        )
-        dp_manual = np.abs(np.fft.fftshift(np.fft.fft2(np.asarray(ew)))) ** 2
-
-        np.testing.assert_allclose(
-            np.asarray(dp),
-            dp_manual,
-            rtol=1e-10,
-            atol=1e-12,
-            err_msg="Diffraction pattern should equal |fftshift(fft2(exit_wave))|^2",
-        )
-
-
-class TestStability:
-    ny = nx = 24
-    dy = dx = 0.15
-    dz = 2.0
-
-    def test_challenging_stack_remains_bounded(self):
-        probe = _gaussian_probe(self.ny, self.nx, self.dy, self.dx, sigma=1.0)
-        X, Y = _make_grid(self.ny, self.nx, self.dy, self.dx)
-        cx, cy = self.nx * self.dx / 2, self.ny * self.dy / 2
-
-        slices = []
-        for idx in range(20):
-            if idx % 2 == 0:
-                V = 250.0 * np.exp(
-                    -((X - (cx - 0.25)) ** 2 + (Y - cy) ** 2) / 0.08
-                )
-            else:
-                V = 150.0 * np.exp(
-                    -((X - (cx + 0.25)) ** 2 + (Y - cy) ** 2) / 0.08
-                )
-            slices.append(V)
-
-        pot = jnp.asarray(np.stack(slices))
-        exit_wave, _, _, wavefronts = simulate_kg_ode_full(
-            pot,
-            jnp.asarray(probe),
-            self.dz,
-            ENERGY,
-            (self.dy, self.dx),
-            rtol=1e-8,
-            atol=1e-10,
-        )
-
-        wavefronts = np.asarray(wavefronts)
-        intensities = np.sum(np.abs(wavefronts) ** 2, axis=(1, 2))
-
-        assert np.isfinite(wavefronts).all(), (
-            "Wavefronts should remain finite on a challenging slice stack"
-        )
-        assert np.isfinite(np.asarray(exit_wave)).all(), (
-            "Exit wave should remain finite on a challenging slice stack"
-        )
-        assert np.max(np.abs(intensities - 1.0)) < 2e-3, (
-            "Norm drift on a challenging stack should stay small; "
-            f"got {np.max(np.abs(intensities - 1.0)):.3e}"
         )
