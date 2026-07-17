@@ -1,0 +1,4 @@
+Exact angular-spectrum propagation removes most Fresnel wide-angle error.
+AS-MS retains the multislice structure and per-slice FFT cost.
+WP-MS adapts a local-medium propagator from scalar light optics.
+Wide-angle errors alter CBED amplitudes and diffraction-peak positions.
