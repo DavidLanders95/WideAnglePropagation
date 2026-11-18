@@ -1,17 +1,15 @@
-#LyX file created by tex2lyx 2.5
+#LyX 2.5 created this file. For more info see https://www.lyx.org/
 \lyxformat 643
 \begin_document
 \begin_header
 \save_transient_properties true
-\origin C:/Users/jr122738/Documents/New project/WideAnglePropagation/Paper/lyx/
+\origin unavailable
 \textclass article
 \begin_preamble
 \PassOptionsToPackage{english}{babel}
 \usepackage{babel}
 \title{Draft Appendix: Relativistic Hamiltonian and Scalar Wave Equations}
 \author{}
-
-
 \end_preamble
 \use_default_options false
 \maintain_unincluded_children no
@@ -41,15 +39,15 @@
 \paperfontsize 12
 \spacing single
 \use_hyperref true
-\pdf_bookmarks 0
-\pdf_bookmarksnumbered 0
-\pdf_bookmarksopen 0
+\pdf_bookmarks false
+\pdf_bookmarksnumbered false
+\pdf_bookmarksopen false
 \pdf_bookmarksopenlevel 1
-\pdf_breaklinks 0
-\pdf_pdfborder 0
-\pdf_colorlinks 1
+\pdf_breaklinks false
+\pdf_pdfborder false
+\pdf_colorlinks true
 \pdf_backref false
-\pdf_pdfusetitle 0
+\pdf_pdfusetitle false
 \pdf_quoted_options "allcolors=blue"
 \papersize default
 \use_geometry false
@@ -72,8 +70,17 @@
 \suppress_date true
 \justification true
 \crossref_package prettyref
+\use_formatted_ref 0
 \use_minted 0
-\use_lineno false
+\use_lineno 0
+\backgroundcolor none
+\fontcolor none
+\notefontcolor lightgray
+\boxbgcolor red
+\table_border_color default
+\table_odd_row_color default
+\table_even_row_color default
+\table_alt_row_colors_start 1
 \index Index
 \shortcut idx
 \color #008000
@@ -89,9 +96,11 @@
 \papercolumns 1
 \papersides 1
 \paperpagestyle default
+\tablestyle default
 \tracking_changes false
 \output_changes false
 \change_bars false
+\postpone_fragile_content true
 \html_math_output 0
 \html_css_as_file 0
 \html_be_strict false
@@ -103,7 +112,6 @@
 \begin_body
 
 \begin_layout Standard
-
 \begin_inset ERT
 status collapsed
 
@@ -139,7 +147,6 @@ A Note on the Energy Eigenvalue in the Corrected Schrödinger Equation
 \end_layout
 
 \begin_layout Standard
-
 \begin_inset CommandInset label
 LatexCommand label
 name "app:corrected_schrodinger_eigenvalue"
@@ -154,21 +161,23 @@ The relativistically corrected Schrödinger equation is commonly written as
 \end_layout
 
 \begin_layout Standard
-In particular, the physical time dependence of a stationary relativistic state remains 
-\begin_inset Formula \begin{equation}
-\Psi(\mathbf r,t)
-=
-\psi(\mathbf r)
-\exp\left(-\frac{iE_{\mathrm{tot}}t}{\hbar}\right).
+In particular,
+ the physical time dependence of a stationary relativistic state remains 
+\begin_inset Formula 
+\begin{equation}
+\Psi(\mathbf{r},t)=\psi(\mathbf{r})\exp\left(-\frac{iE_{\mathrm{tot}}t}{\hbar}\right).
 \end{equation}
+
 \end_inset
 
-Thus, 
+Thus,
+ 
 \begin_inset Formula $E_{\mathrm{tot}}$
 \end_inset
 
- governs the temporal phase, whereas 
-\begin_inset Formula $p_0^2/(2\gamma m_0)$
+ governs the temporal phase,
+ whereas 
+\begin_inset Formula $p^{2}_{0}/(2\gamma m_{0})$
 \end_inset
 
  is the eigenvalue of the equivalent stationary Schrödinger-like equation.
@@ -179,7 +188,6 @@ Relativistic Hamiltonian and Scalar Wave Equations
 \end_layout
 
 \begin_layout Standard
-
 \begin_inset CommandInset label
 LatexCommand label
 name "app:relativistic_hamiltonian"
@@ -192,25 +200,15 @@ name "app:relativistic_hamiltonian"
 \begin_layout Standard
 This appendix gives the derivation underlying the two scalar refractive-index models used in Section
 \begin_inset space ~
-
 \end_inset
 
-
-\begin_inset CommandInset ref
-LatexCommand ref
-reference "sec:schrodinger_helmholtz"
-plural "false"
-caps "false"
-noprefix "false"
-nolink "false"
-tuple "list"
-
-\end_inset
-
-. A complete relativistic description begins with the Dirac equation. When spin and magnetic interactions are not explicitly required, elastic electron diffraction can instead be described by the positive-energy, spin-independent relativistic Hamiltonian 
+.
+ A complete relativistic description begins with the Dirac equation.
+ When spin and magnetic interactions are not explicitly required,
+ elastic electron diffraction can instead be described by the positive-energy,
+ spin-independent relativistic Hamiltonian 
 \begin_inset CommandInset citation
 LatexCommand cite
-after ""
 key "fujiwara1961relativistic,kirkland2010advanced"
 literal "false"
 
@@ -225,56 +223,51 @@ Minimal Coupling and the Stationary Equation
 
 \begin_layout Standard
 The time-dependent wave equation is 
-\begin_inset Formula \begin{equation}
-i\hbar\frac{\partial\Psi(\mathbf r,t)}{\partial t}
-=
-\hat H\Psi(\mathbf r,t),
-\label{eq:app_time_dependent_wave_equation}
+\begin_inset Formula 
+\begin{equation}
+i\hbar\frac{\partial\Psi(\mathbf{r},t)}{\partial t}=\hat{H}\Psi(\mathbf{r},t),\label{eq:app_time_dependent_wave_equation}
 \end{equation}
+
 \end_inset
 
 with the minimal-coupling Hamiltonian 
-\begin_inset Formula \begin{equation}
-\hat H
-=
-\sqrt{
-c^2\left(\hat{\mathbf p}-q_e\mathbf A/c\right)^2+m_0^2c^4
-}
-+
-q_eV(\mathbf r),
-\label{eq:app_minimal_coupling_hamiltonian}
+\begin_inset Formula 
+\begin{equation}
+\hat{H}=\sqrt{c^{2}\left(\hat{\mathbf{p}}-q_{e}\mathbf{A}/c\right)^{2}+m^{2}_{0}c^{4}}+q_{e}V(\mathbf{r}),\label{eq:app_minimal_coupling_hamiltonian}
 \end{equation}
+
 \end_inset
 
 where 
-\begin_inset Formula $\hat{\mathbf p}=-i\hbar\nabla$
+\begin_inset Formula $\hat{\mathbf{p}}=-i\hbar\nabla$
 \end_inset
 
-, 
-\begin_inset Formula $\mathbf A$
+,
+ 
+\begin_inset Formula $\mathbf{A}$
 \end_inset
 
- is the magnetic vector potential, and 
-\begin_inset Formula $V(\mathbf r)$
+ is the magnetic vector potential,
+ and 
+\begin_inset Formula $V(\mathbf{r})$
 \end_inset
 
- is the specimen electrostatic potential in volts. We use 
+ is the specimen electrostatic potential in volts.
+ We use 
 \begin_inset Formula $e>0$
 \end_inset
 
  and 
-\begin_inset Formula $q_e=-e$
+\begin_inset Formula $q_{e}=-e$
 \end_inset
 
-, so the electron potential energy is 
-\begin_inset Formula \begin{equation}
-E_{\mathrm{pot}}(\mathbf r)
-=
-q_eV(\mathbf r)
-=
--eV(\mathbf r).
-\label{eq:app_electron_potential_energy}
+,
+ so the electron potential energy is 
+\begin_inset Formula 
+\begin{equation}
+E_{\mathrm{pot}}(\mathbf{r})=q_{e}V(\mathbf{r})=-eV(\mathbf{r}).\label{eq:app_electron_potential_energy}
 \end{equation}
+
 \end_inset
 
 
@@ -294,20 +287,15 @@ This notation distinguishes the electrostatic potential
 
 \begin_layout Standard
 Neglecting magnetic interactions and introducing the rest energy 
-\begin_inset Formula $ E_0 = m_0 c^2$
+\begin_inset Formula $E_{0}=m_{0}c^{2}$
 \end_inset
 
  gives 
-\begin_inset Formula \begin{equation}
-\hat H
-=
-\sqrt{c^2\hat{\mathbf p}^{\,2}+m_0^2c^4}
-+
-E_{\mathrm{pot}}(\mathbf r) = \sqrt{c^2\hat{\mathbf p}^{\,2}+E_0^2}
-+
-E_{\mathrm{pot}}(\mathbf r)
-\label{eq:app_relativistic_hamiltonian}
+\begin_inset Formula 
+\begin{equation}
+\hat{H}=\sqrt{c^{2}\hat{\mathbf{p}}^{\,2}+m^{2}_{0}c^{4}}+E_{\mathrm{pot}}(\mathbf{r})=\sqrt{c^{2}\hat{\mathbf{p}}^{\,2}+E^{2}_{0}}+E_{\mathrm{pot}}(\mathbf{r})\label{eq:app_relativistic_hamiltonian}
 \end{equation}
+
 \end_inset
 
 
@@ -315,17 +303,16 @@ E_{\mathrm{pot}}(\mathbf r)
 
 \begin_layout Standard
 We then look for stationnary states 
-\begin_inset Formula $\Psi(\mathbf r,t)$
+\begin_inset Formula $\Psi(\mathbf{r},t)$
 \end_inset
 
- that separate the temporal and spatial contributions : 
-\begin_inset Formula \begin{equation}
-\Psi(\mathbf r,t)
-=
-\psi(\mathbf r)
-\exp\left(-\frac{iE_{\mathrm{tot}}t}{\hbar}\right),
-\label{eq:app_stationary_ansatz}
+ that separate the temporal and spatial contributions :
+ 
+\begin_inset Formula 
+\begin{equation}
+\Psi(\mathbf{r},t)=\psi(\mathbf{r})\exp\left(-\frac{iE_{\mathrm{tot}}t}{\hbar}\right),\label{eq:app_stationary_ansatz}
 \end{equation}
+
 \end_inset
 
 
@@ -333,52 +320,76 @@ We then look for stationnary states
 
 \begin_layout Standard
 The stationary equation is therefore 
-\begin_inset Formula \begin{equation}
-\hat H\psi=E_{\mathrm{tot}}\psi.
-\label{eq:app_stationary_equation}
+\begin_inset Formula 
+\begin{equation}
+\hat{H}\psi=E_{\mathrm{tot}}\psi.\label{eq:app_stationary_equation}
 \end{equation}
+
 \end_inset
 
 
 \end_layout
 
 \begin_layout Standard
-
 \begin_inset Formula $E_{\mathrm{tot}}$
 \end_inset
 
- is the conserved total relativistic energy, including the rest energy. As we look for elastic interaction this energy is conserved. In particular, in vacuum, 
-\begin_inset Formula \begin{equation}
-E_{\mathrm{tot}}
-=
-\gamma m_0c^2
-=
-\sqrt{c^2p_0^2+E_0^2},
-\qquad
-p_0=hk_0=\frac{h}{\lambda},
-\label{eq:app_vacuum_energy_momentum}
+ is the conserved total relativistic energy,
+ including the rest energy.
+ As we look for elastic interaction this energy is conserved.
+ In particular,
+ in vacuum,
+ 
+\begin_inset Formula 
+\begin{equation}
+E_{\mathrm{tot}}=\gamma E_{0}=\gamma m_{0}c^{2}=\sqrt{c^{2}p^{2}_{0}+E^{2}_{0}},\qquad p_{0}=hk_{0}=\frac{h}{\lambda}=\gamma m_{0}v_{0},\label{eq:app_vacuum_energy_momentum}
 \end{equation}
+
 \end_inset
 
-. If the beam has accelerated through a voltage magnitude 
-\begin_inset Formula $U_{\mathrm{acc}}>0$
-\end_inset
 
-, the total energy is the sum of the rest and kinetic energies :
 \end_layout
 
 \begin_layout Standard
-and 
-\begin_inset Formula $E_{\mathrm{kin}}=eU_{\mathrm{acc}}=E_{\mathrm{tot}}-E_0 = (\gamma - 1) E_0$
+The equations on the left allow to get the interesting equation :
+ 
+\begin_inset Formula $p^{2}_{o}=(\gamma^{2}-1)m^{2}_{0}c^{2}=\gamma^{2}_{0}m^{2}_{0}v^{2}_{0}$
 \end_inset
 
-.
+ that link the parameters 
+\begin_inset Formula $\gamma_{0}$
+\end_inset
+
+et 
+\begin_inset Formula $\beta_{0}=v_{0}/c$
+\end_inset
+
+ ;
+ one gets by dividing by 
+\begin_inset Formula $m^{2}_{0}c^{2}$
+\end_inset
+
+:
+ 
+\begin_inset Formula $\gamma^{2}_{0}(1-\beta^{2}_{0})=1$
+\end_inset
+
+ i.e.
+ as 
+\begin_inset Formula $\gamma_{0}$
+\end_inset
+
+is positive :
+ 
+\begin_inset Formula $\gamma_{0}=\frac{1}{\sqrt{1-\beta^{2}_{0}}}$
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
 Equation
 \begin_inset space ~
-
 \end_inset
 
 
@@ -393,8 +404,137 @@ tuple "list"
 
 \end_inset
 
- can be used to compute the wave length : 
-\begin_inset Formula $c^2 p_0^2 = h^2 c^2/\lambda^2 = E_{\mathrm{tot}}^2 - E_0^2 = (E_{\mathrm{kin}}+E_0)^2 - E_0^2$
+ can also be used to link the parameters 
+\begin_inset Formula $\gamma_{0}$
+\end_inset
+
+et 
+\begin_inset Formula $\beta_{0}=v_{0}/c$
+\end_inset
+
+,
+ with 
+\begin_inset Formula $v_{0}$
+\end_inset
+
+ and 
+\begin_inset Formula $c$
+\end_inset
+
+ being respectively the speeds of the electron and light in vacuum;
+ by taking the square of this equation and using the definition of 
+\begin_inset Formula $p_{0}$
+\end_inset
+
+ (
+\begin_inset Formula $p_{0}=\gamma m_{0}v_{0}$
+\end_inset
+
+) one obtains :
+ 
+\begin_inset Formula $\gamma^{_{2}}_{0}m^{2}_{0}c^{4}=\gamma^{_{2}}_{0}m^{2}_{0}v^{2}_{0}c^{4}+m_{0}c^{4}$
+\end_inset
+
+;
+ and dividing by 
+\begin_inset Formula $m^{2}_{0}c^{4}$
+\end_inset
+
+it gives :
+ 
+\begin_inset Formula $\gamma^{2}_{0}(1-\beta^{2}_{0})=1$
+\end_inset
+
+ i.e.
+ as 
+\begin_inset Formula $\gamma_{0}$
+\end_inset
+
+is positive :
+ 
+\begin_inset Formula $\gamma_{0}=\frac{1}{\sqrt{1-\beta^{2}_{0}}}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+If the beam has been accelerated through a voltage magnitude 
+\begin_inset Formula $U_{\mathrm{acc}}>0$
+\end_inset
+
+,
+ the total energy is the sum of the rest and kinetic energies :
+\end_layout
+
+\begin_layout Standard
+and 
+\begin_inset Formula $E_{\mathrm{kin}}=eU_{\mathrm{acc}}=E_{\mathrm{tot}}-E_{0}=(\gamma_{0}-1)E_{0}$
+\end_inset
+
+ so 
+\begin_inset Formula $\gamma_{0}=(E_{kin}+E_{0})/E_{0}=1+E_{kin}/E_{0}$
+\end_inset
+
+.
+ It also interesting the introduce the parameter 
+\begin_inset Formula $\beta=v_{0}/c$
+\end_inset
+
+,
+ with 
+\begin_inset Formula $v_{0}$
+\end_inset
+
+ and 
+\begin_inset Formula $c$
+\end_inset
+
+ being respectively the speeds of the electron and light in vacuum,.
+ 
+\end_layout
+
+\begin_layout Standard
+By definition 
+\begin_inset Formula $p_{0}=m_{0}\gamma v_{0}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Equation
+\begin_inset space ~
+\end_inset
+
+
+\begin_inset CommandInset ref
+LatexCommand eqref
+reference "eq:app_vacuum_energy_momentum"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+tuple "list"
+
+\end_inset
+
+ can be used to compute the wave length 
+\begin_inset Formula $\lambda_{0}$
+\end_inset
+
+of the electron in vaccuum.:
+ 
+\begin_inset Formula $c^{2}p^{2}_{0}=h^{2}c^{2}/\lambda^{2}_{0}=E^{2}_{\mathrm{tot}}-E^{2}_{0}=(E_{\mathrm{kin}}+E_{0})^{2}-E^{2}_{0}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+i.e.
+ 
+\begin_inset Formula $\lambda_{0}=hc/\sqrt{E^{2}_{kin}+2E_{kin}E_{0}}$
 \end_inset
 
 
@@ -407,7 +547,6 @@ Klein–Gordon and Corrected Schrödinger Forms
 \begin_layout Standard
 Rearranging Eq.
 \begin_inset space ~
-
 \end_inset
 
 
@@ -423,21 +562,20 @@ tuple "list"
 \end_inset
 
  and squaring gives 
-\begin_inset Formula \begin{equation}
-\left[c^2\hat{\mathbf p}^{\,2}+E_0^2\right]\psi
-=
-\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf r)\right]^2\psi .
-\label{eq:app_kg_before_linearisation}
+\begin_inset Formula 
+\begin{equation}
+\left[c^{2}\hat{\mathbf{p}}^{\,2}+E^{2}_{0}\right]\psi=\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf{r})\right]^{2}\psi.\label{eq:app_kg_before_linearisation}
 \end{equation}
+
 \end_inset
 
-A local relattivistic momentum and a local wavelength can be defined : 
-\begin_inset Formula \begin{equation}
-c^2\hat{\mathbf p}^{\,2}
-=
-\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf r)\right]^2 - E_0^2 = h^2 c^2 \mathbf k^2
-\label{eq:app_kg_before_linearisation2}
+A local relativistic momentum and a local wavelength can be defined :
+ 
+\begin_inset Formula 
+\begin{equation}
+c^{2}\hat{\mathbf{p}}^{\,2}=\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf{r})\right]^{2}-E^{2}_{0}=h^{2}c^{2}\mathbf{k}^{2}\label{eq:app_kg_before_linearisation2}
 \end{equation}
+
 \end_inset
 
 
@@ -445,16 +583,16 @@ c^2\hat{\mathbf p}^{\,2}
 
 \begin_layout Standard
 Using 
-\begin_inset Formula $\hat{\mathbf p}^{\,2}=-\hbar^2\nabla^2$
+\begin_inset Formula $\hat{\mathbf{p}}^{\,2}=-\hbar^{2}\nabla^{2}$
 \end_inset
 
  and 
-\begin_inset Formula $p_0=h k_0$
+\begin_inset Formula $p_{0}=hk_{0}$
 \end_inset
 
-, equation 
+,
+ equation 
 \begin_inset space ~
-
 \end_inset
 
 
@@ -470,30 +608,23 @@ tuple "list"
 \end_inset
 
  becomes 
-\begin_inset Formula \begin{equation}
-\nabla^2\psi(\mathbf r)
-+
-(2\pi k_0)^2n_{\mathrm{KG}}^2(\mathbf r)\psi(\mathbf r)
-=0,
-\label{eq:app_kg_helmholtz_form}
+\begin_inset Formula 
+\begin{equation}
+\nabla^{2}\psi(\mathbf{r})+(2\pi k_{0})^{2}n^{2}_{\mathrm{KG}}(\mathbf{r})\psi(\mathbf{r})=0,\label{eq:app_kg_helmholtz_form}
 \end{equation}
+
 \end_inset
 
 where 
-\begin_inset Formula \begin{equation}
-n_{\mathrm{KG}}^2(\mathbf r)
-=
-\frac{
-\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf r)\right]^2-E_0^2
-} {
-E_{\mathrm{tot}}^2-E_0^2
-} = \frac{p(\mathbf r)}{p_0}=\frac{k(\mathbf r)}{k_0}
-.
-\label{eq:app_kg_refractive_index}
+\begin_inset Formula 
+\begin{equation}
+n^{2}_{\mathrm{KG}}(\mathbf{r})=\frac{\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf{r})\right]^{2}-E^{2}_{0}}{E^{2}_{\mathrm{tot}}-E^{2}_{0}}=\frac{p(\mathbf{r})}{p_{0}}=\frac{k(\mathbf{r})}{k_{0}}.\label{eq:app_kg_refractive_index}
 \end{equation}
+
 \end_inset
 
-So, 
+So,
+ 
 \begin_inset Formula $n_{\mathrm{KG}}$
 \end_inset
 
@@ -502,13 +633,13 @@ So,
 \end_inset
 
  to the vacuum momentum 
-\begin_inset Formula $p_0$
+\begin_inset Formula $p_{0}$
 \end_inset
 
- . This connects the Klein–Gordon form to the electron-optical refractive-index concepts of Glaser and Ehrenberg–Siday 
+ .
+ This connects the Klein–Gordon form to the electron-optical refractive-index concepts of Glaser and Ehrenberg–Siday 
 \begin_inset CommandInset citation
 LatexCommand cite
-after ""
 key "Glaser1933,Ehrenberg-Siday1949"
 literal "false"
 
@@ -522,24 +653,23 @@ For
 \begin_inset Formula $|E_{\mathrm{pot}}|\ll E_{\mathrm{tot}}$
 \end_inset
 
-, as it is the case for electron-beam interaction, 
-\begin_inset Formula \begin{equation}
-\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf r)\right]^2
-\simeq
-E_{\mathrm{tot}}^2
--
-2E_{\mathrm{tot}}E_{\mathrm{pot}}(\mathbf r).
-\label{eq:app_linearised_energy}
+,
+ as it is the case for electron-beam interaction,
+ 
+\begin_inset Formula 
+\begin{equation}
+\left[E_{\mathrm{tot}}-E_{\mathrm{pot}}(\mathbf{r})\right]^{2}\simeq E^{2}_{\mathrm{tot}}-2E_{\mathrm{tot}}E_{\mathrm{pot}}(\mathbf{r}).\label{eq:app_linearised_energy}
 \end{equation}
+
 \end_inset
 
 Since 
-\begin_inset Formula $E_{\mathrm{tot}}/c^2=\gamma m_0$
+\begin_inset Formula $E_{\mathrm{tot}}/c^{2}=\gamma m_{0}$
 \end_inset
 
-, Eq.
+,
+ Eq.
 \begin_inset space ~
-
 \end_inset
 
 
@@ -555,34 +685,22 @@ tuple "list"
 \end_inset
 
  then reduces to 
-\begin_inset Formula \begin{equation}
-\nabla^2\psi(\mathbf r)
-+
-\left[
-(2\pi k_0)^2
--
-\frac{2\gamma m_0}{\hbar^2}E_{\mathrm{pot}}(\mathbf r)
-\right]\psi(\mathbf r)
-=0.
-\label{eq:app_corrected_schrodinger}
+\begin_inset Formula 
+\begin{equation}
+\nabla^{2}\psi(\mathbf{r})+\left[(2\pi k_{0})^{2}-\frac{2\gamma m_{0}}{\hbar^{2}}E_{\mathrm{pot}}(\mathbf{r})\right]\psi(\mathbf{r})=0.\label{eq:app_corrected_schrodinger}
 \end{equation}
+
 \end_inset
 
 or equivalently ,
 \end_layout
 
 \begin_layout Standard
-
-\begin_inset Formula \begin{equation}
-\left[
--\frac{\hbar^2}{2\gamma m_0}\nabla^2
-+
-E_{\mathrm{pot}}(\mathbf r)
-\right]\psi(\mathbf r)
-=
-\frac{p_0^2}{2\gamma m_0}\psi(\mathbf r).
-\label{eq:app_schrodinger_energy_form}
+\begin_inset Formula 
+\begin{equation}
+\left[-\frac{\hbar^{2}}{2\gamma m_{0}}\nabla^{2}+E_{\mathrm{pot}}(\mathbf{r})\right]\psi(\mathbf{r})=\frac{p^{2}_{0}}{2\gamma m_{0}}\psi(\mathbf{r}).\label{eq:app_schrodinger_energy_form}
 \end{equation}
+
 \end_inset
 
 
@@ -591,7 +709,6 @@ E_{\mathrm{pot}}(\mathbf r)
 \begin_layout Standard
 Equation
 \begin_inset space ~
-
 \end_inset
 
 
@@ -606,37 +723,50 @@ tuple "list"
 
 \end_inset
 
- is therefore a stationary Schrödinger-like reformulation of the relativistic wave equation, rather than the original relativistic energy-eigenvalue equation. This is the relativistically corrected Schrödinger form as deduced by Fujiwara. The right-hand side resembles the nonrelativistic kinetic energy 
-\begin_inset Formula $p_0^2/(2m)$
+ is therefore a stationary Schrödinger-like reformulation of the relativistic wave equation,
+ rather than the original relativistic energy-eigenvalue equation.
+ This is the relativistically corrected Schrödinger form as deduced by Fujiwara.
+ The right-hand side has the algebraic fomm of the nonrelativistic kinetic energy expression 
+\begin_inset Formula $p^{2}_{0}/(2m_{0})$
 \end_inset
 
-, with the rest mass replaced by the relativistic mass 
-\begin_inset Formula $\gamma m_0$
+,
+ with however the rest mass 
+\begin_inset Formula $m_{0}$
 \end_inset
 
-. It should not, however, be identified with either the total relativistic energy 
+ replaced by the relativistic mass 
+\begin_inset Formula $\gamma m_{0}$
+\end_inset
+
+.
+ It should not,
+ however,
+ be identified with either the total relativistic energy 
 \begin_inset Formula $E_{\mathrm{tot}}$
 \end_inset
 
- or, in general, the kinetic energy 
-\begin_inset Formula $E_{\mathrm{kin}}=E_{\mathrm{tot}}-E_0$
+ or,
+ in general,
+ the kinetic energy 
+\begin_inset Formula $E_{\mathrm{kin}}=E_{\mathrm{tot}}-E_{0}$
 \end_inset
 
 .
 \end_layout
 
 \begin_layout Standard
-Indeed, using 
-\begin_inset Formula \begin{equation}
-\gamma m_0=\frac{E_{\mathrm{tot}}}{c^2},
-\qquad
-p_0^2c^2=E_{\mathrm{tot}}^2-E_0^2,
+Indeed,
+ using 
+\begin_inset Formula 
+\begin{equation}
+\gamma m_{0}=\frac{E_{\mathrm{tot}}}{c^{2}},\qquad p^{2}_{0}c^{2}=E^{2}_{\mathrm{tot}}-E^{2}_{0},
 \end{equation}
+
 \end_inset
 
 the eigenvalue in Eq.
 \begin_inset space ~
-
 \end_inset
 
 
@@ -652,14 +782,11 @@ tuple "list"
 \end_inset
 
  becomes 
-\begin_inset Formula \begin{equation}
-\frac{p_0^2}{2\gamma m_0}
-=
-\frac{E_{\mathrm{tot}}^2-E_0^2}{2E_{\mathrm{tot}}}
-=
-E_{\mathrm{kin}}\frac{E_{\mathrm{tot}}+E_0}{2E_{\mathrm{tot}}}.
-\label{eq:app_effective_schrodinger_eigenvalue}
+\begin_inset Formula 
+\begin{equation}
+\frac{p^{2}_{0}}{2\gamma m_{0}}=\frac{E^{2}_{\mathrm{tot}}-E^{2}_{0}}{2E_{\mathrm{tot}}}=E_{\mathrm{kin}}\frac{E_{\mathrm{tot}}+E_{0}}{2E_{\mathrm{tot}}}=E_{\mathrm{kin}}\frac{\gamma+1}{2\gamma}.\label{eq:app_effective_schrodinger_eigenvalue}
 \end{equation}
+
 \end_inset
 
 
@@ -671,11 +798,12 @@ It approaches
 \end_inset
 
  only in the nonrelativistic limit 
-\begin_inset Formula $E_{\mathrm{kin}}\ll E_0$
+\begin_inset Formula $E_{\mathrm{kin}}\ll E_{0}$
 \end_inset
 
-, for which 
-\begin_inset Formula $E_{\mathrm{tot}}\simeq E_0$
+,
+ for which 
+\begin_inset Formula $E_{\mathrm{tot}}\simeq E_{0}$
 \end_inset
 
 .
@@ -690,7 +818,8 @@ Equation xxxx-mettrelabonneREF indicates that the energy appearing in the tempor
 \begin_inset Formula $E_{\mathrm{tot}}$
 \end_inset
 
-. The factor 
+.
+ The factor 
 \begin_inset Formula $1/2$
 \end_inset
 
@@ -707,16 +836,11 @@ Interaction Constant and Paraxial Limit
 
 \begin_layout Standard
 The conventional TEM interaction constant is 
-\begin_inset Formula \begin{equation}
-\sigma
-=
-\frac{2\pi\gamma m_0e}{h^2k_0}
-=
-\frac{2\pi\gamma m_0e\lambda}{h^2}= 2 \pi e  k_0 \frac{\gamma m_0 c^2}{h^2 k_0^2 c^2}=
-\frac{2\pi e E_{\mathrm{tot}}}
-{hc\sqrt{E_{\mathrm{tot}}^2-E_0^2}}.
-\label{eq:app_sigma_definition}
+\begin_inset Formula 
+\begin{equation}
+\sigma=\frac{2\pi\gamma m_{0}e}{h^{2}k_{0}}=\frac{2\pi\gamma m_{0}e\lambda}{h^{2}}=2\pi ek_{0}\frac{\gamma m_{0}c^{2}}{h^{2}k^{2}_{0}c^{2}}=\frac{2\pi eE_{\mathrm{tot}}}{hc\sqrt{E^{2}_{\mathrm{tot}}-E^{2}_{0}}}.\label{eq:app_sigma_definition}
 \end{equation}
+
 \end_inset
 
 
@@ -725,7 +849,6 @@ The conventional TEM interaction constant is
 \begin_layout Standard
 The potential term in Eq.
 \begin_inset space ~
-
 \end_inset
 
 
@@ -741,75 +864,128 @@ tuple "list"
 \end_inset
 
  can therefore be written as 
-\begin_inset Formula \begin{equation}
-\frac{2\gamma m_0e}{\hbar^2}V(\mathbf r)
-=
-4\pi k_0\sigma V(\mathbf r),
-\label{eq:app_potential_term_sigma}
+\begin_inset Formula 
+\begin{equation}
+\frac{2\gamma m_{0}e}{\hbar^{2}}V(\mathbf{r})=4\pi k_{0}\sigma V(\mathbf{r}),\label{eq:app_potential_term_sigma}
 \end{equation}
+
 \end_inset
 
 giving 
-\begin_inset Formula \begin{equation}
-\nabla^2\psi(\mathbf r)
-+
-\left[
-(2\pi k_0)^2
-+
-4\pi k_0\sigma V(\mathbf r)
-\right]\psi(\mathbf r)
-=0.
-\label{eq:app_corrected_schrodinger_sigma}
+\begin_inset Formula 
+\begin{equation}
+\nabla^{2}\psi(\mathbf{r})+\left[(2\pi k_{0})^{2}+4\pi k_{0}\sigma V(\mathbf{r})\right]\psi(\mathbf{r})=0.\label{eq:app_corrected_schrodinger_sigma}
 \end{equation}
+
 \end_inset
 
-Factoring out the carrier wave, 
-\begin_inset Formula \begin{equation}
-\psi(\mathbf r)
-=
-\exp(2\pi i k_0z)\tilde\psi(\mathbf r),
-\label{eq:app_carrier_wave}
+Factoring out the carrier wave,
+ 
+\begin_inset Formula 
+\begin{equation}
+\psi(\mathbf{r})=\exp(2\pi ik_{0}z)\tilde{\psi}(\mathbf{r}),\label{eq:app_carrier_wave}
 \end{equation}
+
 \end_inset
 
 and neglecting 
-\begin_inset Formula $\partial^2\tilde\psi/\partial z^2$
+\begin_inset Formula $\partial^{2}\tilde{\psi}/\partial z^{2}$
 \end_inset
 
  gives 
-\begin_inset Formula \begin{equation}
-\frac{\partial\tilde\psi}{\partial z}
-=
-\frac{i}{4\pi k_0}\nabla_\perp^2\tilde\psi
-+
-i\sigma V(\mathbf r)\tilde\psi.
-\label{eq:app_paraxial_sigma}
+\begin_inset Formula 
+\begin{equation}
+\frac{\partial\tilde{\psi}}{\partial z}=\frac{i}{4\pi k_{0}}\nabla^{2}_{\perp}\tilde{\psi}+i\sigma V(\mathbf{r})\tilde{\psi}.\label{eq:app_paraxial_sigma}
 \end{equation}
+
 \end_inset
 
 For a slice with projected electrostatic potential 
-\begin_inset Formula \begin{equation}
-V_j(x,y)
-=
-\int_{z_j}^{z_j+\Delta z}V(x,y,z)\,dz,
-\label{eq:app_projected_potential}
+\begin_inset Formula 
+\begin{equation}
+V_{j}(x,y)=\int^{z_{j}+\Delta z}_{z_{j}}V(x,y,z)\,dz,\label{eq:app_projected_potential}
 \end{equation}
+
 \end_inset
 
 the phase-grating transmission function is 
-\begin_inset Formula \begin{equation}
-t_j(x,y)
-=
-\exp\left[i\sigma V_j(x,y)\right],
-\label{eq:app_transmission_function}
+\begin_inset Formula 
+\begin{equation}
+t_{j}(x,y)=\exp\left[i\sigma V_{j}(x,y)\right],\label{eq:app_transmission_function}
 \end{equation}
+
 \end_inset
 
 which is the expression used in the main text.
 \end_layout
 
+\begin_layout Subsection
+Modèle du potentiel coulombien écranté
+\end_layout
+
 \begin_layout Standard
- 
+Que veut dire « potentiel coulombien écranté » ?
+\end_layout
+
+\begin_layout Standard
+Lentzen utilise le modèle de Wentzel
+\end_layout
+
+\begin_layout Standard
+
+\backslash
+[
+\end_layout
+
+\begin_layout Standard
+V(r)=ZE_h a_0
+\backslash
+,
+\backslash
+frac{e^{-r/R}}{r},
+\end_layout
+
+\begin_layout Standard
+
+\backslash
+qquad R=
+\backslash
+frac{a_0}{Z^{1/3}}
+\end_layout
+
+\begin_layout Standard
+
+\backslash
+]
+\end_layout
+
+\begin_layout Standard
+pour le rayon d’écran choisi dans l’article.
+ Le signe positif suit la convention de Lentzen.
+ Près du noyau,
+ pour 
+\backslash
+(r
+\backslash
+ll R
+\backslash
+),
+ l’exponentielle vaut presque 
+\backslash
+(1
+\backslash
+),
+ et on retrouve le comportement coulombien en 
+\backslash
+(1/r
+\backslash
+).
+ Loin du noyau,
+ l’exponentielle atténue le potentiel.
+ Elle modélise l’écrantage du noyau par les électrons de l’atome.
+\end_layout
+
+\begin_layout Standard
 \begin_inset CommandInset bibtex
 LatexCommand bibtex
 bibfiles "sample"
