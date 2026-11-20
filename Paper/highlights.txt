@@ -1,4 +1,5 @@
-Exact angular-spectrum propagation removes most Fresnel wide-angle error.
-AS-MS retains the multislice structure and per-slice FFT cost.
-WP-MS adapts a local-medium propagator from scalar light optics.
-Wide-angle errors alter CBED amplitudes and diffraction-peak positions.
+A new wide-angle propagation method from scalar optics is introduced to electron microscopy.
+Wide-angle corrections to electron multislice propagation are systematically compared.
+Exact angular-spectrum propagation removes most Fresnel error at no extra per-slice cost.
+Local-medium propagation gives a smaller correction at substantially higher cost.
+Wide-angle errors shift diffraction peaks and alter diffraction amplitudes.

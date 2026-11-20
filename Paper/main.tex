@@ -9,7 +9,7 @@
 \usepackage{url}
 \usepackage{graphicx}
 \usepackage{float}
-\graphicspath{{figures/}{Paper/figures/}}
+\graphicspath{{./}{figures/}{Paper/figures/}}
 \DeclareGraphicsExtensions{.pdf,.png,.jpg}
 \usepackage[colorlinks=true, allcolors=blue]{hyperref}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
@@ -36,24 +36,7 @@ Comparison of Fresnel, Angular-Spectrum, and Wave-Propagation Methods}
 }
 
 \begin{abstract}
-Conventional Fresnel multislice (F-MS) is the standard method for modelling
-electron--specimen interactions in transmission electron microscopy (TEM) due to its
-computational efficiency and ability to simulate both perfect and defective crystals.
-However, its paraxial propagation kernel loses accuracy when large scattering angles
-contribute to the exit wave in thick samples. Here we compare slice-based fast Fourier transform
-(FFT) propagation methods
-that preserve the practical multislice workflow while improving wide-angle
-propagation. We introduce wave-propagation multislice (WP-MS), an adaptation of
-the wave propagation method (WPM) from scalar light optics, and compare it with F-MS and
-angular-spectrum multislice (AS-MS). The three methods are first benchmarked
-against an ODE solution of the second-order scalar Klein--Gordon
-equation on the same transverse grid for a representative Au~[100] specimen.
-We then compare their predictions for
-convergent-beam electron diffraction (CBED) in Si~[111] and Au~[100]. AS-MS
-removes most of the wide-angle error of F-MS at essentially the same per-slice
-computational cost. WP-MS supplies a further local-medium correction at higher
-cost, but its difference from AS-MS is smaller than the F-MS discrepancy under
-the high-energy conditions studied here.
+We introduce wave-propagation multislice (WP-MS), an adaptation of the wave propagation method (WPM) from scalar light optics that incorporates the refractive-index dependence of the local wavelength into wide-angle angular-spectrum propagation. Conventional Fresnel multislice (F-MS) is computationally efficient and widely used in transmission electron microscopy, but its paraxial propagation kernel loses accuracy when large scattering angles contribute to the exit wave in thick samples, and it ignores the local wavelength variation of the beam as it propagates through the sample. We compare WP-MS, F-MS, and angular-spectrum multislice (AS-MS) against a numerical solution of the second-order scalar Klein--Gordon equation on simulated test cases of Au~[100] and Si~[111] crystals. AS-MS removes most of the Fresnel wide-angle error at essentially the same per-slice cost. WP-MS provides a further local-medium correction at higher cost, but its difference from AS-MS is smaller than the F-MS discrepancy under the high-energy conditions studied here.
 
 \end{abstract}
 
