@@ -43,7 +43,9 @@ __all__ = [
     "resolve_repo_root",
     "save_cbed_results",
     "shared_percentile_limits",
+    "simulate_fresnel_as_with_central_row_amplitudes",
     "simulate_fresnel_as_exit_only",
+    "simulate_wpm_with_central_row_amplitudes",
     "simulate_wpm_exit_only",
     "validate_cbed_results",
 ]
@@ -150,6 +152,28 @@ def simulate_fresnel_as_exit_only(potential, wave, propagation_kernel_, slice_th
     return jax.lax.scan(step, wave, potential)[0]
 
 
+def simulate_fresnel_as_with_central_row_amplitudes(
+    potential,
+    wave,
+    propagation_kernel_,
+    slice_thickness,
+    energy,
+):
+    """Return the exit wave and central-row amplitude after every slice."""
+    wave = jnp.asarray(
+        wave,
+        dtype=jnp.result_type(wave, propagation_kernel_, potential, 1j),
+    )
+
+    def step(wavefront, potential_slice):
+        wavefront = wavefront * _slice_phase_grating(potential_slice, slice_thickness, energy)
+        wavefront = fourier_propagate(wavefront, propagation_kernel_)
+        central_row = jnp.abs(wavefront[wavefront.shape[0] // 2]).astype(jnp.float32)
+        return wavefront, central_row
+
+    return jax.lax.scan(step, wave, potential)
+
+
 def simulate_wpm_exit_only(
     potential,
     wave,
@@ -181,6 +205,38 @@ def simulate_wpm_exit_only(
         return wavefront, None
 
     return jax.lax.scan(step, wave, potential)[0]
+
+
+def simulate_wpm_with_central_row_amplitudes(
+    potential,
+    wave,
+    slice_thickness,
+    energy,
+    sampling: Sampling,
+    n_bins: int = 128,
+    power_spacing: float = 2.0,
+    bin_batch_size: int | None = None,
+):
+    """Return the WPM exit wave and central-row amplitude after every slice."""
+    target_dtype = jnp.complex128 if jax.config.x64_enabled else jnp.complex64
+    wave = jnp.asarray(wave, dtype=target_dtype)
+
+    def step(wavefront, potential_slice):
+        refractive_index = electron_refractive_index(potential_slice, energy)
+        wavefront, _, _, _ = wpm_step_adaptive(
+            wavefront,
+            refractive_index,
+            slice_thickness,
+            energy,
+            sampling,
+            n_bins=n_bins,
+            power_spacing=power_spacing,
+            bin_batch_size=bin_batch_size,
+        )
+        central_row = jnp.abs(wavefront[wavefront.shape[0] // 2]).astype(jnp.float32)
+        return wavefront, central_row
+
+    return jax.lax.scan(step, wave, potential)
 
 
 def diffraction_angle_axes_mrad(ny: int, nx: int, sampling, wavelength):

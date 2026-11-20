@@ -16,7 +16,9 @@ from wide_angle_propagation.propagation_methods import (
 )
 from wide_angle_propagation.notebook_utils import (
     simulate_fresnel_as_exit_only,
+    simulate_fresnel_as_with_central_row_amplitudes,
     simulate_wpm_exit_only,
+    simulate_wpm_with_central_row_amplitudes,
 )
 
 
@@ -163,6 +165,53 @@ def test_scan_exit_only_helpers_match_full_solvers():
     )
     np.testing.assert_allclose(
         np.asarray(batched_wpm), np.asarray(expected_wpm), rtol=1e-13, atol=1e-13
+    )
+
+
+def test_central_row_helpers_match_full_wavefront_stacks():
+    probe = jnp.ones((8, 8), dtype=jnp.complex128)
+    y, x = jnp.mgrid[:8, :8]
+    one_slice = 10.0 + jnp.cos(2.0 * jnp.pi * (x + y) / 8.0)
+    potential = jnp.stack([one_slice, 0.5 * one_slice])
+    sampling = (0.2, 0.2)
+    thickness = 0.5
+    energy = 200e3
+    kernel = angular_spectrum_propagation_kernel(
+        8, 8, sampling, z=thickness, energy=energy
+    )
+
+    expected_as, _, as_wavefronts = simulate_fresnel_as(
+        potential, probe, kernel, thickness, energy
+    )
+    actual_as, as_rows = simulate_fresnel_as_with_central_row_amplitudes(
+        potential, probe, kernel, thickness, energy
+    )
+    np.testing.assert_allclose(np.asarray(actual_as), np.asarray(expected_as))
+    np.testing.assert_allclose(
+        np.asarray(as_rows),
+        np.abs(np.asarray(as_wavefronts)[:, as_wavefronts.shape[1] // 2, :]),
+        rtol=1e-6,
+        atol=1e-6,
+    )
+
+    expected_wpm, _, wpm_wavefronts = simulate_wpm(
+        potential, probe, thickness, energy, sampling, n_bins=8, bin_batch_size=3
+    )
+    actual_wpm, wpm_rows = simulate_wpm_with_central_row_amplitudes(
+        potential,
+        probe,
+        thickness,
+        energy,
+        sampling,
+        n_bins=8,
+        bin_batch_size=3,
+    )
+    np.testing.assert_allclose(np.asarray(actual_wpm), np.asarray(expected_wpm))
+    np.testing.assert_allclose(
+        np.asarray(wpm_rows),
+        np.abs(np.asarray(wpm_wavefronts)[:, wpm_wavefronts.shape[1] // 2, :]),
+        rtol=1e-6,
+        atol=1e-6,
     )
 
 
